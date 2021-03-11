@@ -28,7 +28,7 @@ let mapMaxBy : (a -> LogProb) -> Map k a -> Option k = lam f. lam m.
   optionMap (lam x. x.0) (maxBy (lam binding. f binding.1) (mapBindings m))
 let mapMaxByExc : (a -> LogProb) -> Map k a -> Option k = lam f. lam m.
   match mapMaxBy f m with Some x then x
-  else let _ = dprint (mapBindings m) in error "Empty map in mapMaxByExc"
+  else dprint (mapBindings m); error "Empty map in mapMaxByExc"
 
 let viterbi = -- ... -> {states : [State], prob : LogProb}
   lam compareStates : State -> State -> Int.
@@ -50,7 +50,7 @@ let viterbi = -- ... -> {states : [State], prob : LogProb}
         match inputs with [] then {chi = chi, zeta = zeta} else
         match inputs with [x] ++ inputs then
           let logProbFrom : State -> State -> LogProb =
-            lam state. lam pre. probMul (mapFind pre chi) (transitionProb pre state) in
+            lam state. lam pre. probMul (mapFindWithExn pre chi) (transitionProb pre state) in
           let newZeta : Map State State = mapInit compareStates states
             (lam state. optionGetOr arbitraryState (maxBy (logProbFrom state) (predecessors state))) in
           let newChi = mapMapWithKey (lam state. lam pre. probMul (logProbFrom state pre) (outputProb state x)) newZeta in
@@ -60,12 +60,12 @@ let viterbi = -- ... -> {states : [State], prob : LogProb}
       lam acc : [State].
       lam zeta : [Map State State].
       match zeta with zeta ++ [here] then
-        backwardStep (cons (mapFind (headExc acc) here) acc) zeta
+        backwardStep (cons (mapFindWithExn (headExc acc) here) acc) zeta
       else acc
   in
   match forward chi1 [] inputs with {chi = chi, zeta = zeta} then
     let lastState = mapMaxByExc identity chi in
-    let logprob = mapFind lastState chi in
+    let logprob = mapFindWithExn lastState chi in
     {prob = logprob, states = backwardStep [lastState] zeta}
   else never else never
 
