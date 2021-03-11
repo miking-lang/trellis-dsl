@@ -1,0 +1,250 @@
+
+token Ident = "[[:lower:]][[:alnum:]_']*"
+token UIdent = "[[:upper:]][[:alnum:]_']*"
+token Integer = "[0-9]+"
+
+comment "#[^\\n]*"
+
+syncon decls: Top = d:Decl+
+
+
+// === Top-level declarations ===
+
+type Decl
+
+type ConstrDecl
+syncon constrDecl: ConstrDecl =
+  vName:UIdent
+  ("(" param:Ident ("," param2:Ident)* ")")?
+
+syncon typeDecl: Decl =
+  "type" name:UIdent
+  ("(" param:Ident ("," param2:Ident)* ")")?
+  "{"
+    v1:ConstrDecl
+    ("," v2:ConstrDecl)*
+    ","?
+  "}"
+
+syncon automatonDecl: Decl =
+  "automaton" name:UIdent "{"
+    prop:AutomatonProp
+    ("," prop2:AutomatonProp)*
+    ","?
+  "}"
+
+syncon modelDecl: Decl =
+  "model" name:UIdent
+  "=" mc:ModelComposition
+  "{"
+    decls:InModelDecl+
+  "}"
+
+type Param
+syncon param: Param = n:Ident ":" ty:Type
+syncon funcDecl: Decl =
+  "let" fname:Ident
+  ("(" p:Param ("," p2:Param)* ")")?
+  (":" ty:Type)?
+  "=" e:Expr
+
+
+// === Properties in automata ===
+
+type AutomatonProp
+
+syncon stateProp: AutomatonProp =
+  "state" ":" ty:Type
+
+syncon setProp: AutomatonProp =
+  name:(Ident | "initial") ":" s:Set
+
+
+// === Sets ===
+
+type Set
+grouping "(" Set ")"
+
+infix left setUnion: Set = "\\u"
+infix left setIntersection: Set = "\\n"
+
+syncon namedSet: Set = name:Ident
+syncon emptySet: Set = "{" "}"
+syncon vsetLit: Set =
+  "{" e:Expr ("," e2:Expr)* ","? "}"
+syncon vsetBuilder: Set =
+  "{" p:Pat "|" e:Expr ("," e2:Expr)* ","? "}"
+syncon tsetLit: Set =
+  "{" e:Expr "->" to:Expr ("," e2:Expr "->" to2:Expr)* ","? "}"
+syncon tsetBuilder: Set =
+  "{" p:Pat "->" to:Pat "|" e:Expr ("," e2:Expr)* ","? "}"
+
+
+// === Patterns ===
+
+type Pat
+grouping "(" Pat ")"
+
+syncon con: Pat =
+  con:UIdent ("(" (p:Pat ("," p2:Pat)* ","?)? ")")?
+syncon varPat: Pat = id:Ident
+syncon wildPat: Pat = "_"
+syncon arrayPat: Pat =
+  "["
+  ( (p:Pat | subseq:Ident "...")
+    ("," (p2:Pat | subseq2:Ident "..."))*
+    ","?)?
+  "]"
+syncon tupPat: Pat =
+  "(" p:Pat ("," p2:Pat)+ ")"
+syncon intPat: Pat = i:Integer
+syncon truePat: Pat = "true"
+syncon falsePat: Pat = "false"
+
+
+// === Normal data types ===
+
+type Type
+grouping "(" Type ")"
+
+postfix typeApplication: Type =
+  "(" a:Type ("," a2:Type)* ")"
+postfix arrayType: Type = "[" count:Expr "]"
+
+syncon concreteType: Type = n:UIdent
+syncon tupleType: Type = "(" t1:Type ("," t2:Type)+ ")"
+syncon integerType: Type =
+  lb:Integer (".." ub:Integer)?
+syncon automatonState: Type = automaton:Ident "." "state"
+
+// === Expressions ===
+
+type Expr
+grouping "(" Expr ")"
+
+postfix application: Expr =
+  "(" (a:Expr ("," a2:Expr)*)? ")"
+infix left plus: Expr = "+"
+infix left minus: Expr = "-"
+infix left multipliedWith: Expr = "*"
+infix left dividedBy: Expr = "/"
+postfix nestedAccess: Expr = "." n:Ident
+infix equal: Expr = ("=" | "==")
+infix notEqual: Expr = ("/=" | "!=")
+infix lessThan: Expr = "<"
+infix greaterThan: Expr = ">"
+infix lessThanOrEqual: Expr = "<="
+infix greaterThanOrEqual: Expr = ">="
+infix left and: Expr = "&&"
+infix left or: Expr = "||"
+postfix tupleAccess: Expr = "." n:Integer
+postfix arrayAccess: Expr = "[" e:Expr "]"
+prefix if: Expr =
+  "if" c:Expr "then" e:Expr "else"
+infix in: Expr = "\\in"
+infix notin: Expr = "\\notin"
+infix left union: Expr = "\\u"
+infix left intersection: Expr = "\\n"
+
+syncon output: Expr = "output"
+syncon true: Expr = "true"
+syncon false: Expr = "false"
+syncon variable: Expr = v:Ident
+syncon constructor: Expr = c:UIdent
+syncon integer: Expr = i:Integer
+syncon list: Expr =
+  "["
+  ( (e1:Expr | subseq:Ident "...")
+    ("," (e2:Expr | subseq2:Ident "..."))*
+    ","?)?
+  "]"
+syncon tuple: Expr =
+  "(" e1:Expr ("," e2:Expr)+ ","? ")"
+
+precedence {
+  nestedAccess tupleAccess arrayAccess application;
+  multipliedWith dividedBy;
+  plus minus;
+  equal notEqual lessThan greaterThan lessThanOrEqual greaterThanOrEqual;
+  and or;
+  if;
+} except {
+  multipliedWith dividedBy;
+  equal notEqual lessThan greaterThan lessThanOrEqual greaterThanOrEqual;
+  and or;
+}
+
+precedence {
+  nestedAccess tupleAccess arrayAccess application;
+
+  union;
+  in notin;
+
+  if and or;
+
+} except {
+  nestedAccess tupleAccess arrayAccess application if and or;
+}
+
+// TODO(vipa, 2020-10-15): implement a better way of specifying accepted ambiguities, a proper algebra, then make this better and complete
+ambiguity {
+  multipliedWith dividedBy;
+  and or;
+  1 2 3 4 5 6 7 8 9: equal notEqual lessThan greaterThan lessThanOrEqual greaterThanOrEqual in notin union;
+  minus union;
+  union notEqual;
+  in plus greaterThan;
+  union greaterThan;
+  notin plus;
+  union plus;
+  minus notin;
+  equal union;
+  lessThanOrEqual in plus greaterThan;
+  minus in;
+  lessThan union;
+  notin plus notEqual;
+  greaterThanOrEqual notin plus;
+  in plus;
+  minus greaterThanOrEqual union;
+}
+
+
+// === Model definition ===
+
+type ModelComposition
+grouping "(" ModelComposition ")"
+
+syncon modelAtom: ModelComposition =
+  name:Ident ":" automaton:UIdent
+postfix modelNesting: ModelComposition =
+  "(" mc:ModelComposition ")"
+prefix fastStepAutomatonPre: ModelComposition =
+  n:Integer "*"
+postfix fastStepAutomatonPost: ModelComposition =
+  "*" n:Integer
+
+ambiguity {
+  fastStepAutomatonPost fastStepAutomatonPre;
+  fastStepAutomatonPost fastStepAutomatonPre modelNesting;
+  fastStepAutomatonPre modelNesting;
+}
+
+type InModelDecl
+
+syncon inferredFunction: InModelDecl =
+  "table" f:Ident
+  "(" (p1:Type ("," p2:Type)* ","?)? ")" (":" ret:Type)?  // TODO(vipa, 2020-10-15): This type *must* be Probability, maybe we shouldn't allow it?
+
+syncon outputProb: InModelDecl =
+  "P" "(" "output" "|" s:Ident ")"  // TODO(vipa, 2020-10-15): Should this be a pattern? We don't have record patterns atm, which is what this would look like
+  "=" e:Expr
+syncon initialProb: InModelDecl =
+  "P" "(" "initial" s:Ident ")"  // TODO(vipa, 2020-10-15): See the TODO for outputProb
+  "=" e:Expr
+syncon transitionProb: InModelDecl =
+  "P" "(" "transition" from:Ident to:Ident ")"  // TODO(vipa, 2020-10-15): See the TODO for outputProb
+  ( "=" e:Expr
+  | "="? "{"
+    ("|" automaton:Ident "=>" e2:Expr)+
+    "}"
+  )
