@@ -1,0 +1,6 @@
+numpy
+h5py==2.8.0
+argparse
+uuid
+fast5_research
+tqdm
