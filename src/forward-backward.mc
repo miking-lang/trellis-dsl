@@ -90,8 +90,8 @@ let forwardBackward = -- ... -> { alphaHat : [Map State Prob]
     let cFirst = mapFoldWithKey (lam acc. lam. lam prob. probAdd acc prob) 0.0
                  alphaTempFirst in
     let alphaHatFirst = mapMap (lam prob. probDiv prob cFirst) alphaTempFirst in
-    match forward [alphaHatFirst] [cFirst] inputs
-    with {c = c, alphaHat = alphaHat} then
+    let fwd : {alphaHat : [Map State Prob], c : [Prob]} = forward [alphaHatFirst] [cFirst] inputs in
+    match fwd with {c = c, alphaHat = alphaHat} then
       let betaHatLast = mapMapWithKey (lam. lam. probDiv 1.0 (last c)) stateMap in
       let betaHat = foldr (lam f. lam acc. f acc) [betaHatLast] (zipWith backward (init c) inputs) in
       {alphaHat = alphaHat, betaHat = betaHat, c = c}
@@ -100,6 +100,12 @@ let forwardBackward = -- ... -> { alphaHat : [Map State Prob]
 
 
 mexpr
+
+type ResultType = {
+  alphaHat : [Map State Prob],
+  betaHat : [Map State Prob],
+  c : [Prob]
+} in
 
 let eqProb = lam delta. lam l. lam r.
   (ltf (absf (subf l r)) delta)
@@ -121,11 +127,13 @@ let outputProbs = [
   [(1, 0.2), (2, 0.8)]
 ] in
 let outputProb = lam state. lam v.
-  match find (lam t. eqi v t.0) (get outputProbs state) with Some t then
+  match find (lam t : (State, Prob). eqi v t.0) (get outputProbs state) with Some t then
+    let t : (State, Prob) = t in
     t.1
   else error (join ["No key '", v, "' found"])
 in
-let result = forwardBackward
+
+let result : ResultType = forwardBackward
   subi
   (lam state. get predecessors state)
   (lam state. get successors state)
@@ -134,6 +142,12 @@ let result = forwardBackward
   states
   outputProb
   [1, 1, 2, 1, 1]
+in
+
+let eqOutput =
+  eqSeq (eqSeq (
+    lam l : (State, Prob). lam r : (State, Prob).
+      and (eqi l.0 r.0) (eqProb delta l.1 r.1)))
 in
 
 match result with {alphaHat = a, betaHat = b, c = c} then
@@ -155,21 +169,21 @@ match result with {alphaHat = a, betaHat = b, c = c} then
     [(0, 0.1907), (1, 0.8093)],
     [(0, 0.7308), (1, 0.2692)],
     [(0, 0.8673), (1, 0.1327)]
-  ] using eqSeq (eqSeq (lam l. lam r. and (eqi l.0 r.0) (eqProb delta l.1 r.1))) in
+  ] using eqOutput in
   utest map mapBindings (map normalize b) with [
     [(0, 0.5923), (1, 0.4077)],
     [(0, 0.3763), (1, 0.6237)],
     [(0, 0.6533), (1, 0.3467)],
     [(0, 0.6273), (1, 0.3727)],
     [(0, 0.5000), (1, 0.5000)]
-  ] using eqSeq (eqSeq (lam l. lam r. and (eqi l.0 r.0) (eqProb delta l.1 r.1))) in
+  ] using eqOutput in
   utest map mapBindings gamma with [
     [(0, 0.8673), (1, 0.1327)], -- f(0:1) b(1:5)
     [(0, 0.8204), (1, 0.1796)], -- f(0:2) b(2:5)
     [(0, 0.3075), (1, 0.6925)], -- f(0:3) b(3:5)
     [(0, 0.8204), (1, 0.1796)], -- f(0:4) b(4:5)
     [(0, 0.8673), (1, 0.1327)]  -- f(0:5) b(5:5)
-  ] using eqSeq (eqSeq (lam l. lam r. and (eqi l.0 r.0) (eqProb delta l.1 r.1))) in
+  ] using eqOutput in
   utest c with map (lam x. divf 1.0 x) [1.818, 1.565, 2.92, 2.158, 1.627]
   using eqSeq (eqProb delta) in
   ()
