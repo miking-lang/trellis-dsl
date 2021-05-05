@@ -2,6 +2,8 @@ include "common.mc"
 include "math.mc"
 include "string.mc"
 
+type ViterbiResult = {prob : LogProb, states : [State]}
+
 let mapInit : (k -> k -> Int) -> [k] -> (k -> v) -> Map k v = lam compare. lam keys. lam f.
   foldl (lam acc. lam k. mapInsert k (f k) acc) (mapEmpty compare) keys
 
@@ -72,7 +74,6 @@ let viterbi = -- ... -> {states : [State], prob : LogProb}
 
 mexpr
 
-type ViterbiResult = {prob : LogProb, states : [State]} in
 let compareViterbiResult = lam delta. lam l : ViterbiResult. lam r : ViterbiResult.
   match l with {states = lstates, prob = lprob} then
     match r with {states = rstates, prob = rprob} then
@@ -95,9 +96,8 @@ let outputProbs = [
   [('A', negf 1.737), ('C', negf 2.322), ('G', negf 2.322), ('T', negf 1.737)]
 ] in
 let outputProb = lam state. lam v.
-  match find (lam t : (State, LogProb). eqc v t.0) (get outputProbs state) with Some t then
-    let t : (State, LogProb) = t in
-    t.1
+  match find (lam t : (State, LogProb). eqc v t.0) (get outputProbs state) with Some (_, prob) then
+    prob
   else error (join ["No key '", v "' found"])
 in
 let inputs = ['G', 'G', 'C', 'A', 'C', 'T', 'G', 'A', 'A'] in
