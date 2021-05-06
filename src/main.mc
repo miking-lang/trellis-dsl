@@ -8,6 +8,8 @@ include "viterbi.mc"
 -- Always 4 bases?
 -- Initial probabilities?
 -- What are mapped reads?
+-- fakegenome and signals100_1_KTHDNA, should they be equal?
+-- Ending on layer > 1
 
 type State = {
   kmer : [a],
@@ -21,6 +23,8 @@ let compareStates = lam s1 : State. lam s2 : State.
   else cmp
 
 let eqStates = lam s1. lam s2. eqi (compareStates s1 s2) 0
+
+let log1 = 0.0
 
 -- predecssors
 -- d = 1 <- d \in {1,2}, any satisfying kmer
@@ -98,13 +102,13 @@ using (lam s1. lam s2.
          let s2 = sort compareStates s2 in
          eqSeq eqStates s1 s2)
 
-let stateToIndex = lam numInputs. lam baseToIndex : a -> Int. lam s : State.
+let stateToIndex = lam numBases. lam baseToIndex : a -> Int. lam s : State.
   foldl
     addi
     0
     (mapi
       (lam i. lam k.
-        let factor = floorfi (powf (int2float numInputs) i) in
+        let factor = floorfi (powf (int2float numBases) i) in
         muli (baseToIndex k) factor)
       s.kmer)
 
@@ -132,12 +136,12 @@ let model = parseModel (get argv 1) in
 let signals = parseSignals (get argv 2) in
 let bases = "ACGT" in
 let inputSignal : Signal = get signals 0 in
-let baseToIndex = lam input : Char.
-  if eqc input 'A' then 0
-  else if eqc input 'C' then 1
-  else if eqc input 'G' then 2
-  else if eqc input 'T' then 3
-  else error (join ["Invalid input character: ", [input]])
+let baseToIndex = lam base : Char.
+  if eqc base 'A' then 0
+  else if eqc base 'C' then 1
+  else if eqc base 'G' then 2
+  else if eqc base 'T' then 3
+  else error (join ["Invalid base character: ", [base]])
 in
 
 let result : ViterbiResult =
@@ -147,10 +151,23 @@ let result : ViterbiResult =
     (lam s1 : State. lam s2 : State.
       let stateIdx = stateToIndex (length bases) baseToIndex s1 in
       let baseIdx = baseToIndex (last s2.kmer) in
-      get (get model.transitionProbabilities baseIdx) stateIdx)
+      let baseProb = get (get model.transitionProbabilities baseIdx) stateIdx in
+      let durProb =
+        if eqi s1.layer 1 then
+          get model.duration (subi s2.layer 1)
+        else if eqi s1.layer model.dMax then
+          if eqi s2.layer model.dMax then
+            model.tailFactor
+          else if eqi s2.layer (subi model.dMax 1) then
+            model.tailFactorComp
+          else
+            error (join ["Invalid state transition from ", printState s1,
+                         " to ", printState s2])
+        else log1
+      in
+      probMul baseProb durProb)
     (initProbs (length bases))
     (states bases model.k model.dMax)
-    -- model.outputProbabilities
     (lam s : State. lam i : Int.
       let stateIndex = stateToIndex (length bases) baseToIndex s in
       get (get model.observationProbabilities i) stateIndex)

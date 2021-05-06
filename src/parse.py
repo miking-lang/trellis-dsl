@@ -6,15 +6,15 @@ def format_list(lst):
     ret = ",".join(["\"{x}\"".format(x=x) for x in lst])
     return "[" + ret + "]"
 
+def float2str(v):
+    if v == float("-inf"):
+        return "negf (divf 1.0 0.0)"
+    elif v < 0.0:
+        return "negf {}".format(-v)
+    else:
+        "{}".format(v)
 
 def floatList2str(data):
-    def float2str(v):
-        if v == float("-inf"):
-            return "negf (divf 1.0 0.0)"
-        elif v < 0.0:
-            return "negf {}".format(-v)
-        else:
-            return "{}".format(v)
     lst = map(float2str, data)
     s = ",".join(["{x}".format(x=x) for x in lst])
     return "[" + s + "]"
@@ -36,6 +36,7 @@ def read_model(model_path):
         D = f['Tables']['DurationProbabilities'].shape[0]
         tail_factor = f['Tables']['DurationProbabilities'].attrs['TailFactor']
         duration = f['Tables']['DurationProbabilities'][:]
+        # TODO: sum(duration) == 1 ?
         duration[-1] = duration[-1]*(1-tail_factor)
         middlek = int(kmer//2)
 
@@ -44,7 +45,8 @@ def read_model(model_path):
             'transitionProbabilities': floatListOfList2str(np.log(transition).tolist()),
             'k': kmer,
             'dMax': D,
-            'tailFactor': tail_factor,
+            'tailFactor': float2str(np.log(tail_factor)),
+            'tailFactorComp': float2str(np.log(1.0-tail_factor)),
             'duration': floatList2str(np.log(duration).tolist())}
 
 
@@ -58,6 +60,7 @@ def write_model(output_file, model):
         , k = {k}
         , dMax = {dMax}
         , tailFactor = {tailFactor}
+        , tailFactorComp = {tailFactorComp}
         , duration = {duration}
         }}
         """
@@ -67,6 +70,7 @@ def write_model(output_file, model):
                     k=model['k'],
                     dMax=model['dMax'],
                     tailFactor=model['tailFactor'],
+                    tailFactorComp=model['tailFactorComp'],
                     duration=model['duration'])
         )
 

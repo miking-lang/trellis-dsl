@@ -12,6 +12,7 @@ type ViterbiParams =
 , k : Int
 , dMax : Int
 , tailFactor : Float
+, tailFactorComp : Float
 }
 
 type Signal = {id : String, values : [Int]}
@@ -88,6 +89,7 @@ let parseModel : String -> ViterbiParams = lam filename.
     let k = _expr2int (mapFindWithExn "k" bindings) in
     let dMax = _expr2int (mapFindWithExn "dMax" bindings) in
     let tailFactor = _expr2float (mapFindWithExn "tailFactor" bindings) in
+    let tailFactorComp = _expr2float (mapFindWithExn "tailFactorComp" bindings) in
 
     { signalLevels = signalLevels
     , observationProbabilities = observationProbs
@@ -96,6 +98,7 @@ let parseModel : String -> ViterbiParams = lam filename.
     , k = k
     , dMax = dMax
     , tailFactor = tailFactor
+    , tailFactorComp = tailFactorComp
     }
 
   else error "Expected record"
