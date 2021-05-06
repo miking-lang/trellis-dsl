@@ -1,6 +1,7 @@
-include "string.mc"
+include "levenshtein.mc"
 include "map.mc"
 include "parse.mc"
+include "string.mc"
 include "viterbi.mc"
 
 -- TODO:
@@ -134,6 +135,7 @@ mexpr
 
 let model = parseModel (get argv 1) in
 let signals = parseSignals (get argv 2) in
+let reference = readFile (get argv 3) in
 let bases = "ACGT" in
 let inputSignal : Signal = get signals 0 in
 let baseToIndex = lam base : Char.
@@ -179,4 +181,5 @@ utest lastState.layer with 1 in
 
 -- printLn (join ["[\n", strJoin ",\n" (map printState result.states), "]"]);
 printLn (printStates result.states);
-printLn (float2string result.prob)
+printLn (float2string result.prob);
+printLn (int2string (levenshtein (printStates result.states) reference))
