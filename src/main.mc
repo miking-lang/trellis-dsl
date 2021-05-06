@@ -27,11 +27,6 @@ let eqStates = lam s1. lam s2. eqi (compareStates s1 s2) 0
 
 let log1 = 0.0
 
--- predecssors
--- d = 1 <- d \in {1,2}, any satisfying kmer
--- d = 2 <- d \in {1,3}, any satisfying kmer from 1
--- ...
--- d = D <- d \in {1,D}, any satisfying kmer
 let pred = lam inputs. lam numLayers : Int. lam s : State.
   let layer1 = {s with layer = 1} in
   concat
