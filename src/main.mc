@@ -11,6 +11,7 @@ include "viterbi.mc"
 -- What are mapped reads?
 -- fakegenome and signals100_1_KTHDNA, should they be equal?
 -- Ending on layer > 1
+-- BLAST score - divide by reference string or produced string?
 
 type State = {
   kmer : [a],
@@ -177,4 +178,7 @@ utest lastState.layer with 1 in
 -- printLn (join ["[\n", strJoin ",\n" (map printState result.states), "]"]);
 printLn (printStates result.states);
 printLn (float2string result.prob);
-printLn (int2string (levenshtein (printStates result.states) reference))
+
+let dist = levenshtein (printStates result.states) reference in
+let blast = subf 1.0 (divf (int2float dist) (int2float (length reference))) in
+printLn (float2string (blast))
