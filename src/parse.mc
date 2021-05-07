@@ -92,9 +92,7 @@ let parseModel : String -> ViterbiParams = lam filename.
   let parsed = parseMExprString [] str in
 
   match parsed with TmRecord {bindings = bindings} then
-    let bindings = mapBindings bindings in
-    let bindings = map (lam t : (SID, Expr). (sidToString t.0, t.1)) bindings in
-    let bindings : Map String Expr = mapFromList cmpString bindings in
+    let bindings = _mapSidToString bindings in
 
     let signalLevels = _expr2int (mapFindWithExn "signalLevels" bindings) in
     let observationProbs = _expr2floatSeqOfSeq (mapFindWithExn "observationProbabilities" bindings) in
@@ -123,9 +121,7 @@ let parseSignals : String -> [Signal] = lam filename.
   let parsed = parseMExprString [] str in
 
   match parsed with TmRecord {bindings = bindings} then
-    let bindings = mapBindings bindings in
-    let bindings = map (lam t : (SID, Expr). (sidToString t.0, t.1)) bindings in
-    let bindings : Map String Expr = mapFromList cmpString bindings in
+    let bindings = _mapSidToString bindings in
 
     let readKeys = _expr2strSeq (mapFindWithExn "keys" bindings) in
     let keys = map _readKey2Key readKeys in
