@@ -2,9 +2,11 @@ import numpy as np
 import h5py
 import argparse
 
+
 def format_list(lst):
     ret = ",".join(["\"{x}\"".format(x=x) for x in lst])
     return "[" + ret + "]"
+
 
 def float2str(v):
     if v == float("-inf"):
@@ -14,10 +16,12 @@ def float2str(v):
     else:
         "{}".format(v)
 
+
 def floatList2str(data):
     lst = map(float2str, data)
     s = ",".join(["{x}".format(x=x) for x in lst])
     return "[" + s + "]"
+
 
 def floatListOfList2str(data):
     return "[" + ",".join(map(floatList2str, data)) + "]"
@@ -81,6 +85,7 @@ def read_signal(signal_path):
         signals = [f[k]['Raw']['Signal'][:].tolist() for k in keys]
         return {'keys': keys, 'signals': signals}
 
+
 def write_signal(output_file, signals):
     with open(output_file, 'w') as out:
         out.write(
@@ -94,6 +99,26 @@ def write_signal(output_file, signals):
         )
 
 
+def read_reference(reference_path):
+    with h5py.File(reference_path, 'r') as f:
+        keys = list(f['Reads'].keys())
+        genomes = [f['Reads'][k]['Reference'][:].tolist() for k in keys]
+        return {'keys': keys, 'genomes': genomes}
+
+
+def write_reference(output_file, references):
+    with open(output_file, 'w') as out:
+        out.write(
+            """
+            {{ keys = {keys}
+            , genomes = {genomes}
+            }}
+            """
+            .format(keys=format_list(references['keys'][0:1]),
+                    genomes=references['genomes'][0:1])
+        )
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Convert Trellis fast 5 files into text files.')
@@ -103,6 +128,10 @@ if __name__ == '__main__':
     parser.add_argument(
         '--signal', help='filename of input signal in fast 5 format')
     parser.add_argument('--output-signal', help='filename of output signal')
+    parser.add_argument(
+        '--reference', help='filename of reference signal in fast 5 format')
+    parser.add_argument('--output-reference',
+                        help='filename of output reference signal')
 
     args = parser.parse_args()
 
@@ -111,3 +140,6 @@ if __name__ == '__main__':
 
     signals = read_signal(args.signal)
     write_signal(args.output_signal, signals)
+
+    references = read_reference(args.reference)
+    write_reference(args.output_reference, references)

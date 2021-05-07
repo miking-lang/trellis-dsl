@@ -17,6 +17,16 @@ type ViterbiParams =
 
 type Signal = {id : String, values : [Int]}
 
+type Reference = {id : String, genome : [Int]}
+
+let _readKey2Key = lam readKey.
+  let prefix = "read_" in
+  if isPrefix eqChar prefix readKey then
+    subsequence readKey (length prefix) (length readKey)
+  else error (concat "Unexpected key: " readKey)
+
+utest _readKey2Key "read_catitude200" with "catitude200"
+
 let _expr2int : Expr -> Int = use MExprAst in lam expr.
   match expr with TmConst {val = CInt {val = i}} then i
   else dprintLn expr; error "Expected integer"
@@ -72,6 +82,10 @@ utest _expr2strSeq (seq_ [str_ "Hello", str_ "World"]) with ["Hello", "World"]
 let _expr2intSeqOfSeq : Expr -> [[Int]] = _expr2seq (_expr2seq _expr2int)
 utest _expr2intSeqOfSeq (seq_ [seq_ [int_ 1, int_ 2], seq_ [int_ 3]]) with [[1,2],[3]]
 
+let _mapSidToString : Map SID a -> Map String a = lam m.
+  mapFromList cmpString (
+    map (lam t : (SID, a). (sidToString t.0, t.1)) (mapBindings m))
+
 let parseModel : String -> ViterbiParams = lam filename.
   use BootParser in
   let str = readFile filename in
@@ -113,11 +127,26 @@ let parseSignals : String -> [Signal] = lam filename.
     let bindings = map (lam t : (SID, Expr). (sidToString t.0, t.1)) bindings in
     let bindings : Map String Expr = mapFromList cmpString bindings in
 
-    let keys = _expr2strSeq (mapFindWithExn "keys" bindings) in
+    let readKeys = _expr2strSeq (mapFindWithExn "keys" bindings) in
+    let keys = map _readKey2Key readKeys in
     let signals = _expr2intSeqOfSeq (mapFindWithExn "signals" bindings) in
 
     zipWith (lam k. lam s. {id = k, values = s}) keys signals
 
+  else error "Expected record"
+
+let parseReferences : String -> [Reference] = lam filename.
+  use BootParser in
+  let str = readFile filename in
+  let parsed = parseMExprString [] str in
+
+  match parsed with TmRecord {bindings = bindings} then
+    let bindings = _mapSidToString bindings in
+
+    let keys = _expr2strSeq (mapFindWithExn "keys" bindings) in
+    let genomes = _expr2intSeqOfSeq (mapFindWithExn "genomes" bindings) in
+
+    zipWith (lam k. lam g. {id = k, genomes = g}) keys genomes
   else error "Expected record"
 
 mexpr
@@ -127,4 +156,8 @@ parseModel (get argv 1)
 
 dprintLn (
 parseSignals (get argv 2)
+);
+
+dprintLn (
+parseReferences (get argv 3)
 )
