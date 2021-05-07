@@ -149,7 +149,7 @@ let indexToBase = lam index : Int.
   match index with 0 then 'A'
   else match index with 1 then 'C'
   else match index with 2 then 'G'
-  else match index with 2 then 'T'
+  else match index with 3 then 'T'
   else error (join ["Invalid base index :", [index]])
 in
 
