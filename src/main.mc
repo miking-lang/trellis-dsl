@@ -131,39 +131,53 @@ mexpr
 
 let model = parseModel (get argv 1) in
 let signals = parseSignals (get argv 2) in
-let reference = readFile (get argv 3) in
+let references = parseReferences (get argv 3) in
 let bases = "ACGT" in
+
 let inputSignal : Signal = get signals 0 in
+let inputReference : Reference = get references 0 in
+
 let baseToIndex = lam base : Char.
-  if eqc base 'A' then 0
-  else if eqc base 'C' then 1
-  else if eqc base 'G' then 2
-  else if eqc base 'T' then 3
+  match base with 'A' then 0
+  else match base with 'C' then 1
+  else match base with 'G' then 2
+  else match base with 'T' then 3
   else error (join ["Invalid base character: ", [base]])
+in
+
+let indexToBase = lam index : Int.
+  match index with 0 then 'A'
+  else match index with 1 then 'C'
+  else match index with 2 then 'G'
+  else match index with 3 then 'T'
+  else error (join ["Invalid base index :", [index]])
+in
+
+let transitionProb = lam s1 : State. lam s2 : State.
+  let stateIdx = stateToIndex (length bases) baseToIndex s1 in
+  let baseIdx = baseToIndex (last s2.kmer) in
+  let baseProb = get (get model.transitionProbabilities baseIdx) stateIdx in
+  let durProb =
+    if eqi s1.layer 1 then
+      get model.duration (subi s2.layer 1)
+    else if eqi s1.layer model.dMax then
+      if eqi s2.layer model.dMax then
+        model.tailFactor
+      else if eqi s2.layer (subi model.dMax 1) then
+        model.tailFactorComp
+      else
+        error (join ["Invalid state transition from ", printState s1,
+                     " to ", printState s2])
+    else log1
+  in
+  probMul baseProb durProb
 in
 
 let result : ViterbiResult =
   viterbi
     compareStates
     (pred bases model.dMax)
-    (lam s1 : State. lam s2 : State.
-      let stateIdx = stateToIndex (length bases) baseToIndex s1 in
-      let baseIdx = baseToIndex (last s2.kmer) in
-      let baseProb = get (get model.transitionProbabilities baseIdx) stateIdx in
-      let durProb =
-        if eqi s1.layer 1 then
-          get model.duration (subi s2.layer 1)
-        else if eqi s1.layer model.dMax then
-          if eqi s2.layer model.dMax then
-            model.tailFactor
-          else if eqi s2.layer (subi model.dMax 1) then
-            model.tailFactorComp
-          else
-            error (join ["Invalid state transition from ", printState s1,
-                         " to ", printState s2])
-        else log1
-      in
-      probMul baseProb durProb)
+    transitionProb
     (initProbs (length bases))
     (states bases model.k model.dMax)
     (lam s : State. lam i : Int.
@@ -175,10 +189,13 @@ in
 let lastState : State = last result.states in
 utest lastState.layer with 1 in
 
+let referenceGenome = map indexToBase inputReference.genome in
+
 -- printLn (join ["[\n", strJoin ",\n" (map printState result.states), "]"]);
 printLn (printStates result.states);
 printLn (float2string result.prob);
 
-let dist = levenshtein (printStates result.states) reference in
-let blast = subf 1.0 (divf (int2float dist) (int2float (length reference))) in
+let dist = levenshtein (printStates result.states) referenceGenome in
+let blast = subf 1.0 (divf (int2float dist)
+                           (int2float (length referenceGenome))) in
 printLn (float2string (blast))
