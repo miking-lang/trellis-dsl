@@ -142,7 +142,7 @@ type Pat {
   grouping = "(" ")",
 }
 
-prod ConPat: Pat = con:UIdent ("(" (p:Pat ",")+ ")")?
+prod ConPat: Pat = c:UIdent ("(" (p:Pat ",")+ ")")?
 
 -- Defines a named pattern variable
 -- Example: 'foo'
@@ -277,7 +277,7 @@ type ModelDecl
 prod ModelDecl: Decl =
   "model" name:UIdent "=" mc:ModelComposition
   "{"
-    (in:InModelDecl ",")+
+    (indecl:InModelDecl ",")+
   "}"
 
 -- Below is copied from the syncon file, I don't entirely remember the intended
