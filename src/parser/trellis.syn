@@ -130,7 +130,7 @@ prod NamedSet: TrellisSet = name:LIdent
 -- a value set or a transition set, and give an error if mixed.
 -- Example (value set): {1, a}
 -- Example (transition set): { ! false -> true,  }
--- TODO: syntax for transition set
+-- TODO: syntax for transition set and labelled transitions
 prod SetLit: TrellisSet =
   "{"
     ((e:Expr | "!" (":" lbl:LIdent ":")? e:Expr "->" to:Expr) ",")*
@@ -193,7 +193,7 @@ type Type {
 
 -- Defines a type application
 postfix TypeApplication: Type =
-  "(" a:Type ("," a2:Type)* ")"
+  "(" a:Type ("," a:Type)* ")"
 
 -- Defines an array type
 postfix ArrayType: Type = "[" count:Expr "]"
@@ -229,7 +229,7 @@ type Expr {
 
 -- Operators
 postfix Application: Expr =
-  "(" (a:Expr ("," a2:Expr)*)? ")"
+  "(" (a:Expr ("," a:Expr)*)? ")"
 infix left Plus: Expr = "+"
 infix left Minus: Expr = "-"
 infix left MultipliedWith: Expr = "*"
@@ -314,7 +314,7 @@ type InModelDecl
 prod InferredFunction: InModelDecl =
   "table" f:LIdent
   "("
-    (p2:Type ",")*
+    (p:Type ",")*
   ")" (":" ret:Type)?
 
 -- The rhs using '=>' is only valid for transition probability
