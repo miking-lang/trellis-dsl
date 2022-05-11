@@ -1,0 +1,92 @@
+type Base {
+  A, T, C, G,
+}
+
+type Option(a){
+  Some(a), None,
+}
+
+automaton Nucleo5mer {
+  state: (Option(Base))[5],
+  transitions: {
+    ! [a, b, c, d, e, ] -> [b, c, d, e, Some(f),],
+  },
+  initial: {
+    [None, None, None, None, Some(x),],
+  },
+}
+
+automaton Duration {
+  state: 1 <= x <= 5,
+  transitions: {
+    ! x -> x-1,  # We silently discard edges connecting to invalid states
+    ! x+1 -> x,  # This is equivalent with the above (*)
+    ! 5 -> 5,    # If we don't use variables we get a single edge
+  },
+# initial defaults to all, i.e., "initial: {x},"
+# final is optional
+  final: {1,},
+}
+
+# (*) I'm not entirely sure if we want to do
+# this, we might want to limit the lhs to
+# simple patterns, but all this depends on how
+# we discover which states are actually reachable
+# and part of the automaton and whatnot.
+
+automaton Machine {
+  state: 1 <= x <= 4,
+  initial: {1,},
+  transitions: {
+    ! x -> x+1,
+    ! x -> x,
+    ! x -> x-1,
+  },
+  final: {4,},
+}
+
+# TODO(Linnea,2022-05-11): syntax of probabilities
+# # The right-hand side (before "{") describes
+# # the composition of automata that makes up
+# # the topology of the model.
+# # In this case we have an outer automaton
+# # (Nucleo5mer) and an inner (Duration). The
+# # inner model must have final states, which
+# # are the only states from which we can transition
+# # to a new state in the outer model.
+# model M = n:Nucleo5mer(d:Duration) {
+
+#   # This states that the output distribution of
+#   # a state depends on all available data
+#   P(output a) = P(output a | a.n, a.d)
+#   # Underscore means "repeat the thing we're
+#   # defining", in this case P(_ | a.n) is the
+#   # same as P(a -> b | a.n)
+
+#   P(output a) = P(_ | a.n, a.d)
+
+#   # This states that the probability of starting
+#   # in a given state depends on all data, but
+#   # with a bit less freedom; the probability
+#   # must be the product of starting in the given
+#   # base sequence and starting in the given
+#   # duration, which in context means that the
+#   # duration a given base will stay does not
+#   # depend on which base it is.
+#   P(initial b) = P(_ | b.n) * P(_ | b.d)
+
+#   # The transition probability has different
+#   # dependencies depending on if we're
+#   # transitioning inside a base sequence or
+#   # to a new one.
+#   P(a -> b) {
+#     | a.n == b.n = P(_ | a.n, a.d, b.d)
+#     | otherwise = P(_ | a.n, b.n) * P(initial b | b.d)
+#   }
+# }
+
+# The result of the dependencies here is primarily
+# how much data we must store; we only need
+# |Nucleo5mer|^2 + |Duration| numbers for
+# transitions instead of the complete
+# |Nucleo5mer|^2 * |Duration|.
