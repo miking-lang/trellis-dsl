@@ -4,11 +4,13 @@ lang TrellisSetTokenParser = TokenParser
   syn Token =
   | SetUnionTok {info : Info}
   | SetIntersectionTok {info : Info}
+  | SetMinusTok {info : Info}
   | SetInTok {info : Info}
   | SetNotinTok {info : Info}
   syn TokenRepr =
   | SetUnionRepr ()
   | SetIntersectionRepr ()
+  | SetMinusRepr ()
   | SetInRepr ()
   | SetNotinRepr ()
 
@@ -29,6 +31,10 @@ lang TrellisSetTokenParser = TokenParser
     let pos2 = advanceCol pos 7 in
     let info = makeInfo pos pos2 in
     {token = SetNotinTok {info = info}, lit = "\\notin", info = info, stream = {pos = pos2, str = str}}
+  | "\\setminus" ++ str ->
+    let pos2 = advanceCol pos 10 in
+    let info = makeInfo pos pos2 in
+    {token = SetMinusTok {info = info}, lit = "\\setminus", info = info, stream = {pos = pos2, str = str}}
 
 end
 

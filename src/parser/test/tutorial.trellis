@@ -35,7 +35,7 @@ automaton Trivial {
   final: { true, },
 
   # This declares the valid transitions.
-  transitions: { ! false -> true, },
+  transitions: { false -> true, },
 }
 
 automaton ExampleAutomaton {
@@ -50,19 +50,19 @@ automaton ExampleAutomaton {
   # "transitions". Can specify multiple expressions by separating them
   # with commas
   initial: {
-    @<A, 1, [Some(a), Some(b), Some(c),]>@,
-    @<B, x, y>@,
+    @(A, 1, [Some(a), Some(b), Some(c),]),
+    @(B, x, y),
   },
 
   final: {
-    @<A, 1, x>@,
-    @<B, 2, y>@,
+    @(A, 1, x),
+    @(B, 2, y),
   },
 
   transitions: {
-    ! @<A, x, y>@ -> @<B, x, y>@,
-    ! @<B, x, y>@ -> @<B, x+1, y>@,
-    ! :name: @<C, x, y>@ -> @<C, x, y>@,
+    @(A, x, y) -> @(B, x, y),
+    @(B, x, y) -> @(B, x+1, y),
+    ! name: @(C, x, y) -> @(C, x, y),
   },
   # Transitions may additionally be labelled. This has no semantic
   # effect, but may be used for querying the model later. Note that if
@@ -111,7 +111,7 @@ automaton ExampleAutomaton {
 automaton Nucleo3mer {
   state: Nucleotide[3],
   transitions: {
-    ! [a, b, c, ] -> [b, c, d, ],
+    [a, b, c, ] -> [b, c, d, ],
   },
 }
 
@@ -132,9 +132,9 @@ automaton Machine {
   initial: { 1, },
   final: { 4, },
   transitions: {
-    ! x -> x,
-    ! x -> x+1,
-    ! x -> x-1,
+    x -> x,
+    x -> x+1,
+    x -> x-1,
   },
 }
 

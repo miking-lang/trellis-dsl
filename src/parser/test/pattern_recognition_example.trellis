@@ -1,8 +1,8 @@
 automaton Rtl7 {
   state: 1 <= x <= 7,
   transitions: {
-    ! x -> x+1,
-    ! x -> x,
+    x -> x+1,
+    x -> x,
   },
   final: {7,},
   initial: {1,},

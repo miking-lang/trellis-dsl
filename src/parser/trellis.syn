@@ -122,30 +122,41 @@ infix left SetUnion: TrellisSet = "\\u"
 -- Defines an infix set intersection operator
 infix left SetIntersection: TrellisSet = "\\n"
 
+-- Defines an infix set minus operator
+infix left TrellisSetMinus: TrellisSet = "\\setminus"
+
 -- Defines a named set.
 -- Example: 'mySet'
 prod NamedSet: TrellisSet = name:LIdent
 
 -- Defines a set literal. A later pass over the AST needs to check whether it is
 -- a value set or a transition set, and give an error if mixed.
--- Example (value set): {1, a}
--- Example (transition set): { ! false -> true,  }
--- TODO: syntax for transition set and labelled transitions
+-- Example (value set): {1, a, }
+-- Example (transition set): { false -> true,  }
+-- TODO: syntax for labeled transitions
 prod SetLit: TrellisSet =
   "{"
-    ((e:Expr | "!" (":" lbl:LIdent ":")? e:Expr "->" to:Expr) ",")*
+    (("!" lbl:LIdent ":")? e:Expr ("->" to:Expr)? ",")*
   "}"
 
 -- Defines a set builder. A later pass over the AST needs to check whether it is
 -- a value set or a transition set builder.
--- Example (transition set builder): !{ @ x -> y | true }
--- TODO: syntax for transitions
+-- Example (transition set builder): !{ x -> y | true }
 prod SetBuilder: TrellisSet =
   "!" "{"
-     (p:Pat | "!" p:Pat "->" to:Pat)
+     (p:Pat ("->" to:Pat)?)
      "|"
      (e:Expr ",")*
    "}"
+
+
+-- Projection
+postfix SetProjection: TrellisSet = "." lbl:LIdent
+
+precedence {
+  SetProjection;
+  ~ SetUnion SetIntersection TrellisSetMinus;
+}
 
 --------------
 -- Patterns --
@@ -205,7 +216,7 @@ prod ConcreteType: Type = n:UIdent
 -- TODO: tuple syntax
 prod TupleType: Type = "<" t:Type ("," t:Type)+ ">"
 
--- Defines an integer type
+-- Defines an integer range type
 prod IntegerType: Type =
   --lb:Integer (".." ub:Integer)?
   lb:Integer ((".." ub:Integer) | ("<=" v:LIdent "<=" ub:Integer))?
@@ -251,6 +262,7 @@ infix In: Expr = "\\in"
 infix Notin: Expr = "\\notin"
 infix left Union: Expr = "\\u"
 infix left Intersection: Expr = "\\n"
+infix left SetMinus: Expr = "\\setminus"
 
 prod Output: Expr = "output"
 prod True: Expr = "true"
@@ -263,7 +275,7 @@ postfix SubSeq: Expr = "..."
 prod List: Expr = "[" (e:Expr ",")* "]"
 -- TODO: tuple syntax
 prod Tuple: Expr =
-  "@<" e:Expr ("," e:Expr)+ ">@"
+  "@" "(" e:Expr ("," e:Expr)+ ")"
 
 precedence {
   ProjectionAccess ArrayAccess Application;
@@ -279,7 +291,7 @@ precedence {
 
 precedence {
   ~ ProjectionAccess ArrayAccess Application;
-  Union;
+  ~ Union Intersection SetMinus;
   In Notin;
   ~ If And Or;
 } except {
@@ -325,6 +337,6 @@ prod Prob: InModelDecl =
     | transition:"transition" from:LIdent to:LIdent) ")"
     ( "=" e:Expr
     | /- "="? -- TODO: ll1 -/ "{"
-      ("|" automaton:LIdent "=>" e2:Expr)+
+      ("|" set:TrellisSet "=>" e2:Expr)+
       "}"
     )

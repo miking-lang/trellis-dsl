@@ -9,7 +9,7 @@ type Option(a){
 automaton Nucleo5mer {
   state: (Option(Base))[5],
   transitions: {
-    ! [a, b, c, d, e, ] -> [b, c, d, e, Some(f),],
+    [a, b, c, d, e, ] -> [b, c, d, e, Some(f),],
   },
   initial: {
     [None, None, None, None, Some(x),],
@@ -19,9 +19,9 @@ automaton Nucleo5mer {
 automaton Duration {
   state: 1 <= x <= 5,
   transitions: {
-    ! x -> x-1,  # We silently discard edges connecting to invalid states
-    ! x+1 -> x,  # This is equivalent with the above (*)
-    ! 5 -> 5,    # If we don't use variables we get a single edge
+    x -> x-1,  # We silently discard edges connecting to invalid states
+    x+1 -> x,  # This is equivalent with the above (*)
+    5 -> 5,    # If we don't use variables we get a single edge
   },
 # initial defaults to all, i.e., "initial: {x},"
 # final is optional
@@ -38,9 +38,9 @@ automaton Machine {
   state: 1 <= x <= 4,
   initial: {1,},
   transitions: {
-    ! x -> x+1,
-    ! x -> x,
-    ! x -> x-1,
+    x -> x+1,
+    x -> x,
+    x -> x-1,
   },
   final: {4,},
 }
