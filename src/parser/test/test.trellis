@@ -45,7 +45,7 @@ automaton Machine {
   final: {4,},
 }
 
-# TODO(Linnea,2022-05-11): syntax of probabilities
+# NOTE(Linnea,2022-05-11): probability syntax deprecated
 # # The right-hand side (before "{") describes
 # # the composition of automata that makes up
 # # the topology of the model.

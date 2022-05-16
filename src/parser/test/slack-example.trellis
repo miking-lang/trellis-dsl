@@ -6,21 +6,21 @@ let merlength = 5
 let maxduration = 16
 
 automaton Thing {
-  state: <Nucleotide[merlength], 1..16>,
-  initial: ! { x | true, },
-  inter: ! { <[a, as...,], 1> -> <[bs..., b,], k> | as = bs, },
-  down: ! { <x, k> -> <x2, k2> | x = x2, k2 = k - 1, },
-  max: ! { <x, n1> -> <x2, n2> | n1 = maxduration, n2 = maxduration, },
-  from_max: ! { <x, n1> -> <x2, n2> | n1 = maxduration, n2 = maxduration - 1, },
+  state: @(Nucleotide[merlength], 1..maxduration),
+  initial: @ { x | true, },
+  inter: @ { @([a, as...,], 1) -> @([bs..., b,], k) | as = bs, },
+  down: @ { @(x, k) -> @(x2, k2) | x = x2, k2 = k - 1, },
+  max: @ { @(x, n1) -> @(x2, n2) | n1 = maxduration, n2 = maxduration, },
+  from_max: @ { @(x, n1) -> @(x2, n2) | n1 = maxduration, n2 = maxduration - 1, },
   transitions: inter \u down \u max,
 }
 
 model M = s:Thing {
   table outputProb(Nucleotide[merlength], 1..1024,): Probability
-  table initialProb(Nucleotide[merlength], 1..16,): Probability
+  table initialProb(Nucleotide[merlength], 1..maxduration,): Probability
 
   table trans1(Nucleotide[merlength], Nucleotide[merlength],): Probability
-  table trans2(1..16,): Probability
+  table trans2(1..maxduration,): Probability
   table gamma(): Probability
 
   P(output | x) = outputProb(x.0, output)

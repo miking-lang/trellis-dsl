@@ -14,7 +14,7 @@ let merlength = 6
 # automata representing DNA sequence with 5mer states
 automaton DNA_mer {
  state: Nucleotide[merlength],
- intra_transitions: ! { [a, as..., ] -> [bs..., b, ] | as = bs, },
+ intra_transitions: @ { [a, as..., ] -> [bs..., b, ] | as = bs, },
 }
 
 # durations of Kmer staying in the pore
@@ -23,8 +23,8 @@ automaton Duration16 {
  # initial: all states #TODO: range choices
  # intra_transitions: { x -> y | y = x + 1 } \u { 16 -> 1 },
  initial: { 3, 4, },
- intra_transitions: ! { x -> y | true, },
- inter_transitions: ! { 1 -> x | 3 <= x && x <= 4, },
+ intra_transitions: @ { x -> y | true, },
+ inter_transitions: @ { 1 -> x | 3 <= x && x <= 4, },
 }
 
 # TODO: define the structure of 'output'/measurement

@@ -43,7 +43,7 @@ automaton ExampleAutomaton {
   # commas), integers (using ranges), fix length arrays (using
   # "T[n]"), user defined types (by name, applied to any needed
   # arguments)
-  state: <Example, 1..10, Option(Bool)[3]>,
+  state: @(Example, 1..10, Option(Bool)[3]),
 
   # Unbound identifiers (e.g. a, b, c, x, and y below) are implicitly
   # universally quantified in "initial", "final", and
@@ -62,7 +62,10 @@ automaton ExampleAutomaton {
   transitions: {
     @(A, x, y) -> @(B, x, y),
     @(B, x, y) -> @(B, x+1, y),
-    ! name: @(C, x, y) -> @(C, x, y),
+    # ! name: @(C, x, y) -> @(C, x, y),
+    @(C, x, y) -> @(C, x, y),
+    # NOTE(Linnea,2022-05-16): labelling syntax deprecated, as transitions
+    # can be constructed as union of individual named sets.
   },
   # Transitions may additionally be labelled. This has no semantic
   # effect, but may be used for querying the model later. Note that if
@@ -75,7 +78,7 @@ automaton ExampleAutomaton {
 # various probabilities may depend on. Note that this does not assign
 # probabilities, merely what they may be conditional on.
 
-# TODO(Linnea,2022-05-11): syntax of probabilities
+# NOTE(Linnea,2022-05-11): probability syntax deprecated
 # # On the right-hand side of the "=" is the
 # # composition. "name:Automaton" specifies that "Automaton" is a part
 # # of the composition, and gives access to its state through
@@ -138,7 +141,7 @@ automaton Machine {
   },
 }
 
-# TODO(Linnea,2022-05-11): syntax of probabilities
+# NOTE(Linnea,2022-05-11): probability syntax deprecated
 # model M = outer:Nucleo3mer(inner:Machine) {
 #   P(output x) = P(_ | x.outer, classify(x.inner))
 #   P(initial x) = P(_ | x.outer, x.inner)

@@ -133,17 +133,16 @@ prod NamedSet: TrellisSet = name:LIdent
 -- a value set or a transition set, and give an error if mixed.
 -- Example (value set): {1, a, }
 -- Example (transition set): { false -> true,  }
--- TODO: syntax for labeled transitions
 prod SetLit: TrellisSet =
   "{"
-    (("!" lbl:LIdent ":")? e:Expr ("->" to:Expr)? ",")*
+    (e:Expr ("->" to:Expr)? ",")*
   "}"
 
 -- Defines a set builder. A later pass over the AST needs to check whether it is
 -- a value set or a transition set builder.
--- Example (transition set builder): !{ x -> y | true }
+-- Example (transition set builder): @{ x -> y | true }
 prod SetBuilder: TrellisSet =
-  "!" "{"
+  "@" "{"
      (p:Pat ("->" to:Pat)?)
      "|"
      (e:Expr ",")*
@@ -183,9 +182,8 @@ prod ArrayPat: Pat =
 
 -- Defines a tuple pattern
 -- Example '(foo, [a])'
--- TODO: tuple syntax
 prod TupPat: Pat =
-  "<" p:Pat ("," p:Pat)+ ">"
+  "@" "(" p:Pat ("," p:Pat)+ ")"
 
 -- Defines an integer pattern
 prod IntPat: Pat = i:Integer
@@ -213,13 +211,11 @@ postfix ArrayType: Type = "[" count:Expr "]"
 prod ConcreteType: Type = n:UIdent
 
 -- Defines a tuple type
--- TODO: tuple syntax
-prod TupleType: Type = "<" t:Type ("," t:Type)+ ">"
+prod TupleType: Type = "@" "(" t:Type ("," t:Type)+ ")"
 
 -- Defines an integer range type
 prod IntegerType: Type =
-  --lb:Integer (".." ub:Integer)?
-  lb:Integer ((".." ub:Integer) | ("<=" v:LIdent "<=" ub:Integer))?
+  lb:Integer ((".." (ub:Integer | namedUb:LIdent)) | ("<=" v:LIdent "<=" ub:Integer))?
 
 -- Defines a Boolean type
 prod BoolType: Type = bool:"Bool"
@@ -273,7 +269,6 @@ prod Integer: Expr = i:Integer
 -- May only be used inside a List
 postfix SubSeq: Expr = "..."
 prod List: Expr = "[" (e:Expr ",")* "]"
--- TODO: tuple syntax
 prod Tuple: Expr =
   "@" "(" e:Expr ("," e:Expr)+ ")"
 
@@ -316,10 +311,11 @@ prod ModelAtom: ModelComposition =
   name:LIdent ":" automaton:UIdent
 postfix ModelNesting: ModelComposition =
   "(" mc:ModelComposition ")"
-prod FastStepAutomatonPre: ModelComposition =
-  n:Integer "*"
-postfix FastStepAutomatonPost: ModelComposition =
-  "*" n:Integer
+-- TODO(Linnea,2022-05-16): deprecated?
+-- prod FastStepAutomatonPre: ModelComposition =
+--   n:Integer "*"
+-- postfix FastStepAutomatonPost: ModelComposition =
+--   "*" n:Integer
 
 type InModelDecl
 
@@ -336,7 +332,7 @@ prod Prob: InModelDecl =
     | initial:"initial" s:LIdent
     | transition:"transition" from:LIdent to:LIdent) ")"
     ( "=" e:Expr
-    | /- "="? -- TODO: ll1 -/ "{"
+    | /- "="? -- TODO(Linnea,2022-05-16): ll1 conflict -/ "{"
       ("|" set:TrellisSet "=>" e2:Expr)+
       "}"
     )
