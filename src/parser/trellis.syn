@@ -1,0 +1,338 @@
+language Trellis
+
+include "trellis-lexer.mc"
+
+------------
+-- Tokens --
+------------
+
+-- Basic tokens
+token LIdent {
+  repr = LIdentRepr {},
+  constructor = LIdentTok,
+  fragment = LIdentTokenParser,
+  ty = String,
+}
+token UIdent {
+  repr = UIdentRepr {},
+  constructor = UIdentTok,
+  fragment = UIdentTokenParser,
+  ty = String,
+}
+token Integer {
+  repr = IntRepr {},
+  constructor = IntTok,
+  fragment = UIntTokenParser,
+  ty = Int,
+}
+
+-- Wrapping tokens that just change the type in the AST
+token UName {
+  base = UIdent,
+  wrap = nameNoSym,
+  ty = Name,
+}
+token LName {
+  base = LIdent,
+  wrap = nameNoSym,
+  ty = Name,
+}
+
+-- Token types only used through literals
+token {fragment = OperatorTokenParser,}
+token {fragment = CommaTokenParser,}
+token {fragment = BracketTokenParser,}
+token {fragment = TrellisSetTokenParser,}
+token {fragment = TrellisDotsTokenParser,}
+
+-- Whitespace and comments
+token {fragment = TrellisLineCommentParser,}
+token {fragment = WhitespaceParser,}
+
+----------------------------
+-- Top-level declarations --
+----------------------------
+
+start Top
+
+type Top
+type Decl
+type ConstrDecl
+type AutomatonProp
+type Param
+
+prod Top: Top = d:Decl*
+
+-- Defines a constructor declaration production.
+-- Examples: 'Foo (foo, bar)', 'A'
+-- Counter example: 'A ()'
+prod ConstrDecl: ConstrDecl =
+  vName:UIdent ("(" param:LIdent ("," param:LIdent)* ")")?
+
+-- Defines a type declaration production.
+-- Example: 'type MyType (foo, bar) {Foo (foo, bar), A, }'
+prod TypeDecl : Decl =
+  "type" name:UIdent ("(" param:LIdent ("," param:LIdent)* ")")?
+  "{"
+    (v:ConstrDecl ",")*
+  "}"
+
+-- Defines an automaton declaration
+-- Example: 'automaton MyAutomaton {_, }'
+prod AutomatonDecl: Decl =
+  "automaton" name:UIdent
+  "{"
+    (prop:AutomatonProp ",")*
+  "}"
+
+-- Defines a parameter
+-- Example: 'foo : _'
+prod Param: Param = n:LIdent ":" ty:Type
+
+-- Defines a function declaration.
+-- Example: 'let myFun(foo:_) : _ = _'
+prod FuncDecl: Decl =
+  "let" fname:LIdent
+  ("(" p:Param ("," p:Param)* ")")?
+  (":" ty:Type)?
+  "=" e:Expr
+
+----------------------------
+-- Properties in automata --
+----------------------------
+
+-- Defines a state property.
+prod StateProp: AutomatonProp =
+  "state" ":" ty:Type
+
+prod SetProp: AutomatonProp =
+  (name:LIdent | initial:"initial") ":" s:TrellisSet
+
+----------
+-- Sets --
+----------
+
+type TrellisSet {
+  grouping = "(" ")",
+}
+
+-- Defines an infix set union operator
+infix left SetUnion: TrellisSet = "\\u"
+
+-- Defines an infix set intersection operator
+infix left SetIntersection: TrellisSet = "\\n"
+
+-- Defines an infix set minus operator
+infix left TrellisSetMinus: TrellisSet = "\\setminus"
+
+-- Defines a named set.
+-- Example: 'mySet'
+prod NamedSet: TrellisSet = name:LIdent
+
+-- Defines a set literal. A later pass over the AST needs to check whether it is
+-- a value set or a transition set, and give an error if mixed.
+-- Example (value set): {1, a, }
+-- Example (transition set): { false -> true,  }
+prod SetLit: TrellisSet =
+  "{"
+    (e:Expr ("->" to:Expr)? ",")*
+  "}"
+
+-- Defines a set builder. A later pass over the AST needs to check whether it is
+-- a value set or a transition set builder.
+-- Example (transition set builder): @{ x -> y | true }
+prod SetBuilder: TrellisSet =
+  "@" "{"
+     (p:Pat ("->" to:Pat)?)
+     "|"
+     (e:Expr ",")*
+   "}"
+
+
+-- Projection
+postfix SetProjection: TrellisSet = "." lbl:LIdent
+
+precedence {
+  SetProjection;
+  ~ SetUnion SetIntersection TrellisSetMinus;
+}
+
+--------------
+-- Patterns --
+--------------
+
+type Pat {
+  grouping = "(" ")",
+}
+
+prod ConPat: Pat = c:UIdent ("(" (p:Pat ",")+ ")")?
+
+-- Defines a named pattern variable
+-- Example: 'foo'
+prod VarPat: Pat = id:LIdent
+
+-- Defines a wildcard pattern
+prod WildPat: Pat = "_"
+
+-- Only allowed in an ArrayPat
+postfix DotsPat: Pat = "..."
+
+prod ArrayPat: Pat =
+  "[" (p:Pat ",")* "]"
+
+-- Defines a tuple pattern
+-- Example '(foo, [a])'
+prod TupPat: Pat =
+  "@" "(" p:Pat ("," p:Pat)+ ")"
+
+-- Defines an integer pattern
+prod IntPat: Pat = i:Integer
+
+-- Defines Boolean patterns
+prod TruePat: Pat = "true"
+prod FalsePat: Pat = "false"
+
+-----------------------
+-- Normal data types --
+-----------------------
+
+type Type {
+  grouping = "(" ")",
+}
+
+-- Defines a type application
+postfix TypeApplication: Type =
+  "(" a:Type ("," a:Type)* ")"
+
+-- Defines an array type
+postfix ArrayType: Type = "[" count:Expr "]"
+
+-- Defines a concrete type
+prod ConcreteType: Type = n:UIdent
+
+-- Defines a tuple type
+prod TupleType: Type = "@" "(" t:Type ("," t:Type)+ ")"
+
+-- Defines an integer range type
+prod IntegerType: Type =
+  lb:Integer ((".." (ub:Integer | namedUb:LIdent)) | ("<=" v:LIdent "<=" ub:Integer))?
+
+-- Defines a Boolean type
+prod BoolType: Type = bool:"Bool"
+
+-- Defines an integer type
+prod IntType: Type = int:"Int"
+
+-- Defines an automaton state type
+prod AutomatonState: Type = automaton:LIdent "." "state"
+
+-----------------
+-- Expressions --
+-----------------
+
+type Expr {
+  grouping = "(" ")",
+}
+
+-- Operators
+postfix Application: Expr =
+  "(" (a:Expr ("," a:Expr)*)? ")"
+infix left Plus: Expr = "+"
+infix left Minus: Expr = "-"
+infix left MultipliedWith: Expr = "*"
+infix left DividedBy: Expr = "/"
+-- Either a nested access or a tuple access
+postfix ProjectionAccess: Expr = "." (label:LIdent | count:Integer)
+infix Equal: Expr = ("=" | "==")
+infix NotEqual: Expr = ("/=" | "!=")
+infix LessThan: Expr = "<"
+infix GreaterThan: Expr = ">"
+infix LessThanOrEqual: Expr = "<="
+infix GreaterThanOrEqual: Expr = ">="
+infix left And: Expr = "&&"
+infix left Or: Expr = "||"
+postfix ArrayAccess: Expr = "[" e:Expr "]"
+prefix If: Expr =
+  "if" c:Expr "then" e:Expr "else"
+infix In: Expr = "\\in"
+infix Notin: Expr = "\\notin"
+infix left Union: Expr = "\\u"
+infix left Intersection: Expr = "\\n"
+infix left SetMinus: Expr = "\\setminus"
+
+prod Output: Expr = "output"
+prod True: Expr = "true"
+prod False: Expr = "false"
+prod Variable: Expr = v:LName
+prod Constructor: Expr = c:UName
+prod Integer: Expr = i:Integer
+-- May only be used inside a List
+postfix SubSeq: Expr = "..."
+prod List: Expr = "[" (e:Expr ",")* "]"
+prod Tuple: Expr =
+  "@" "(" e:Expr ("," e:Expr)+ ")"
+
+precedence {
+  ProjectionAccess ArrayAccess Application;
+  MultipliedWith DividedBy;
+  Plus Minus;
+  ~ Equal NotEqual LessThan GreaterThan LessThanOrEqual GreaterThanOrEqual;
+  And Or;
+  If;
+} except {
+  MultipliedWith ? DividedBy;
+  And ? Or;
+}
+
+precedence {
+  ~ ProjectionAccess ArrayAccess Application;
+  ~ Union Intersection SetMinus;
+  In Notin;
+  ~ If And Or;
+} except {
+  ProjectionAccess ArrayAccess Application ? If And Or;
+}
+
+----------------------
+-- MODEL DEFINITION --
+----------------------
+
+prod ModelDecl: Decl =
+  "model" name:UIdent "=" mc:ModelComposition
+  "{"
+    (indecl:InModelDecl)+
+  "}"
+
+type ModelComposition {
+  grouping = "(" ")",
+}
+
+prod ModelAtom: ModelComposition =
+  name:LIdent ":" automaton:UIdent
+postfix ModelNesting: ModelComposition =
+  "(" mc:ModelComposition ")"
+-- TODO(Linnea,2022-05-16): deprecated?
+-- prod FastStepAutomatonPre: ModelComposition =
+--   n:Integer "*"
+-- postfix FastStepAutomatonPost: ModelComposition =
+--   "*" n:Integer
+
+type InModelDecl
+
+prod InferredFunction: InModelDecl =
+  "table" f:LIdent
+  "("
+    (p:Type ",")*
+  ")" (":" ret:Type)?
+
+-- The rhs using '=>' is only valid for transition probability
+prod Prob: InModelDecl =
+  "P" "("
+    ( output:"output" "|" s:LIdent
+    | initial:"initial" s:LIdent
+    | transition:"transition" from:LIdent to:LIdent) ")"
+    ( "=" e:Expr
+    | /- "="? -- TODO(Linnea,2022-05-16): ll1 conflict -/ "{"
+      ("|" set:TrellisSet "=>" e2:Expr)+
+      "}"
+    )
