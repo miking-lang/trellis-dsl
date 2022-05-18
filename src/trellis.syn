@@ -42,7 +42,7 @@ token LName {
 token {fragment = OperatorTokenParser,}
 token {fragment = CommaTokenParser,}
 token {fragment = BracketTokenParser,}
-token {fragment = TrellisSetTokenParser,}
+token {fragment = TSetTokenParser,}
 token {fragment = TrellisDotsTokenParser,}
 
 -- Whitespace and comments
@@ -106,34 +106,34 @@ prod StateProp: AutomatonProp =
   "state" ":" ty:Type
 
 prod SetProp: AutomatonProp =
-  (name:LIdent | initial:"initial") ":" s:TrellisSet
+  (name:LIdent | initial:"initial") ":" s:TSet
 
 ----------
 -- Sets --
 ----------
 
-type TrellisSet {
+type TSet {
   grouping = "(" ")",
 }
 
 -- Defines an infix set union operator
-infix left SetUnion: TrellisSet = "\\u"
+infix left SetUnion: TSet = "\\u"
 
 -- Defines an infix set intersection operator
-infix left SetIntersection: TrellisSet = "\\n"
+infix left SetIntersection: TSet = "\\n"
 
 -- Defines an infix set minus operator
-infix left TrellisSetMinus: TrellisSet = "\\setminus"
+infix left TSetMinus: TSet = "\\setminus"
 
 -- Defines a named set.
 -- Example: 'mySet'
-prod NamedSet: TrellisSet = name:LIdent
+prod NamedSet: TSet = name:LIdent
 
 -- Defines a set literal. A later pass over the AST needs to check whether it is
 -- a value set or a transition set, and give an error if mixed.
 -- Example (value set): {1, a, }
 -- Example (transition set): { false -> true,  }
-prod SetLit: TrellisSet =
+prod SetLit: TSet =
   "{"
     (e:Expr ("->" to:Expr)? ",")*
   "}"
@@ -141,7 +141,7 @@ prod SetLit: TrellisSet =
 -- Defines a set builder. A later pass over the AST needs to check whether it is
 -- a value set or a transition set builder.
 -- Example (transition set builder): @{ x -> y | true }
-prod SetBuilder: TrellisSet =
+prod SetBuilder: TSet =
   "@" "{"
      (p:Pat ("->" to:Pat)?)
      "|"
@@ -150,11 +150,11 @@ prod SetBuilder: TrellisSet =
 
 
 -- Projection
-postfix SetProjection: TrellisSet = "." lbl:LIdent
+postfix SetProjection: TSet = "." lbl:LIdent
 
 precedence {
   SetProjection;
-  ~ SetUnion SetIntersection TrellisSetMinus;
+  ~ SetUnion SetIntersection TSetMinus;
 }
 
 --------------
@@ -215,7 +215,7 @@ prod TupleType: Type = "@" "(" t:Type ("," t:Type)+ ")"
 
 -- Defines an integer range type
 prod IntegerType: Type =
-  lb:Integer ((".." (ub:Integer | namedUb:LIdent)) | ("<=" v:LIdent "<=" ub:Integer))?
+  lb:Integer ((".." (ub:Integer | namedUb:LIdent)) | ("<=" v:LIdent "<=" (ub:Integer | namedUb:LIdent)))?
 
 -- Defines a Boolean type
 prod BoolType: Type = bool:"Bool"
@@ -268,7 +268,7 @@ prod Constructor: Expr = c:UName
 prod Integer: Expr = i:Integer
 -- May only be used inside a List
 postfix SubSeq: Expr = "..."
-prod List: Expr = "[" (e:Expr ",")* "]"
+prod Array: Expr = "[" (e:Expr ",")* "]"
 prod Tuple: Expr =
   "@" "(" e:Expr ("," e:Expr)+ ")"
 
@@ -333,6 +333,6 @@ prod Prob: InModelDecl =
     | transition:"transition" from:LIdent to:LIdent) ")"
     ( "=" e:Expr
     | /- "="? -- TODO(Linnea,2022-05-16): ll1 conflict -/ "{"
-      ("|" set:TrellisSet "=>" e2:Expr)+
+      ("|" set:TSet "=>" e2:Expr)+
       "}"
     )

@@ -1,6 +1,7 @@
 
 include "trellis.mc"
 include "trellis-arg.mc"
+include "enumerate-states.mc"
 
 mexpr
 
