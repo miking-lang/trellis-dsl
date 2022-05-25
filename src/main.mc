@@ -13,11 +13,13 @@ match result with ParseOK r then
   if neqi (length r.strings) 1 then
     -- No, print the menu and exit
     print (menu ());
-    exit 1
+    exit 0
   else
     -- Yes, read and parse the file
     let filename = head r.strings in
     let ast = parseTrellisExn filename (readFile filename) in
+
+    dprintLn ast;
 
     ast
 else

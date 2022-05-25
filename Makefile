@@ -18,9 +18,11 @@ build/${main_name}: $(shell find . -name "*.mc") src/trellis.syn src/trellis.mc
 	cp ${main_name} build/${main_name}
 	rm ${main_name}
 
+examples: build/${main_name}
+	@$(MAKE) -s -f examples.mk all
+
 test: build/${main_name}
 	@$(MAKE) -s -f test.mk all
-
 
 clean:
 	rm -rf build
