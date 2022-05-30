@@ -87,15 +87,15 @@ prod AutomatonDecl: Decl =
 
 -- Defines a parameter
 -- Example: 'foo : _'
-prod Param: Param = n:LIdent ":" ty:Type
+prod Param: Param = n:LIdent ":" ty:TypeT
 
 -- Defines a function declaration.
 -- Example: 'let myFun(foo:_) : _ = _'
 prod FuncDecl: Decl =
   "let" fname:LIdent
   ("(" p:Param ("," p:Param)* ")")?
-  (":" ty:Type)?
-  "=" e:Expr
+  (":" ty:TypeT)?
+  "=" e:ExprT
 
 ----------------------------
 -- Properties in automata --
@@ -103,7 +103,7 @@ prod FuncDecl: Decl =
 
 -- Defines a state property.
 prod StateProp: AutomatonProp =
-  "state" ":" ty:Type
+  "state" ":" ty:TypeT
 
 prod SetProp: AutomatonProp =
   (name:LIdent | initial:"initial") ":" s:TSet
@@ -135,7 +135,7 @@ prod NamedSet: TSet = name:LIdent
 -- Example (transition set): { false -> true,  }
 prod SetLit: TSet =
   "{"
-    (e:Expr ("->" to:Expr)? ",")*
+    (e:ExprT ("->" to:ExprT)? ",")*
   "}"
 
 -- Defines a set builder. A later pass over the AST needs to check whether it is
@@ -143,9 +143,9 @@ prod SetLit: TSet =
 -- Example (transition set builder): @{ x -> y | true }
 prod SetBuilder: TSet =
   "@" "{"
-     (p:Pat ("->" to:Pat)?)
+     (p:PatT ("->" to:PatT)?)
      "|"
-     (e:Expr ",")*
+     (e:ExprT ",")*
    "}"
 
 
@@ -161,116 +161,116 @@ precedence {
 -- Patterns --
 --------------
 
-type Pat {
+type PatT {
   grouping = "(" ")",
 }
 
-prod ConPat: Pat = c:UIdent ("(" (p:Pat ",")+ ")")?
+prod ConPat: PatT = c:UIdent ("(" (p:PatT ",")+ ")")?
 
 -- Defines a named pattern variable
 -- Example: 'foo'
-prod VarPat: Pat = id:LIdent
+prod VarPat: PatT = id:LIdent
 
 -- Defines a wildcard pattern
-prod WildPat: Pat = "_"
+prod WildPat: PatT = "_"
 
 -- Only allowed in an ArrayPat
-postfix DotsPat: Pat = "..."
+postfix DotsPat: PatT = "..."
 
-prod ArrayPat: Pat =
-  "[" (p:Pat ",")* "]"
+prod ArrayPat: PatT =
+  "[" (p:PatT ",")* "]"
 
 -- Defines a tuple pattern
 -- Example '(foo, [a])'
-prod TupPat: Pat =
-  "@" "(" p:Pat ("," p:Pat)+ ")"
+prod TupPat: PatT =
+  "@" "(" p:PatT ("," p:PatT)+ ")"
 
 -- Defines an integer pattern
-prod IntPat: Pat = i:Integer
+prod IntPat: PatT = i:Integer
 
 -- Defines Boolean patterns
-prod TruePat: Pat = "true"
-prod FalsePat: Pat = "false"
+prod TruePat: PatT = "true"
+prod FalsePat: PatT = "false"
 
------------------------
+-----------------------Integer
 -- Normal data types --
 -----------------------
 
-type Type {
+type TypeT {
   grouping = "(" ")",
 }
 
 -- Defines a type application
-postfix TypeApplication: Type =
-  "(" a:Type ("," a:Type)* ")"
+postfix TypeApplication: TypeT =
+  "(" a:TypeT ("," a:TypeT)* ")"
 
 -- Defines an array type
-postfix ArrayType: Type = "[" count:Expr "]"
+postfix ArrayTypeT: TypeT = "[" count:ExprT "]"
 
 -- Defines a concrete type
-prod ConcreteType: Type = n:UIdent
+prod ConcreteTypeT: TypeT = n:UIdent
 
 -- Defines a tuple type
-prod TupleType: Type = "@" "(" t:Type ("," t:Type)+ ")"
+prod TupleTypeT: TypeT = "@" "(" t:TypeT ("," t:TypeT)+ ")"
 
 -- Defines an integer range type
-prod IntegerType: Type =
+prod IntegerTypeT: TypeT =
   lb:Integer ((".." (ub:Integer | namedUb:LIdent)) | ("<=" v:LIdent "<=" (ub:Integer | namedUb:LIdent)))?
 
 -- Defines a Boolean type
-prod BoolType: Type = bool:"Bool"
+prod BoolTypeT: TypeT = bool:"Bool"
 
 -- Defines an integer type
-prod IntType: Type = int:"Int"
+prod IntTypeT: TypeT = int:"Int"
 
 -- Defines an automaton state type
-prod AutomatonState: Type = automaton:LIdent "." "state"
+prod AutomatonState: TypeT = automaton:LIdent "." "state"
 
 -----------------
 -- Expressions --
 -----------------
 
-type Expr {
+type ExprT {
   grouping = "(" ")",
 }
 
 -- Operators
-postfix Application: Expr =
-  "(" (a:Expr ("," a:Expr)*)? ")"
-infix left Plus: Expr = "+"
-infix left Minus: Expr = "-"
-infix left MultipliedWith: Expr = "*"
-infix left DividedBy: Expr = "/"
+postfix Application: ExprT =
+  "(" (a:ExprT ("," a:ExprT)*)? ")"
+infix left Plus: ExprT = "+"
+infix left Minus: ExprT = "-"
+infix left MultipliedWith: ExprT = "*"
+infix left DividedBy: ExprT = "/"
 -- Either a nested access or a tuple access
-postfix ProjectionAccess: Expr = "." (label:LIdent | count:Integer)
-infix Equal: Expr = ("=" | "==")
-infix NotEqual: Expr = ("/=" | "!=")
-infix LessThan: Expr = "<"
-infix GreaterThan: Expr = ">"
-infix LessThanOrEqual: Expr = "<="
-infix GreaterThanOrEqual: Expr = ">="
-infix left And: Expr = "&&"
-infix left Or: Expr = "||"
-postfix ArrayAccess: Expr = "[" e:Expr "]"
-prefix If: Expr =
-  "if" c:Expr "then" e:Expr "else"
-infix In: Expr = "\\in"
-infix Notin: Expr = "\\notin"
-infix left Union: Expr = "\\u"
-infix left Intersection: Expr = "\\n"
-infix left SetMinus: Expr = "\\setminus"
+postfix ProjectionAccess: ExprT = "." (label:LIdent | count:Integer)
+infix Equal: ExprT = ("=" | "==")
+infix NotEqual: ExprT = ("/=" | "!=")
+infix LessThan: ExprT = "<"
+infix GreaterThan: ExprT = ">"
+infix LessThanOrEqual: ExprT = "<="
+infix GreaterThanOrEqual: ExprT = ">="
+infix left And: ExprT = "&&"
+infix left Or: ExprT = "||"
+postfix ArrayAccess: ExprT = "[" e:ExprT "]"
+prefix If: ExprT =
+  "if" c:ExprT "then" e:ExprT "else"
+infix In: ExprT = "\\in"
+infix Notin: ExprT = "\\notin"
+infix left Union: ExprT = "\\u"
+infix left Intersection: ExprT = "\\n"
+infix left SetMinus: ExprT = "\\setminus"
 
-prod Output: Expr = "output"
-prod True: Expr = "true"
-prod False: Expr = "false"
-prod Variable: Expr = v:LName
-prod Constructor: Expr = c:UName
-prod Integer: Expr = i:Integer
+prod Output: ExprT = "output"
+prod True: ExprT = "true"
+prod False: ExprT = "false"
+prod Variable: ExprT = v:LName
+prod Constructor: ExprT = c:UName
+prod Integer: ExprT = i:Integer
 -- May only be used inside a List
-postfix SubSeq: Expr = "..."
-prod Array: Expr = "[" (e:Expr ",")* "]"
-prod Tuple: Expr =
-  "@" "(" e:Expr ("," e:Expr)+ ")"
+postfix SubSeq: ExprT = "..."
+prod Array: ExprT = "[" (e:ExprT ",")* "]"
+prod Tuple: ExprT =
+  "@" "(" e:ExprT ("," e:ExprT)+ ")"
 
 precedence {
   ProjectionAccess ArrayAccess Application;
@@ -322,8 +322,8 @@ type InModelDecl
 prod InferredFunction: InModelDecl =
   "table" f:LIdent
   "("
-    (p:Type ",")*
-  ")" (":" ret:Type)?
+    (p:TypeT ",")*
+  ")" (":" ret:TypeT)?
 
 -- The rhs using '=>' is only valid for transition probability
 prod Prob: InModelDecl =
@@ -331,8 +331,8 @@ prod Prob: InModelDecl =
     ( output:"output" "|" s:LIdent
     | initial:"initial" s:LIdent
     | transition:"transition" from:LIdent to:LIdent) ")"
-    ( "=" e:Expr
+    ( "=" e:ExprT
     | /- "="? -- TODO(Linnea,2022-05-16): ll1 conflict -/ "{"
-      ("|" set:TSet "=>" e2:Expr)+
+      ("|" set:TSet "=>" e2:ExprT)+
       "}"
     )

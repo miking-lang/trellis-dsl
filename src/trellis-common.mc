@@ -1,4 +1,4 @@
--- Helper functions and misc
+include "seq.mc"
 
 -- Returns `base` to the power of `exp`
 let powi = lam base: Int. lam exp: Int.
@@ -28,3 +28,21 @@ let prodAllRight: [Int] -> [Int] = lam seq.
   prodH [] 1 (reverse seq)
 
 utest prodAllRight [3,2,4] with [24,8,4]
+
+recursive
+let foldl3 : all a. all b. all c. all d. (a -> b -> c -> d -> a) -> a -> [b] -> [c] -> [d] -> a =
+  lam f. lam acc. lam seq1. lam seq2. lam seq3.
+    let g = lam acc : (a, [b]). lam x2. lam x3.
+      match acc with (acc, [x1] ++ xs1) in (f acc x1 x2 x3, xs1)
+    in
+    match foldl2 g (acc, seq1) seq2 seq3 with (acc, _) in acc
+end
+
+utest foldl3 (lam a. lam x1. lam x2. lam x3. snoc a (x1, x2, x3)) [] [1, 2, 3] [4, 5, 6] [7, 8, 9]
+with [(1, 4, 7), (2, 5, 8), (3, 6, 9)]
+
+let zipWith3: all a. all b. all c. all d. (a -> b -> c -> d) -> [a] -> [b] -> [c] -> [d] =
+  lam f. foldl3 (lam acc. lam x1. lam x2. lam x3. snoc acc (f x1 x2 x3)) []
+
+utest zipWith3 (lam x. lam y. lam z. addi x (addi y z)) [1,2,3] [4,5,6] [7,8,9]
+with [12,15,18]
