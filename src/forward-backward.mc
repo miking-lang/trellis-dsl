@@ -38,7 +38,7 @@ let forwardBackward = -- ... -> { alphaHat : [Map State Prob]
   lam states : [State].
   lam outputProb : State -> a -> Prob.
   lam inputs : [a].
-  let stateMap = mapFromList compareStates (map (lam s. (s, ())) states) in
+  let stateMap = mapFromSeq compareStates (map (lam s. (s, ())) states) in
   recursive
     let forward = -- ... -> {alphaHat : [Map State Prob], c : [Prob]}
       lam alphaHat : [Map State Prob].
@@ -54,7 +54,7 @@ let forwardBackward = -- ... -> { alphaHat : [Map State Prob]
                  let sum = foldl
                    (lam acc. lam s.
                       probAdd acc (probMul (transitionProb s state)
-                                           (mapFindWithExn s alphaHatPrev)))
+                                           (mapFindExn s alphaHatPrev)))
                    0.0 (predecessors state)
                  in probMul sum (outputProb state x))
               stateMap
@@ -76,7 +76,7 @@ let forwardBackward = -- ... -> { alphaHat : [Map State Prob]
                 probAdd acc
                   (probMul (probMul (transitionProb stateFrom stateTo)
                                     (outputProb stateTo input))
-                           (mapFindWithExn stateTo betaHatPrev)))
+                           (mapFindExn stateTo betaHatPrev)))
                 0.0 (successors stateFrom))
              c)
         stateMap in
@@ -140,7 +140,7 @@ match result with {alphaHat = a, betaHat = b, c = c} then
   let gamma = zipWith3
       (lam x. lam y. lam z.
         mapMapWithKey (lam state. lam x.
-          probMul (probMul x (mapFindWithExn state y)) z)
+          probMul (probMul x (mapFindExn state y)) z)
           x)
       a b c in
 
