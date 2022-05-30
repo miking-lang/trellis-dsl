@@ -1,6 +1,7 @@
 -- Bi-directionally maps an expression and a type to an integer.
 
--- TODO: statically resolve sizes of arrays and ub in integers
+-- TODO(Linnea, 2022-05-30): statically resolve sizes of arrays and ub in
+-- integers
 
 include "trellis.mc"
 include "trellis-common.mc"
@@ -12,21 +13,22 @@ include "option.mc"
 
 lang Enumerate = TrellisBaseAst
   -- Get the number of elements in the type, or error if not finite
-  sem cardinality: Type -> Int
+  sem cardinality: TypeT -> Int
 
   -- Get the int representation of an expression of a given type
-  sem intRepr: Name -> Type -> Expr
+  sem intRepr: Name -> TypeT -> Expr
 
   -- Get the expression of an integer representation
-  sem intToState: Name -> Type -> Expr
+  sem intToState: Name -> TypeT -> Expr
 end
 
+-- TODO(Linnea, 2022-05-30): Type applications
 lang TypeApplicationTypeEnumerate = Enumerate + TypeApplicationTypeTAst
 end
 
 -- Fragment used by types compiling to tuples (array type and tuple type)
 lang TupleEnumerate = Enumerate
-  sem intReprTuple: Name -> [Names] -> [Expr] -> [Int] -> Expr
+  sem intReprTuple: Name -> [Name] -> [Expr] -> [Int] -> Expr
   sem intReprTuple state matchNames repr =
   | cards ->
     let matchExpr: Expr -> Expr = lam thn.
@@ -39,7 +41,7 @@ lang TupleEnumerate = Enumerate
     in
     matchExpr sumExpr
 
-  sem intToStateTuple: Name -> [Int] -> [Types] -> Expr
+  sem intToStateTuple: Name -> [Int] -> [TypeT] -> Expr
   sem intToStateTuple intVal cards =
   | tys ->
      -- i -> (i/(|b||c|) mod |a|, i/|c| mod |b|, i mod |c|)
@@ -90,6 +92,7 @@ lang ArrayTypeEnumerate = Enumerate + ArrayTypeTAst + IntegerExprTAst + TupleEnu
 
 end
 
+-- TODO(Linnea, 2022-05-30): Concrete types
 lang ConcreteTypeEnumerate = Enumerate + ConcreteTypeTAst
 end
 
@@ -157,7 +160,7 @@ lang BoolTypeEnumerate = Enumerate + BoolTypeTAst
 
 end
 
--- TODO: unlimited int, remove type?
+-- TODO(Linnea, 2022-05-30): unlimited int, remove type?
 lang IntTypeEnumerate = Enumerate + IntTypeTAst
 end
 
@@ -185,7 +188,7 @@ let tyintUbt_ =
                  info = NoInfo() }
 in
 let tytuplet_ =
-  lam types:[Type].
+  lam types:[TypeT].
   TupleTypeT {t=types, info= NoInfo()}
 in
 let tyarrayt_ = use ArrayTypeTAst in
@@ -226,8 +229,8 @@ utest intToStateTest (int_ 0) (tyintUbt_ 1 5) with int_ 1 using eqExpr in
 -- Tuple type
 utest cardinality (tytuplet_ [tyboolt_, tyintUbt_ 1 4]) with 8 in
 
-utest intReprTest uunit_ (tytuplet_ []) with int_ 0 in
-utest intToState (int_ 0) (tytuplet_ []) with uunit_ using eqExpr in
+utest intReprTest uunit_ (tytuplet_ []) with int_ 0 using eqExpr in
+utest intToStateTest (int_ 0) (tytuplet_ []) with uunit_ using eqExpr in
 
 utest
   let ty = tytuplet_ [tyintUbt_ 2 3, tyintUbt_ 1 5, tyintUbt_ 3 5] in
@@ -252,8 +255,8 @@ using eqSeq eqExpr in
 -- Array type
 utest cardinality (tyarrayt_ (tyintUbt_ 1 5) (intt_ 3)) with 125 in
 
-utest intReprTest uunit_ (tyarrayt_ (tyintUbt_ 1 5) (intt_ 0)) with int_ 0 in
-utest intToState (int_ 0) (tyarrayt_ (tyintUbt_ 1 5) (intt_ 0)) with uunit_ using eqExpr in
+utest intReprTest uunit_ (tyarrayt_ (tyintUbt_ 1 5) (intt_ 0)) with int_ 0 using eqExpr in
+utest intToStateTest (int_ 0) (tyarrayt_ (tyintUbt_ 1 5) (intt_ 0)) with uunit_ using eqExpr in
 
 utest
   let ty = tyarrayt_ (tyintUbt_ 1 5) (intt_ 3) in
@@ -261,7 +264,8 @@ utest
   , intReprTest (tuple_ tyunknown_ [int_ 2, int_ 3, int_ 5]) ty
   , intReprTest (tuple_ tyunknown_ [int_ 5, int_ 5, int_ 5]) ty
   ]
-with [int_ 0, int_ 39, int_ 124] in
+with [int_ 0, int_ 39, int_ 124]
+using eqSeq eqExpr in
 
 utest
   let ty = tyarrayt_ (tyintUbt_ 1 5) (intt_ 3) in
