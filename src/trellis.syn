@@ -67,12 +67,12 @@ prod Top: Top = d:Decl*
 -- Examples: 'Foo (foo, bar)', 'A'
 -- Counter example: 'A ()'
 prod ConstrDecl: ConstrDecl =
-  vName:UIdent ("(" param:LIdent ("," param:LIdent)* ")")?
+  vName:UName ("(" param:LName ("," param:LName)* ")")?
 
--- Defines a type declaration production.
+-- Defines a type declaration production
 -- Example: 'type MyType (foo, bar) {Foo (foo, bar), A, }'
 prod TypeDecl : Decl =
-  "type" name:UIdent ("(" param:LIdent ("," param:LIdent)* ")")?
+  "type" name:UName ("(" param:LName ("," param:LName)* ")")?
   "{"
     (v:ConstrDecl ",")*
   "}"
@@ -80,7 +80,7 @@ prod TypeDecl : Decl =
 -- Defines an automaton declaration
 -- Example: 'automaton MyAutomaton {_, }'
 prod AutomatonDecl: Decl =
-  "automaton" name:UIdent
+  "automaton" name:UName
   "{"
     (prop:AutomatonProp ",")*
   "}"
@@ -208,14 +208,14 @@ postfix TypeApplication: TypeT =
 postfix ArrayTypeT: TypeT = "[" count:ExprT "]"
 
 -- Defines a concrete type
-prod ConcreteTypeT: TypeT = n:UIdent
+prod ConcreteTypeT: TypeT = n:UName
 
 -- Defines a tuple type
 prod TupleTypeT: TypeT = "@" "(" t:TypeT ("," t:TypeT)+ ")"
 
 -- Defines an integer range type
 prod IntegerTypeT: TypeT =
-  lb:Integer ((".." (ub:Integer | namedUb:LIdent)) | ("<=" v:LIdent "<=" (ub:Integer | namedUb:LIdent)))?
+  lb:Integer ((".." (ub:Integer | namedUb:LName)) | ("<=" v:LName "<=" (ub:Integer | namedUb:LName)))?
 
 -- Defines a Boolean type
 prod BoolTypeT: TypeT = bool:"Bool"
@@ -224,7 +224,7 @@ prod BoolTypeT: TypeT = bool:"Bool"
 prod IntTypeT: TypeT = int:"Int"
 
 -- Defines an automaton state type
-prod AutomatonState: TypeT = automaton:LIdent "." "state"
+prod AutomatonState: TypeT = automaton:LName "." "state"
 
 -----------------
 -- Expressions --
@@ -298,7 +298,7 @@ precedence {
 ----------------------
 
 prod ModelDecl: Decl =
-  "model" name:UIdent "=" mc:ModelComposition
+  "model" name:UName "=" mc:ModelComposition
   "{"
     (indecl:InModelDecl)+
   "}"
