@@ -3,9 +3,6 @@
 -- TODO(Linnea, 2022-05-30): statically resolve sizes of arrays and ub in
 -- integers
 
--- TODO: debug print if flag
--- TODO: test empty type declaration
-
 include "trellis.mc"
 include "trellis-common.mc"
 
@@ -14,30 +11,44 @@ include "mexpr/eval.mc"
 include "mexpr/eq.mc"
 include "option.mc"
 
--- NOTE(Linnea, 2022-05-31): These types will likely be defined somewhere else,
--- once we have the analysis that creates it.
-type TypeEnv = {
+type EnumerateEnv = {
   -- Maps a concrete type to its parameters and constructors with parameters
   concreteTypes: Map Name ([Name], Map Name [Name]),
   -- Maps the currently bound type parameters to their types
-  typeParams: Map Name TypeT
+  typeParams: Map Name TypeT,
+  -- Maps names to automatons
+  automatons: Map Name Name,
+  -- Maps automatons to the type of their states
+  automatonStates: Map Name TypeT
 }
 
-let typeEnvEmpty = {
+let enumerateEnvEmpty = {
   concreteTypes = mapEmpty nameCmp,
-  typeParams = mapEmpty nameCmp
+  typeParams = mapEmpty nameCmp,
+  automatons = mapEmpty nameCmp,
+  automatonStates = mapEmpty nameCmp
 }
 
+-- Populate the environment with type arguments
+let enumerateEnvBindTypeArgs =
+  lam env: EnumerateEnv. lam params: [Name]. lam args: [TypeT].
+    let typeParams = foldl2 (lam acc. lam p. lam a.
+        mapInsert p a acc
+      ) env.typeParams params args
+    in
+    {env with typeParams = typeParams}
 
+
+-- Base fragment for type enumeration
 lang Enumerate = TrellisBaseAst
   -- Get the number of elements in the type, or error if not finite
-  sem cardinality: TypeEnv -> TypeT -> Int
+  sem cardinality: EnumerateEnv -> TypeT -> Int
 
   -- Get the int representation of an expression of a given type
-  sem intRepr: TypeEnv -> Name -> TypeT -> Expr
+  sem intRepr: EnumerateEnv -> Name -> TypeT -> Expr
 
   -- Get the expression of an integer representation
-  sem intToState: TypeEnv -> Name -> TypeT -> Expr
+  sem intToState: EnumerateEnv -> Name -> TypeT -> Expr
 end
 
 -- Enumeration for types compiling to tuples
@@ -55,7 +66,7 @@ lang TupleEnumerate = Enumerate
     in
     matchExpr sumExpr
 
-  sem intToStateTuple: TypeEnv -> Name -> [Int] -> [TypeT] -> Expr
+  sem intToStateTuple: EnumerateEnv -> Name -> [Int] -> [TypeT] -> Expr
   sem intToStateTuple env intVal cards =
   | tys ->
      -- i -> (i/(|b||c|) mod |a|, i/|c| mod |b|, i mod |c|)
@@ -107,15 +118,15 @@ lang ArrayTypeEnumerate = Enumerate + ArrayTypeTAst + IntegerExprTAst + TupleEnu
 end
 
 lang ConcreteTypeEnumerate = Enumerate + ConcreteTypeTAst + TupleEnumerate
+  -- NOTE(Linnea,2022-05-24): Assumes that Trellis concrete types are compiled
+  -- into MExpr constructors
+
   sem cardinality env =
   | ConcreteTypeT ({n = {v = name}} & t) ->
     match mapLookup name env.concreteTypes with Some (params, constr) then
-      -- Populate the environment with the type arguments
-      let tyParams = foldl2 (lam acc. lam p. lam a.
-          mapInsert p a acc
-        ) env.typeParams params t.a
-      in
-      let env = {env with typeParams = tyParams} in
+      let env = enumerateEnvBindTypeArgs env params t.a in
+      -- The cardinality of a concrete type is the sum of the cardinalities of
+      -- its constructors
       mapFoldWithKey (lam acc. lam. lam params.
           addi acc (cardinalityCon t.info env params)
         ) 0 constr
@@ -123,7 +134,7 @@ lang ConcreteTypeEnumerate = Enumerate + ConcreteTypeTAst + TupleEnumerate
 
   -- The cardinality of a constructor is the product of the cardinalities of
   -- its arguments
-  sem cardinalityCon: Info -> TypeEnv -> [Name] -> Int
+  sem cardinalityCon: Info -> EnumerateEnv -> [Name] -> Int
   sem cardinalityCon info env =
   | params ->
     foldl (lam acc. lam p.
@@ -132,22 +143,24 @@ lang ConcreteTypeEnumerate = Enumerate + ConcreteTypeTAst + TupleEnumerate
         else errorNameUnbound info p
       ) 1 params
 
+  -- Returns a sequence 'offset', where 'offset[i]' is the accumulated
+  -- cardinality of the preceding constructors for the ith constructor
+  sem accumOffset: Info -> EnumerateEnv -> (Map Name [Name]) -> [Int]
+  sem accumOffset info env =
+  | constr ->
+    match mapFoldWithKey (lam acc. lam. lam cparams.
+        match acc with (accCard, accOffset) in
+        (addi accCard (cardinalityCon info env cparams), snoc accOffset accCard)
+      ) (0, []) constr
+    with (_, offset) in
+    offset
+
   sem intRepr env state =
   | ConcreteTypeT ({n = {v = name}} & t) ->
     match mapLookup name env.concreteTypes with Some (params, constr) then
-      -- Populate the environment with the type arguments
-      let tyParams = foldl2 (lam acc. lam p. lam a.
-          mapInsert p a acc
-        ) env.typeParams params t.a
-      in
-      let env = {env with typeParams = tyParams} in
-      -- offset[i] is the accumulated cardinality of the preceding constructors
-      -- for the ith constructor
-      match mapFoldWithKey (lam acc. lam. lam cparams.
-          match acc with (accCard, accOffset) in
-          (addi accCard (cardinalityCon t.info env cparams), snoc accOffset accCard)
-        ) (0, []) constr
-      with (_, offset) in
+      let env = enumerateEnvBindTypeArgs env params t.a in
+      let offset = accumOffset t.info env constr in
+
       -- Match on each constructor, recursively call intRepr, add offset[i] in
       -- each arm
       -- OPT(Linnea, 2022-06-01): Avoid re-computation of cardinality of
@@ -161,41 +174,36 @@ lang ConcreteTypeEnumerate = Enumerate + ConcreteTypeTAst + TupleEnumerate
               else errorNameUnbound t.info p
             ) cparams
           in
-          -- NOTE(Linnea, 2022-06-01): special case when the constructor has
-          -- exactly one argument. This assumes that we compile `C(a)` to `C a`,
-          -- whereas a constructor with 0 or >1 arguments takes a tuple:
-          -- `C(a,b)` compiles to `C (a,b)`, and `C` compiles to `C ()`.
-          switch cparams
-          case [p] then
-            match tyArgs with [tyarg] in
-            -- Matches on a constructor applied to a named arg
-            let sub = nameSym "t" in
-            match_ (nvar_ state) (npcon_ cname (npvar_ sub))
-              (addi_ (int_ (head offset)) (intRepr env sub tyarg))
-              (matchCon cs (tail offset))
-          case _ then
-            -- Matches on a constructor applied to a tuple
-            let sub = nameSym "t" in
-            let names = map (lam. nameSym "t") cparams in
-            -- Get the int representation of the tuple
-            let tupleNum: Expr =
-              match cparams with [] then int_ 0
-              else
-                let repr: [Expr] = zipWith (intRepr env) names tyArgs in
-                let cards: [Int] = map (cardinality env) (tail tyArgs) in
-                intReprTuple sub names repr cards
-            in
-            -- Match the top-level named argument to a tuple
-            let exprMatchTup: Expr -> Expr = lam thn.
-              match_ (nvar_ sub) (ptuple_ (map npvar_ names)) thn never_
-            in
-            -- Match on the constructor, then match on the tuple if match,
-            -- otherwise recurse
-            match_ (nvar_ state) (npcon_ cname (npvar_ sub))
-              (exprMatchTup
-                (addi_ (int_ (head offset)) tupleNum))
-              (matchCon cs (tail offset))
-          end
+          let subpat = nameSym "t" in
+          let thnBody =
+            -- NOTE(Linnea, 2022-06-01): special case when the constructor has
+            -- exactly one argument. This assumes that we compile `C(a)` to `C a`,
+            -- whereas a constructor with 0 or >1 arguments takes a tuple:
+            -- `C(a,b)` compiles to `C (a,b)`, and `C` compiles to `C ()`.
+            switch cparams
+            case [p] then
+              match tyArgs with [tyarg] in
+              addi_ (int_ (head offset)) (intRepr env subpat tyarg)
+            case _ then
+              -- Matches on a constructor applied to a tuple
+              let names = map (lam. nameSym "t") cparams in
+              -- Get the int representation of the tuple
+              let tupleNum: Expr =
+                match cparams with [] then int_ 0
+                else
+                  let repr: [Expr] = zipWith (intRepr env) names tyArgs in
+                  let cards: [Int] = map (cardinality env) (tail tyArgs) in
+                  intReprTuple subpat names repr cards
+              in
+              -- Match the top-level named argument to a tuple
+              let exprMatchTup: Expr -> Expr = lam thn.
+                match_ (nvar_ subpat) (ptuple_ (map npvar_ names)) thn never_
+              in
+              exprMatchTup (addi_ (int_ (head offset)) tupleNum)
+            end
+          in
+          match_ (nvar_ state) (npcon_ cname (npvar_ subpat))
+            thnBody (matchCon cs (tail offset))
       in
       matchCon (mapBindings constr) offset
     else errorNameUnbound t.info name
@@ -203,20 +211,10 @@ lang ConcreteTypeEnumerate = Enumerate + ConcreteTypeTAst + TupleEnumerate
     sem intToState env intVal =
     | ConcreteTypeT ({n = {v = name}} & t) ->
       match mapLookup name env.concreteTypes with Some (params, constr) then
-        -- Populate the environment with the type arguments
-        let tyParams = foldl2 (lam acc. lam p. lam a.
-            mapInsert p a acc
-          ) env.typeParams params t.a
-        in
-        let env = {env with typeParams = tyParams} in
-        -- offset[i] is the accumulated cardinality of the preceding constructors
-        -- for the ith constructor
-        match mapFoldWithKey (lam acc. lam. lam cparams.
-            match acc with (accCard, accOffset) in
-            (addi accCard (cardinalityCon t.info env cparams), snoc accOffset accCard)
-          ) (0, []) constr
-        with (_, offset) in
-        -- Match on ranges to determine constructor
+        let env = enumerateEnvBindTypeArgs env params t.a in
+        let offset = accumOffset t.info env constr in
+
+        -- Matches on ranges to determine constructor
         recursive let matchRange = lam cs: [(Name, [Name])]. lam offset: [Int].
           match cs with [] then never_
           else match cs with [(cname, cparams)] ++ cs in
@@ -225,39 +223,30 @@ lang ConcreteTypeEnumerate = Enumerate + ConcreteTypeTAst + TupleEnumerate
                 else errorNameUnbound t.info p
               ) cparams
             in
-            -- Checks if the value is within range of the current constructor
-            let checkRange: Expr -> Expr = lam e.
-              -- Last constructor?
-              match offset with [_] then true_
-              -- Less than offset of the next constructor?
-              else match offset with [o1, o2] ++ _ then
-                lti_ e (int_ o2)
-              else never
+            -- Get the state of the argument
+            let r = nameSym "r" in
+            let argState: Expr =
+              -- See note above about special case for one-argument constructor
+              switch cparams
+              case [p] then
+                intToState env r (head tyArgs)
+              case _ then
+                let cards: [Int] = map (cardinality env) tyArgs in
+                intToStateTuple env r cards tyArgs
+              end
             in
-            -- See note above about special case for one-argument constructor
-            switch cparams
-            case [p] then
-              match tyArgs with [tyarg] in
-              -- Get the state of the argument
-              let r = nameSym "r" in
-              let argState: Expr =
-                bind_ (nulet_ r (subi_ (nvar_ intVal) (int_ (head offset))))
-                  (intToState env r tyarg)
-              in
-              if_ (checkRange (nvar_ intVal))
-                (nconapp_ cname argState)
-                (matchRange cs (tail offset))
-            case _ then
-              let cards: [Int] = map (cardinality env) tyArgs in
-              let r = nameSym "r" in
-              let argState: Expr =
-                bind_ (nulet_ r (subi_ (nvar_ intVal) (int_ (head offset))))
-                  (intToStateTuple env r cards tyArgs)
-              in
-              if_ (checkRange (nvar_ intVal))
-                (nconapp_ cname argState)
-                (matchRange cs (tail offset))
-            end
+            let bindArgState: Expr =
+              bind_ (nulet_ r (subi_ (nvar_ intVal) (int_ (head offset))))
+                argState
+            in
+            let state: Expr = nconapp_ cname bindArgState in
+            -- Last constructor?
+            match offset with [_] then state
+            -- Less than offset of the next constructor?
+            else match offset with [o1, o2] ++ _ then
+              if_ (lti_ (nvar_ intVal) (int_ o2))
+                state (matchRange cs (tail offset))
+            else never
           in
           matchRange (mapBindings constr) offset
       else errorNameUnbound t.info name
@@ -329,14 +318,52 @@ lang BoolTypeEnumerate = Enumerate + BoolTypeTAst
 
 end
 
--- TODO(Linnea, 2022-05-30): unlimited int, remove type? give error
+lang AutomatonStateTypeEnumerate = Enumerate + AutomatonStateTypeTAst
+
+  sem automatonLookup
+  : all a. EnumerateEnv -> (EnumerateEnv -> TypeT -> a) -> Info -> Name -> a
+  sem automatonLookup env f info =
+  | name ->
+    match mapLookup name env.automatons with Some a then
+      match mapLookup a env.automatonStates with Some ty then
+        f env ty
+      else infoErrorExit info (join [
+        nameGetStr name, " refers to an unknown automaton ",
+        nameGetStr a])
+    else errorNameUnbound info name
+
+  sem cardinality env =
+  | AutomatonStateTypeT {automaton = {i = info, v = name}} ->
+    automatonLookup env cardinality info name
+
+  sem intRepr env state =
+  | AutomatonStateTypeT {automaton = {i = info, v = name}} ->
+    let f = lam env. lam ty. intRepr env state ty in
+    automatonLookup env f info name
+
+  sem intToState env intVal =
+  | AutomatonStateTypeT {automaton = {i = info, v = name}} ->
+    let f = lam env. lam ty. intToState env intVal ty in
+    automatonLookup env f info name
+
+end
+
 lang IntTypeEnumerate = Enumerate + IntTypeTAst
+  sem cardinality env =
+  | IntTypeT t -> infoErrorExit t.info "Infinite type in cardinality"
+
+  sem intRepr env state =
+  | IntTypeT t -> infoErrorExit t.info "Infinite type in intRepr"
+
+  sem intToState env intVal =
+  | IntTypeT t -> infoErrorExit t.info "Infinite type in intToState"
 end
 
 
 lang TrellisEnumerate =
-  ArrayTypeEnumerate + ConcreteTypeEnumerate +
-  TupleTypeEnumerate + IntegerTypeEnumerate +  BoolTypeEnumerate
+  ArrayTypeEnumerate + ConcreteTypeEnumerate + TupleTypeEnumerate +
+  IntegerTypeEnumerate +  BoolTypeEnumerate + AutomatonStateTypeEnumerate +
+  IntTypeEnumerate
 end
 
 lang Test = TrellisEnumerate + MExprEval + MExprEq + MExprPrettyPrint end
@@ -368,27 +395,35 @@ let tyconcretet_ = use ConcreteTypeTAst in
   lam n:Name. lam a:[TypeT].
   ConcreteTypeT {n={i= NoInfo(), v=n}, a=a, info= NoInfo()}
 in
+let tyautomatonStatet_ = use AutomatonStateTypeTAst in
+  lam n:Name.
+  AutomatonStateTypeT {automaton={i= NoInfo(), v=n}, info= NoInfo()}
+in
 let intt_ = use IntegerExprTAst in
   lam v:Int.
   IntegerExprT {i= {i= NoInfo(), v=v}, info= NoInfo()}
 in
 
 -- Test helper functions
+let debug = false in
 let _test = lam f. lam e: Expr. lam t: TypeT.
   let n = nameSym "n" in
   let eFull = bind_ (nulet_ n e) (f n t) in
-  print "\n\n"; print (expr2str eFull); print "\n\n";
+  (if debug then
+     print "\n\n---------------\n\n";
+     print (expr2str eFull)
+   else ());
   eval {env = evalEnvEmpty} eFull
 in
 
-let intReprTest = _test (intRepr typeEnvEmpty) in
-let intToStateTest = _test (intToState typeEnvEmpty) in
+let intReprTest = _test (intRepr enumerateEnvEmpty) in
+let intToStateTest = _test (intToState enumerateEnvEmpty) in
 
 let intReprTestEnv = lam env. _test (intRepr env) in
 let intToStateTestEnv = lam env. _test (intToState env) in
 
--- Bool type
-utest cardinality typeEnvEmpty tyboolt_ with 2 in
+-- Bool type --
+utest cardinality enumerateEnvEmpty tyboolt_ with 2 in
 
 utest intReprTest false_ tyboolt_ with int_ 0 using eqExpr in
 utest intReprTest true_ tyboolt_ with int_ 1 using eqExpr in
@@ -396,15 +431,15 @@ utest intReprTest true_ tyboolt_ with int_ 1 using eqExpr in
 utest intToStateTest (int_ 0) tyboolt_ with false_ using eqExpr in
 utest intToStateTest (int_ 1) tyboolt_ with true_ using eqExpr in
 
--- Integer type
-utest cardinality typeEnvEmpty (tyintUbt_ 1 1) with 1 in
-utest cardinality typeEnvEmpty (tyintUbt_ 4 10) with 7 in
+-- Integer type --
+utest cardinality enumerateEnvEmpty (tyintUbt_ 1 1) with 1 in
+utest cardinality enumerateEnvEmpty (tyintUbt_ 4 10) with 7 in
 
 utest intReprTest (int_ 4) (tyintUbt_ 1 5) with int_ 3 using eqExpr in
 utest intToStateTest (int_ 0) (tyintUbt_ 1 5) with int_ 1 using eqExpr in
 
--- Tuple type
-utest cardinality typeEnvEmpty (tytuplet_ [tyboolt_, tyintUbt_ 1 4]) with 8 in
+-- Tuple type --
+utest cardinality enumerateEnvEmpty (tytuplet_ [tyboolt_, tyintUbt_ 1 4]) with 8 in
 
 utest intReprTest uunit_ (tytuplet_ []) with int_ 0 using eqExpr in
 utest intToStateTest (int_ 0) (tytuplet_ []) with uunit_ using eqExpr in
@@ -429,8 +464,8 @@ with [ utuple_ [int_ 2, int_ 1, int_ 3]
      ]
 using eqSeq eqExpr in
 
--- Array type
-utest cardinality typeEnvEmpty (tyarrayt_ (tyintUbt_ 1 5) (intt_ 3)) with 125 in
+-- Array type --
+utest cardinality enumerateEnvEmpty (tyarrayt_ (tyintUbt_ 1 5) (intt_ 3)) with 125 in
 
 utest intReprTest uunit_ (tyarrayt_ (tyintUbt_ 1 5) (intt_ 0)) with int_ 0 using eqExpr in
 utest intToStateTest (int_ 0) (tyarrayt_ (tyintUbt_ 1 5) (intt_ 0)) with uunit_ using eqExpr in
@@ -460,10 +495,16 @@ let _mkEnv = lam tys: [(Name, [Name])]. lam constr: [[(Name, [Name])]].
     zipWith (lam ty: (Name, [Name]). lam c: [(Name, [Name])].
       (ty.0, (ty.1, mapFromSeq nameCmp c))
     ) tys constr
-  in { typeEnvEmpty with concreteTypes = mapFromSeq nameCmp binds }
+  in { enumerateEnvEmpty with concreteTypes = mapFromSeq nameCmp binds }
 in
 
 -- Cardinality tests
+utest
+  let t = nameSym "T" in
+  let env = _mkEnv [(t, [])] [[]] in
+  cardinality env (tyconcretet_ t [])
+with 0 in
+
 utest
   let tyName = nameSym "T" in
   let params = [] in
@@ -589,5 +630,39 @@ with
 ]
 using eqSeq eqExpr in
 
+-- Automaton state type --
+
+utest
+  let a = nameSym "A" in
+  let aName = nameSym "a" in
+  let env =
+    { enumerateEnvEmpty with
+      automatonStates = mapFromSeq nameCmp [(a, tyintUbt_ 1 3)],
+      automatons = mapFromSeq nameCmp [(aName, a)] }
+  in
+  cardinality env (tyautomatonStatet_ aName)
+with 3 in
+
+utest
+  let a = nameSym "A" in
+  let aName = nameSym "a" in
+  let env =
+    { enumerateEnvEmpty with
+      automatonStates = mapFromSeq nameCmp [(a, tyintUbt_ 1 3)],
+      automatons = mapFromSeq nameCmp [(aName, a)] }
+  in
+  intReprTestEnv env (int_ 2) (tyautomatonStatet_ aName)
+with int_ 1 using eqExpr in
+
+utest
+  let a = nameSym "A" in
+  let aName = nameSym "a" in
+  let env =
+    { enumerateEnvEmpty with
+      automatonStates = mapFromSeq nameCmp [(a, tyintUbt_ 1 3)],
+      automatons = mapFromSeq nameCmp [(aName, a)] }
+  in
+  intToStateTestEnv env (int_ 1) (tyautomatonStatet_ aName)
+with int_ 2 using eqExpr in
 
 ()
