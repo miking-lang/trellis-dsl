@@ -16,7 +16,7 @@ type EnumerateEnv = {
   concreteTypes: Map Name ([Name], Map Name [Name]),
   -- Maps the currently bound type parameters to their types
   typeParams: Map Name TypeT,
-  -- Maps names to automatons
+  -- Maps names bound to automatons
   automatons: Map Name Name,
   -- Maps automatons to the type of their states
   automatonStates: Map Name TypeT
@@ -362,7 +362,7 @@ end
 
 lang TrellisEnumerate =
   ArrayTypeEnumerate + ConcreteTypeEnumerate + TupleTypeEnumerate +
-  IntegerTypeEnumerate +  BoolTypeEnumerate + AutomatonStateTypeEnumerate +
+  IntegerTypeEnumerate + BoolTypeEnumerate + AutomatonStateTypeEnumerate +
   IntTypeEnumerate
 end
 

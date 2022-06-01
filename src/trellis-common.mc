@@ -1,4 +1,6 @@
 include "seq.mc"
+include "name.mc"
+include "mexpr/info.mc"
 
 -- Returns `base` to the power of `exp`
 let powi = lam base: Int. lam exp: Int.
