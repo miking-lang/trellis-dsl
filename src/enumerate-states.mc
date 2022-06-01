@@ -175,7 +175,7 @@ lang ConcreteTypeEnumerate = Enumerate + ConcreteTypeTAst + TupleEnumerate
             ) cparams
           in
           let subpat = nameSym "t" in
-          let thnBody =
+          let addExpr: Expr =
             -- NOTE(Linnea, 2022-06-01): special case when the constructor has
             -- exactly one argument. This assumes that we compile `C(a)` to `C a`,
             -- whereas a constructor with 0 or >1 arguments takes a tuple:
@@ -183,27 +183,21 @@ lang ConcreteTypeEnumerate = Enumerate + ConcreteTypeTAst + TupleEnumerate
             switch cparams
             case [p] then
               match tyArgs with [tyarg] in
-              addi_ (int_ (head offset)) (intRepr env subpat tyarg)
+              intRepr env subpat tyarg
             case _ then
               -- Matches on a constructor applied to a tuple
               let names = map (lam. nameSym "t") cparams in
               -- Get the int representation of the tuple
-              let tupleNum: Expr =
-                match cparams with [] then int_ 0
-                else
-                  let repr: [Expr] = zipWith (intRepr env) names tyArgs in
-                  let cards: [Int] = map (cardinality env) (tail tyArgs) in
-                  intReprTuple subpat names repr cards
-              in
-              -- Match the top-level named argument to a tuple
-              let exprMatchTup: Expr -> Expr = lam thn.
-                match_ (nvar_ subpat) (ptuple_ (map npvar_ names)) thn never_
-              in
-              exprMatchTup (addi_ (int_ (head offset)) tupleNum)
+              match cparams with [] then int_ 0
+              else
+                let repr: [Expr] = zipWith (intRepr env) names tyArgs in
+                let cards: [Int] = map (cardinality env) (tail tyArgs) in
+                intReprTuple subpat names repr cards
             end
           in
+          let sum = addi_ (int_ (head offset)) addExpr in
           match_ (nvar_ state) (npcon_ cname (npvar_ subpat))
-            thnBody (matchCon cs (tail offset))
+            sum (matchCon cs (tail offset))
       in
       matchCon (mapBindings constr) offset
     else errorNameUnbound t.info name
