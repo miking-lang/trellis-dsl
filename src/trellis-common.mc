@@ -46,3 +46,6 @@ let zipWith3: all a. all b. all c. all d. (a -> b -> c -> d) -> [a] -> [b] -> [c
 
 utest zipWith3 (lam x. lam y. lam z. addi x (addi y z)) [1,2,3] [4,5,6] [7,8,9]
 with [12,15,18]
+
+let errorNameUnbound = lam i: Info. lam n: Name.
+  infoErrorExit i (join [nameGetStr n, " is unbound"])

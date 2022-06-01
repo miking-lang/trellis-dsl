@@ -42,7 +42,7 @@ token LName {
 token {fragment = OperatorTokenParser,}
 token {fragment = CommaTokenParser,}
 token {fragment = BracketTokenParser,}
-token {fragment = TSetTokenParser,}
+token {fragment = SetTokenParser,}
 token {fragment = TrellisDotsTokenParser,}
 
 -- Whitespace and comments
@@ -106,34 +106,34 @@ prod StateProp: AutomatonProp =
   "state" ":" ty:TypeT
 
 prod SetProp: AutomatonProp =
-  (name:LIdent | initial:"initial") ":" s:TSet
+  (name:LIdent | initial:"initial") ":" s:SetT
 
 ----------
 -- Sets --
 ----------
 
-type TSet {
+type SetT {
   grouping = "(" ")",
 }
 
 -- Defines an infix set union operator
-infix left SetUnion: TSet = "\\u"
+infix left SetUnion: SetT = "\\u"
 
 -- Defines an infix set intersection operator
-infix left SetIntersection: TSet = "\\n"
+infix left SetIntersection: SetT = "\\n"
 
 -- Defines an infix set minus operator
-infix left TSetMinus: TSet = "\\setminus"
+infix left SetTMinus: SetT = "\\setminus"
 
 -- Defines a named set.
 -- Example: 'mySet'
-prod NamedSet: TSet = name:LIdent
+prod NamedSet: SetT = name:LIdent
 
 -- Defines a set literal. A later pass over the AST needs to check whether it is
 -- a value set or a transition set, and give an error if mixed.
 -- Example (value set): {1, a, }
 -- Example (transition set): { false -> true,  }
-prod SetLit: TSet =
+prod SetLit: SetT =
   "{"
     (e:ExprT ("->" to:ExprT)? ",")*
   "}"
@@ -141,7 +141,7 @@ prod SetLit: TSet =
 -- Defines a set builder. A later pass over the AST needs to check whether it is
 -- a value set or a transition set builder.
 -- Example (transition set builder): @{ x -> y | true }
-prod SetBuilder: TSet =
+prod SetBuilder: SetT =
   "@" "{"
      (p:PatT ("->" to:PatT)?)
      "|"
@@ -150,11 +150,11 @@ prod SetBuilder: TSet =
 
 
 -- Projection
-postfix SetProjection: TSet = "." lbl:LIdent
+postfix SetProjection: SetT = "." lbl:LIdent
 
 precedence {
   SetProjection;
-  ~ SetUnion SetIntersection TSetMinus;
+  ~ SetUnion SetIntersection SetTMinus;
 }
 
 --------------
@@ -165,32 +165,32 @@ type PatT {
   grouping = "(" ")",
 }
 
-prod ConPat: PatT = c:UIdent ("(" (p:PatT ",")+ ")")?
+prod ConPatT: PatT = c:UIdent ("(" (p:PatT ",")+ ")")?
 
 -- Defines a named pattern variable
 -- Example: 'foo'
-prod VarPat: PatT = id:LIdent
+prod VarPatT: PatT = id:LIdent
 
 -- Defines a wildcard pattern
-prod WildPat: PatT = "_"
+prod WildPatT: PatT = "_"
 
 -- Only allowed in an ArrayPat
-postfix DotsPat: PatT = "..."
+postfix DotsPatT: PatT = "..."
 
-prod ArrayPat: PatT =
+prod ArrayPatT: PatT =
   "[" (p:PatT ",")* "]"
 
 -- Defines a tuple pattern
 -- Example '(foo, [a])'
-prod TupPat: PatT =
+prod TupPatT: PatT =
   "@" "(" p:PatT ("," p:PatT)+ ")"
 
 -- Defines an integer pattern
-prod IntPat: PatT = i:Integer
+prod IntPatT: PatT = i:Integer
 
 -- Defines Boolean patterns
-prod TruePat: PatT = "true"
-prod FalsePat: PatT = "false"
+prod TruePatT: PatT = "true"
+prod FalsePatT: PatT = "false"
 
 -----------------------Integer
 -- Normal data types --
@@ -200,15 +200,15 @@ type TypeT {
   grouping = "(" ")",
 }
 
--- Defines a type application
-postfix TypeApplication: TypeT =
-  "(" a:TypeT ("," a:TypeT)* ")"
+-- -- Defines a type application
+-- postfix TypeApplication: TypeT =
+--   "(" a:TypeT ("," a:TypeT)* ")"
 
 -- Defines an array type
 postfix ArrayTypeT: TypeT = "[" count:ExprT "]"
 
 -- Defines a concrete type
-prod ConcreteTypeT: TypeT = n:UName
+prod ConcreteTypeT: TypeT = n:UName ("(" a:TypeT ("," a:TypeT)* ")")?
 
 -- Defines a tuple type
 prod TupleTypeT: TypeT = "@" "(" t:TypeT ("," t:TypeT)+ ")"
@@ -333,6 +333,6 @@ prod Prob: InModelDecl =
     | transition:"transition" from:LIdent to:LIdent) ")"
     ( "=" e:ExprT
     | /- "="? -- TODO(Linnea,2022-05-16): ll1 conflict -/ "{"
-      ("|" set:TSet "=>" e2:ExprT)+
+      ("|" set:SetT "=>" e2:ExprT)+
       "}"
     )

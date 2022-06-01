@@ -1,6 +1,6 @@
 include "parser/lexer.mc"
 
-lang TSetTokenParser = TokenParser
+lang SetTokenParser = TokenParser
   syn Token =
   | SetUnionTok {info : Info}
   | SetIntersectionTok {info : Info}
