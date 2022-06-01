@@ -1,7 +1,7 @@
--- Bi-directionally maps an expression and a type to an integer.
+-- Bi-directionally maps states to integers.
 
--- TODO(Linnea, 2022-05-30): statically resolve sizes of arrays and ub in
--- integers
+-- TODO(Linnea, 2022-05-30): statically resolve sizes of arrays and named upper
+-- bounds in integers
 
 include "trellis.mc"
 include "trellis-common.mc"
@@ -94,7 +94,7 @@ lang ArrayTypeEnumerate = Enumerate + ArrayTypeTAst + IntegerExprTAst + TupleEnu
     let cardLeft = cardinality env t.left in
     match t.count with IntegerExprT {i={v=count}} then
       powi cardLeft count
-    else infoErrorExit t.info "Array size not statically known"
+    else errorSingle [t.info] "Array size not statically known"
 
   sem intRepr env state =
   | ArrayTypeT t ->
@@ -106,14 +106,14 @@ lang ArrayTypeEnumerate = Enumerate + ArrayTypeTAst + IntegerExprTAst + TupleEnu
         let repr: [Expr] = map (lam n. intRepr env n t.left) matchNames in
         let cards: [Int] = make (subi count 1) (cardinality env t.left) in
         intReprTuple state matchNames repr cards
-    else infoErrorExit t.info "Array size not statically known"
+    else errorSingle [t.info] "Array size not statically known"
 
   sem intToState env intVal =
   | ArrayTypeT t ->
     match t.count with IntegerExprT {i={v=count}} then
       let cards: [Int] = make count (cardinality env t.left) in
       intToStateTuple env intVal cards (make count t.left)
-    else infoErrorExit t.info "Array size not statically known"
+    else errorSingle [t.info] "Array size not statically known"
 
 end
 
@@ -289,8 +289,8 @@ lang IntegerTypeEnumerate = Enumerate + IntegerTypeTAst
       addi 1 (subi ub.v lb)
     else match namedUb with Some namedUb then
       let namedUb: {i: Info, v: Name} = namedUb in
-      infoErrorExit namedUb.i "named upper bound not supported yet"
-    else infoErrorExit t.info "unbound integer in cardinality"
+      errorSingle [namedUb.i] "Named upper bound not supported yet"
+    else errorSingle [t.info] "Unbound integer in cardinality"
 
   sem intRepr env (state: Name) =
   | IntegerTypeT t ->
@@ -327,7 +327,7 @@ lang AutomatonStateTypeEnumerate = Enumerate + AutomatonStateTypeTAst
     match mapLookup name env.automatons with Some a then
       match mapLookup a env.automatonStates with Some ty then
         f env ty
-      else infoErrorExit info (join [
+      else errorSingle [info] (join [
         nameGetStr name, " refers to an unknown automaton ",
         nameGetStr a])
     else errorNameUnbound info name
@@ -350,13 +350,13 @@ end
 
 lang IntTypeEnumerate = Enumerate + IntTypeTAst
   sem cardinality env =
-  | IntTypeT t -> infoErrorExit t.info "Infinite type in cardinality"
+  | IntTypeT t -> errorSingle [t.info] "Infinite type in cardinality"
 
   sem intRepr env state =
-  | IntTypeT t -> infoErrorExit t.info "Infinite type in intRepr"
+  | IntTypeT t -> errorSingle [t.info] "Infinite type in intRepr"
 
   sem intToState env intVal =
-  | IntTypeT t -> infoErrorExit t.info "Infinite type in intToState"
+  | IntTypeT t -> errorSingle [t.info] "Infinite type in intToState"
 end
 
 

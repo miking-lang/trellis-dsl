@@ -1,6 +1,6 @@
 include "seq.mc"
 include "name.mc"
-include "mexpr/info.mc"
+include "error.mc"
 
 -- Returns `base` to the power of `exp`
 let powi = lam base: Int. lam exp: Int.
@@ -50,4 +50,4 @@ utest zipWith3 (lam x. lam y. lam z. addi x (addi y z)) [1,2,3] [4,5,6] [7,8,9]
 with [12,15,18]
 
 let errorNameUnbound = lam i: Info. lam n: Name.
-  infoErrorExit i (join [nameGetStr n, " is unbound"])
+  errorSingle [i] (join [nameGetStr n, " is unbound"])
