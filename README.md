@@ -9,4 +9,5 @@ Miking `stdlib` (please see the [Miking
 README](https://github.com/miking-lang/miking#getting-started)).
 
 Run `make` in the project root to build the project. This creates a main binary
-`build/main`. Run `make test` to run the test suite.
+`build/main`. Run `make test` to run the test suite, and `make examples` to run
+the example files in the `examples` directory.
