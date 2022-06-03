@@ -1,5 +1,5 @@
 
-.PHONY: test clean
+.PHONY: test examples clean
 
 main_name=main
 exec_name=trellis

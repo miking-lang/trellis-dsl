@@ -67,7 +67,7 @@ prod Top: Top = d:Decl*
 -- Examples: 'Foo (foo, bar)', 'A'
 -- Counter example: 'A ()'
 prod ConstrDecl: ConstrDecl =
-  vName:UName ("(" param:LName ("," param:LName)* ")")?
+  vName:UName ("(" param:TypeT ("," param:TypeT)* ")")?
 
 -- Defines a type declaration production
 -- Example: 'type MyType (foo, bar) {Foo (foo, bar), A, }'
@@ -200,9 +200,7 @@ type TypeT {
   grouping = "(" ")",
 }
 
--- -- Defines a type application
--- postfix TypeApplication: TypeT =
---   "(" a:TypeT ("," a:TypeT)* ")"
+prod TypeVar: TypeT = n:LName
 
 -- Defines an array type
 postfix ArrayTypeT: TypeT = "[" count:ExprT "]"
@@ -224,7 +222,7 @@ prod BoolTypeT: TypeT = bool:"Bool"
 prod IntTypeT: TypeT = int:"Int"
 
 -- Defines an automaton state type
-prod AutomatonState: TypeT = automaton:LName "." "state"
+prod AutomatonState: TypeT = "state" "(" automaton:LName ")"
 
 -----------------
 -- Expressions --
