@@ -1,5 +1,8 @@
+include "common.mc"
 include "math.mc"
 include "string.mc"
+
+type ViterbiResult = {prob : LogProb, states : [State]}
 
 let mapInit : (k -> k -> Int) -> [k] -> (k -> v) -> Map k v = lam compare. lam keys. lam f.
   foldl (lam acc. lam k. mapInsert k (f k) acc) (mapEmpty compare) keys
@@ -25,7 +28,7 @@ let headExc : [a] -> a = lam as.
   error "Empty list in headExc"
 
 let mapMaxBy : (a -> LogProb) -> Map k a -> Option k = lam f. lam m.
-  optionMap (lam x. x.0) (maxBy (lam binding. f binding.1) (mapBindings m))
+  optionMap (lam x : (k, a). x.0) (maxBy (lam binding : (k, a). f binding.1) (mapBindings m))
 let mapMaxByExc : (a -> LogProb) -> Map k a -> Option k = lam f. lam m.
   match mapMaxBy f m with Some x then x
   else dprint (mapBindings m); error "Empty map in mapMaxByExc"
@@ -71,7 +74,7 @@ let viterbi = -- ... -> {states : [State], prob : LogProb}
 
 mexpr
 
-let compareViterbiResult = lam delta. lam l. lam r.
+let compareViterbiResult = lam delta. lam l : ViterbiResult. lam r : ViterbiResult.
   match l with {states = lstates, prob = lprob} then
     match r with {states = rstates, prob = rprob} then
       and (all (lam b. b) (zipWith eqi lstates rstates))
@@ -93,8 +96,8 @@ let outputProbs = [
   [('A', negf 1.737), ('C', negf 2.322), ('G', negf 2.322), ('T', negf 1.737)]
 ] in
 let outputProb = lam state. lam v.
-  match find (lam t. eqc v t.0) (get outputProbs state) with Some t then
-    t.1
+  match find (lam t : (State, LogProb). eqc v t.0) (get outputProbs state) with Some (_, prob) then
+    prob
   else error (join ["No key '", v "' found"])
 in
 let inputs = ['G', 'G', 'C', 'A', 'C', 'T', 'G', 'A', 'A'] in
@@ -119,7 +122,8 @@ let outputProbs = [
   [("normal", negf 3.322), ("cold", negf 1.737), ("dizzy", negf 0.737)]
 ] in
 let outputProb = lam state. lam v.
-  match find (lam t. eqString v t.0) (get outputProbs state) with Some t then
+  match find (lam t : (State, LogProb). eqString v t.0) (get outputProbs state) with Some t then
+    let t : (State, LogProb) = t in
     t.1
   else error (join ["No key '", v, "' found"])
 in
