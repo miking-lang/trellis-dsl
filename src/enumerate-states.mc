@@ -314,7 +314,7 @@ lang BoolTypeEnumerate = Enumerate + BoolTypeTAst
 
   sem intToState env (intVal: Name) =
   | BoolTypeT _ ->
-    if_ (eqi_ (int_ 0) (nvar_ intVal)) false_ true_
+    eqi_ (int_ 1) (nvar_ intVal)
 
 end
 
