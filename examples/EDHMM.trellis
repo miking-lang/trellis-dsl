@@ -31,9 +31,9 @@ automaton Duration16 {
 
 
 model EDHMM = outer:DNA_5mer(inner:Duration16(foo:Innermost)) {
- table outputProb(Int, outer.state,): Probability
+ table outputProb(Int, state(outer),): Probability
 
- table outerTrans(Bool, outer.state, outer.state,): Probability
+ table outerTrans(Bool, state(outer), state(outer),): Probability
 
  P(output | x) = O(output, x.outer) # measurement depends only on Kmer
  P(initial x) = InitOuter(x.outer) * InitInner(x.inner)

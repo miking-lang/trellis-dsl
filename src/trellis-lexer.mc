@@ -1,6 +1,6 @@
 include "parser/lexer.mc"
 
-lang TrellisSetTokenParser = TokenParser
+lang SetTokenParser = TokenParser
   syn Token =
   | SetUnionTok {info : Info}
   | SetIntersectionTok {info : Info}
@@ -50,7 +50,6 @@ lang TrellisLineCommentParser = WSACParser
     in remove p xs
 end
 
--- Eat line comments of the form #
 lang TrellisDotsTokenParser = TokenParser
   syn Token =
   | DotsToken {info : Info}
