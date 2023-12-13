@@ -2,6 +2,7 @@
 include "trellis.mc"
 include "trellis-arg.mc"
 include "enumerate-states.mc"
+include "pprint.mc"
 
 mexpr
 
@@ -19,9 +20,9 @@ match result with ParseOK r then
     let filename = head r.strings in
     let ast = parseTrellisExn filename (readFile filename) in
 
-    dprintLn ast;
+    printLn (use TrellisPrettyPrint in pprintTrellis ast);
 
-    ast
+    ()
 else
   argPrintError result;
   exit 1
