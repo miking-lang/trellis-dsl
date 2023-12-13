@@ -135,7 +135,7 @@ prod NamedSet: SetT = name:LIdent
 -- Example (transition set): { false -> true,  }
 prod SetLit: SetT =
   "{"
-    (e:ExprT ("->" to:ExprT)? ",")*
+    (mapping:{e:ExprT ("->" to:ExprT)? ","})*
   "}"
 
 -- Defines a set builder. A later pass over the AST needs to check whether it is
@@ -192,7 +192,7 @@ prod IntPatT: PatT = i:Integer
 prod TruePatT: PatT = "true"
 prod FalsePatT: PatT = "false"
 
------------------------Integer
+-----------------------
 -- Normal data types --
 -----------------------
 
@@ -331,6 +331,6 @@ prod Prob: InModelDecl =
     | transition:"transition" from:LIdent to:LIdent) ")"
     ( "=" e:ExprT
     | /- "="? -- TODO(Linnea,2022-05-16): ll1 conflict -/ "{"
-      ("|" set:SetT "=>" e2:ExprT)+
+      (cases:{"|" set:SetT "=>" e2:ExprT})+
       "}"
     )
