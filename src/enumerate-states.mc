@@ -11,7 +11,7 @@ include "mexpr/eval.mc"
 include "mexpr/eq.mc"
 include "option.mc"
 
-type EnumerateEnv = {
+type EnumerateEnv = use TrellisBaseAst in {
   -- Maps a concrete type to its parameters and constructors with parameters
   concreteTypes: Map Name ([Name], Map Name [TypeT]),
   -- Maps the currently bound type variables to their types
@@ -30,8 +30,9 @@ let enumerateEnvEmpty = {
 }
 
 -- Populate the environment with type arguments
-let enumerateEnvBindTypeArgs =
-  lam env: EnumerateEnv. lam params: [Name]. lam args: [TypeT].
+let enumerateEnvBindTypeArgs
+  : use TrellisBaseAst in EnumerateEnv -> [Name] -> [TypeT] -> EnumerateEnv =
+  lam env. lam params. lam args.
     let typeVars = foldl2 (lam acc. lam p. lam a.
         mapInsert p a acc
       ) env.typeVars params args
@@ -417,7 +418,7 @@ let _test = lam f. lam e: Expr. lam t: TypeT.
      print "\n\n---------------\n\n";
      print (expr2str eFull)
    else ());
-  eval {env = evalEnvEmpty} eFull
+  eval {env = evalEnvEmpty ()} eFull
 in
 
 let intReprTest = _test (intRepr enumerateEnvEmpty) in
