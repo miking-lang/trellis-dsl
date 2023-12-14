@@ -174,9 +174,12 @@ lang TrellisPatPrettyPrint =
   sem pprintPat : PprintEnv -> PatT -> (PprintEnv, String)
   sem pprintPat env =
   | ConPatT {c = c, p = p} ->
+    match pprintConName env c.v with (env, v) in
     match mapAccumL pprintPat env p with (env, p) in
-    (env, join [c.v, "(", strJoin ", " p, ")"])
-  | VarPatT {id = id} -> (env, id.v)
+    (env, join [v, "(", strJoin ", " p, ")"])
+  | VarPatT {id = id} ->
+    match pprintVarName env id.v with (env, id) in
+    (env, id)
   | WildPatT _ -> (env, "_")
   | DotsPatT {left = left} ->
     match pprintPat env left with (env, left) in
@@ -211,7 +214,9 @@ lang TrellisSetPrettyPrint =
     match pprintSet env left with (env, left) in
     match pprintSet env right with (env, right) in
     (env, join [left, " \\setminus ", right])
-  | NamedSetSetT {name = name} -> (env, name.v)
+  | NamedSetSetT {name = name} ->
+    match pprintVarName env name.v with (env, v) in
+    (env, v)
   | SetLitSetT {mapping = mapping} ->
     let pprintMapping = lam env. lam m.
       match m with {e = e, to = to} in
@@ -293,8 +298,9 @@ lang TrellisParamPrettyPrint = TrellisTypePrettyPrint + ParamAst
   sem pprintParam : PprintEnv -> Param -> (PprintEnv, String)
   sem pprintParam env =
   | Param1 {n = n, ty = ty} ->
+    match pprintVarName env n.v with (env, v) in
     match pprintType env ty with (env, ty) in
-    (env, join [n.v, " : ", ty])
+    (env, join [v, " : ", ty])
 end
 
 lang TrellisConstrDeclPrettyPrint = TrellisTypePrettyPrint + ConstrDeclAst
@@ -322,7 +328,8 @@ lang TrellisAutomatonPropPrettyPrint =
   | SetPropAutomatonProp {name = name, initial = init, s = s} ->
     match
       match name with Some n then
-        (env, n.v)
+        match pprintVarName env n.v with (env, n) in
+        (env, n)
       else match init with Some _ then
         (env, "initial")
       else error "Invalid automaton property"
@@ -337,10 +344,13 @@ lang TrellisModelCompositionPrettyPrint =
   sem pprintModelComposition : PprintEnv -> ModelComposition -> (PprintEnv, String)
   sem pprintModelComposition env =
   | ModelAtomModelComposition {name = name, automaton = a} ->
-    (env, join [name.v, " : ", a.v])
-  | ModelNestingModelComposition {mc = mc} ->
+    match pprintVarName env name.v with (env, name) in
+    match pprintVarName env a.v with (env, a) in
+    (env, join [name, " : ", a])
+  | ModelNestingModelComposition {left = left, mc = mc} ->
+    match pprintModelComposition env left with (env, left) in
     match pprintModelComposition env mc with (env, mc) in
-    (env, join ["(", mc, ")"])
+    (env, join [left, "(", mc, ")"])
 end
 
 lang TrellisInModelDeclPrettyPrint =
@@ -349,6 +359,7 @@ lang TrellisInModelDeclPrettyPrint =
   sem pprintInModelDecl : PprintEnv -> InModelDecl -> (PprintEnv, String)
   sem pprintInModelDecl env =
   | InferredFunctionInModelDecl {f = f, p = p, ret = ret} ->
+    match pprintVarName env f.v with (env, v) in
     match mapAccumL pprintType env p with (env, p) in
     match
       match ret with Some ty then
@@ -356,7 +367,7 @@ lang TrellisInModelDeclPrettyPrint =
         (env, concat ": " ty)
       else (env, "")
     with (env, retstr) in
-    (env, join ["table ", f.v, "(", strJoin ", " p, ")", retstr])
+    (env, join ["table ", v, "(", strJoin ", " p, ")", retstr])
   | ProbInModelDecl {
       output = o, s = s, initial = init, transition = tr, from = from, to = to,
       e = e, cases = cases, info = info
@@ -369,11 +380,15 @@ lang TrellisInModelDeclPrettyPrint =
     in
     match
       match (o, s) with (Some _, Some sid) then
-        (env, concat "output | " sid.v)
+        match pprintVarName env sid.v with (env, sid) in
+        (env, concat "output | " sid)
       else match (init, s) with (Some _, Some sid) then
-        (env, concat "initial " sid.v)
+        match pprintVarName env sid.v with (env, sid) in
+        (env, concat "initial " sid)
       else match (tr, from, to) with (Some _, Some from, Some to) then
-        (env, join ["transition ", from.v, " ", to.v])
+        match pprintVarName env from.v with (env, from) in
+        match pprintVarName env to.v with (env, to) in
+        (env, join ["transition ", from, " ", to])
       else errorSingle [info] "Invalid probabilistic specification"
     with (env, pstr) in
     match
@@ -409,6 +424,7 @@ lang TrellisDeclPrettyPrint =
     let props = join (map (lam p. join ["  ", p, ",\n"]) props) in
     (env, join ["automaton ", nameGetStr n.v, " {\n", props, "}"])
   | FuncDecl {fname = n, p = p, ty = ty, e = e} ->
+    match pprintVarName env n.v with (env, v) in
     match
       if null p then (env, "")
       else
@@ -423,7 +439,7 @@ lang TrellisDeclPrettyPrint =
         (env, "")
     with (env, ty) in
     match pprintExpr env e with (env, e) in
-    (env, join ["let ", n.v, params, ty, " = ", e])
+    (env, join ["let ", v, params, ty, " = ", e])
   | ModelDecl {name = n, mc = mc, indecl = indecl} ->
     match pprintConName env n.v with (env, n) in
     match pprintModelComposition env mc with (env, mc) in

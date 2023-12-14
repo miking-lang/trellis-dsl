@@ -87,12 +87,12 @@ prod AutomatonDecl: Decl =
 
 -- Defines a parameter
 -- Example: 'foo : _'
-prod Param: Param = n:LIdent ":" ty:TypeT
+prod Param: Param = n:LName ":" ty:TypeT
 
 -- Defines a function declaration.
 -- Example: 'let myFun(foo:_) : _ = _'
 prod FuncDecl: Decl =
-  "let" fname:LIdent
+  "let" fname:LName
   ("(" p:Param ("," p:Param)* ")")?
   (":" ty:TypeT)?
   "=" e:ExprT
@@ -106,7 +106,7 @@ prod StateProp: AutomatonProp =
   "state" ":" ty:TypeT
 
 prod SetProp: AutomatonProp =
-  (name:LIdent | initial:"initial") ":" s:SetT
+  (name:LName | initial:"initial") ":" s:SetT
 
 ----------
 -- Sets --
@@ -127,7 +127,7 @@ infix left SetTMinus: SetT = "\\setminus"
 
 -- Defines a named set.
 -- Example: 'mySet'
-prod NamedSet: SetT = name:LIdent
+prod NamedSet: SetT = name:LName
 
 -- Defines a set literal. A later pass over the AST needs to check whether it is
 -- a value set or a transition set, and give an error if mixed.
@@ -165,11 +165,11 @@ type PatT {
   grouping = "(" ")",
 }
 
-prod ConPatT: PatT = c:UIdent ("(" (p:PatT ",")+ ")")?
+prod ConPatT: PatT = c:UName ("(" (p:PatT ",")+ ")")?
 
 -- Defines a named pattern variable
 -- Example: 'foo'
-prod VarPatT: PatT = id:LIdent
+prod VarPatT: PatT = id:LName
 
 -- Defines a wildcard pattern
 prod WildPatT: PatT = "_"
@@ -306,7 +306,7 @@ type ModelComposition {
 }
 
 prod ModelAtom: ModelComposition =
-  name:LIdent ":" automaton:UIdent
+  name:LName ":" automaton:UName
 postfix ModelNesting: ModelComposition =
   "(" mc:ModelComposition ")"
 -- TODO(Linnea,2022-05-16): deprecated?
@@ -318,7 +318,7 @@ postfix ModelNesting: ModelComposition =
 type InModelDecl
 
 prod InferredFunction: InModelDecl =
-  "table" f:LIdent
+  "table" f:LName
   "("
     (p:TypeT ",")*
   ")" (":" ret:TypeT)?
@@ -326,9 +326,9 @@ prod InferredFunction: InModelDecl =
 -- The rhs using '=>' is only valid for transition probability
 prod Prob: InModelDecl =
   "P" "("
-    ( output:"output" "|" s:LIdent
-    | initial:"initial" s:LIdent
-    | transition:"transition" from:LIdent to:LIdent) ")"
+    ( output:"output" "|" s:LName
+    | initial:"initial" s:LName
+    | transition:"transition" from:LName to:LName) ")"
     ( "=" e:ExprT
     | /- "="? -- TODO(Linnea,2022-05-16): ll1 conflict -/ "{"
       (cases:{"|" set:SetT "=>" e2:ExprT})+
