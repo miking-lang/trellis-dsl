@@ -3,6 +3,7 @@ include "trellis.mc"
 include "trellis-arg.mc"
 include "enumerate-states.mc"
 include "pprint.mc"
+include "resolve-lets.mc"
 
 mexpr
 
@@ -19,6 +20,8 @@ match result with ParseOK r then
     -- Yes, read and parse the file
     let filename = head r.strings in
     let ast = parseTrellisExn filename (readFile filename) in
+
+    let ast = use TrellisResolveVariables in resolveLetVariables ast in
 
     printLn (use TrellisPrettyPrint in pprintTrellis ast);
 
