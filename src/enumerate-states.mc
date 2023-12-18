@@ -1,677 +1,611 @@
--- Bi-directionally maps states to integers.
-
--- TODO(Linnea, 2022-05-30): statically resolve sizes of arrays and named upper
--- bounds in integers
+-- Defines a bi-directional mapping between states and integers. The interface
+-- consists of a function `cardinality` for computing the size of a type in a
+-- given environment (at compile-time) and two functions for generating MExpr
+-- code to convert a state to an integer (`stateToInt`) and (`intToState`) in a
+-- given environment. The functions fail at compile-time if the size of a type
+-- is unknown or infinite.
+--
+-- Before making use of these functions, all uses of names or expressions
+-- within types (array sizes and upper bounds of integers) should be resolved
+-- to constant values.
 
 include "trellis.mc"
 include "trellis-common.mc"
 
-include "mexpr/ast-builder.mc"
-include "mexpr/eval.mc"
+include "mexpr/ast.mc"
 include "mexpr/eq.mc"
-include "option.mc"
+include "mexpr/eval.mc"
+include "mexpr/pprint.mc"
 
-type EnumerateEnv = use TrellisBaseAst in {
-  -- Maps a concrete type to its parameters and constructors with parameters
-  concreteTypes: Map Name ([Name], Map Name [TypeT]),
-  -- Maps the currently bound type variables to their types
-  typeVars: Map Name TypeT,
-  -- Maps names bound to automatons
-  automatons: Map Name Name,
-  -- Maps automatons to the type of their states
-  automatonStates: Map Name TypeT
-}
+lang Enumerate = TrellisBaseAst + MExprAst
+  type EnumerateEnv = {
+    -- Maps a concrete type to its parameters and the constructors with
+    -- parameters.
+    concreteTypes : Map Name ([Name], Map Name [TypeT]),
 
-let enumerateEnvEmpty = {
-  concreteTypes = mapEmpty nameCmp,
-  typeVars = mapEmpty nameCmp,
-  automatons = mapEmpty nameCmp,
-  automatonStates = mapEmpty nameCmp
-}
+    -- Maps currently bound type variables to their concrete types.
+    typeVars : Map Name TypeT,
 
--- Populate the environment with type arguments
-let enumerateEnvBindTypeArgs
-  : use TrellisBaseAst in EnumerateEnv -> [Name] -> [TypeT] -> EnumerateEnv =
-  lam env. lam params. lam args.
-    let typeVars = foldl2 (lam acc. lam p. lam a.
-        mapInsert p a acc
-      ) env.typeVars params args
+    -- Maps bound names to the name of a concrete automaton type.
+    automatons : Map Name Name,
+
+    -- Maps an automaton to the type of its state.
+    automatonStates : Map Name TypeT
+  }
+
+  sem enumerateEnvEmpty : () -> EnumerateEnv
+  sem enumerateEnvEmpty =
+  | () ->
+    { concreteTypes = mapEmpty nameCmp
+    , typeVars = mapEmpty nameCmp
+    , automatons = mapEmpty nameCmp
+    , automatonStates = mapEmpty nameCmp }
+
+  -- Statically computes the number of possible values of a given type, or
+  -- fails if the type is infinite.
+  sem cardinality : EnumerateEnv -> TypeT -> Int
+
+  -- Returns an MExpr expression which converts the state contained in the
+  -- provided name to an integer value, assuming it has the provided type.
+  -- The resulting integer is always strictly less than the cardinality of the
+  -- type.
+  sem stateToInt : EnumerateEnv -> Name -> TypeT -> Expr
+
+  -- Returns an MExpr expression converting the integer stored in the provided
+  -- name to a state it is assumed to encode. This integer must be strictly
+  -- less than the cardinality of the type.
+  sem intToState : EnumerateEnv -> Name -> TypeT -> Expr
+
+  sem stateToIntTuple : EnumerateEnv -> Name -> [TypeT] -> Expr
+  sem stateToIntTuple env target =
+  | [] -> int_ 0
+  | types ->
+    let products = lam acc. lam x.
+      let y = muli acc x in
+      (y, y)
     in
-    {env with typeVars = typeVars}
-
-
--- Base fragment for type enumeration
-lang Enumerate = TrellisBaseAst + TypeVarTypeTAst
-  -- Get the number of elements in the type, or error if not finite
-  sem cardinality: EnumerateEnv -> TypeT -> Int
-
-  -- Get the int representation of an expression of a given type
-  sem intRepr: EnumerateEnv -> Name -> TypeT -> Expr
-
-  -- Get the expression of an integer representation
-  sem intToState: EnumerateEnv -> Name -> TypeT -> Expr
-
-  -- Helper to resolve a type variables to its bound type
-  sem resolveTypeVar: EnumerateEnv -> TypeT -> TypeT
-  sem resolveTypeVar env =
-  | TypeVarTypeT {n={i=info, v=n}} ->
-    optionGetOrElse (lam. errorNameUnbound info n) (mapLookup n env.typeVars)
-end
-
--- Enumeration for types compiling to tuples
-lang TupleEnumerate = Enumerate
-  sem intReprTuple: Name -> [Name] -> [Expr] -> [Int] -> Expr
-  sem intReprTuple state matchNames repr =
-  | cards ->
-    let matchExpr: Expr -> Expr = lam thn.
-      match_ (nvar_ state) (ptuple_ (map npvar_ matchNames)) thn never_ in
-    let prods: [Int] = snoc (prodAllRight cards) 1 in
-    let f: Expr -> Int -> Expr = lam r. lam p. muli_ r (int_ p) in
-    let sumExpr = foldl2 (lam acc: Expr. lam r: Expr. lam p: Int.
-        addi_ acc (f r p)
-      ) (f (head repr) (head prods)) (tail repr) (tail prods)
+    let cards = map (cardinality env) types in
+    let ids = create (length types) (lam. nameSym "n") in
+    let s = map (lam x. stateToInt env x.0 x.1) (zip ids types) in
+    match mapAccumL products 1 cards with (_, prods) in
+    let thn =
+      foldl (lam acc. lam x.
+        match x with (prod, s) in
+        addi_ acc (mulLitExpr s prod))
+      (head s) (zip prods (tail s))
     in
-    matchExpr sumExpr
+    match_ (nvar_ target) (ptuple_ (map npvar_ ids)) thn never_
 
-  sem intToStateTuple: EnumerateEnv -> Name -> [Int] -> [TypeT] -> Expr
-  sem intToStateTuple env intVal cards =
-  | tys ->
-     -- i -> (i/(|b||c|) mod |a|, i/|c| mod |b|, i mod |c|)
-     let states: [Expr] =
-       match tys with [] then []
-       else
-         let prods: [Int] = snoc (prodAllRight (tail cards)) 1 in
-         zipWith3 (lam c. lam p. lam ty.
-           let n = nameSym "t" in
-           let e = modi_ (divi_ (nvar_ intVal) (int_ p)) (int_ c) in
-           bind_ (nulet_ n e) (intToState env n ty)
-         ) cards prods tys
-     in
-     -- TODO(Linnea,2022-05-25): tuple type
-     utuple_ states
+  sem intToStateTuple : EnumerateEnv -> Name -> [TypeT] -> Expr
+  sem intToStateTuple env target =
+  | types ->
+    let cards = map (cardinality env) types in
+    let ids = create (length types) (lam. nameSym "n") in
+    let i = map (lam x. (x.0, intToState env x.0 x.1)) (zip ids types) in
+    let src = nvar_ target in
+    match
+      mapAccumL
+        (lam acc. lam x.
+          match x with (card, (id, i2s)) in
+          let divAcc = divLitExpr src acc in
+          let e = bind_ (nulet_ id (modi_ divAcc (int_ card))) i2s in
+          (muli acc card, e))
+        1 (zip cards i)
+    with (_, elems) in
+    utuple_ elems
 
+  sem prod : [Int] -> Int
+  sem prod = | s -> foldl muli 1 s
+
+  -- NOTE(larshum, 2023-12-18): We use the utility functions below to avoid
+  -- introducing unnecessary arithmetic operations without cluttering the code.
+  sem addLitExpr : Expr -> Int -> Expr
+  sem addLitExpr e =
+  | 0 -> e
+  | n -> addi_ e (int_ n)
+
+  sem subLitExpr : Expr -> Int -> Expr
+  sem subLitExpr e =
+  | 0 -> e
+  | n -> subi_ e (int_ n)
+
+  sem mulLitExpr : Expr -> Int -> Expr
+  sem mulLitExpr e =
+  | 0 -> int_ 0
+  | 1 -> e
+  | n -> muli_ e (int_ n)
+
+  sem divLitExpr : Expr -> Int -> Expr
+  sem divLitExpr e =
+  | 0 -> error "Attempted division by zero"
+  | 1 -> e
+  | n -> divi_ e (int_ n)
 end
 
 lang TypeVarTypeEnumerate = Enumerate + TypeVarTypeTAst
-  sem cardinality env =
-  | (TypeVarTypeT _) & t ->
-    cardinality env (resolveTypeVar env t)
+  sem resolveTypeVar : EnumerateEnv -> TypeT -> TypeT
+  sem resolveTypeVar env =
+  | TypeVarTypeT {n = {v = n}, info = info} ->
+    optionGetOrElse (lam. errorNameUnbound info n) (mapLookup n env.typeVars)
 
-  sem intRepr env state =
-  | (TypeVarTypeT _) & t ->
-    intRepr env state (resolveTypeVar env t)
+  sem cardinality env =
+  | (TypeVarTypeT _) & t -> cardinality env (resolveTypeVar env t)
+
+  sem stateToInt env state =
+  | (TypeVarTypeT _) & t -> stateToInt env state (resolveTypeVar env t)
 
   sem intToState env intVal =
-  | (TypeVarTypeT _) & t ->
-    intToState env intVal (resolveTypeVar env t)
-
+  | (TypeVarTypeT _) & t -> intToState env intVal (resolveTypeVar env t)
 end
 
-lang ArrayTypeEnumerate = Enumerate + ArrayTypeTAst + IntegerExprTAst + TupleEnumerate
-  -- NOTE(Linnea,2022-05-24): Assumes Trellis arrays are compiled into MExpr
-  -- tuples
+lang ArrayTypeEnumerate = Enumerate + ArrayTypeTAst + IntegerExprTAst
+  sem getArraySize : Info -> ExprT -> Int
+  sem getArraySize info =
+  | IntegerExprT {i = {v = count}} -> count
+  | _ -> errorSingle [info] "Array unknown size at compile-time"
 
   sem cardinality env =
   | ArrayTypeT t ->
-    let cardLeft = cardinality env t.left in
-    match t.count with IntegerExprT {i={v=count}} then
-      powi cardLeft count
-    else errorSingle [t.info] "Array size not statically known"
+    let count = getArraySize t.info t.count in
+    powi (cardinality env t.left) count
 
-  sem intRepr env state =
+  sem stateToInt env state =
   | ArrayTypeT t ->
-    -- [a1,a2,a3] -> (intRepr a1)*|a|^2 + (intRepr a2)*|a| + (intRepr a3)
-    match t.count with IntegerExprT {i={v=count}} then
-      if eqi count 0 then int_ 0
+    let count = getArraySize t.info t.count in
+    stateToIntTuple env state (make count t.left)
+
+  sem intToState env intVal =
+  | ArrayTypeT t ->
+    let count = getArraySize t.info t.count in
+    intToStateTuple env intVal (make count t.left)
+end
+
+lang ConcreteTypeEnumerate = Enumerate + ConcreteTypeTAst
+  sem constructorCardinality : Info -> EnumerateEnv -> [TypeT] -> Int
+  sem constructorCardinality info env =
+  | params -> foldl (lam acc. lam ty. muli acc (cardinality env ty)) 1 params
+
+  sem bindConstrTypeArgs : EnumerateEnv -> [Name] -> [TypeT] -> EnumerateEnv
+  sem bindConstrTypeArgs env paramNames =
+  | types ->
+    { env with typeVars =
+        foldl2
+          (lam acc. lam p. lam ty. mapInsert p ty acc)
+          env.typeVars paramNames types }
+
+  sem cardinality env =
+  | ConcreteTypeT {n = {v = n}, a = typeArgs, info = info} ->
+    match mapLookup n env.concreteTypes with Some (params, constr) then
+      let env = bindConstrTypeArgs env params typeArgs in
+      -- NOTE(larshum, 2023-12-18): The cardinality of a constructor type is
+      -- the sum of the cardinalities of its constructors.
+      mapFoldWithKey
+        (lam acc. lam. lam params.
+          addi acc (constructorCardinality info env params))
+        0 constr
+    else errorNameUnbound info n
+
+  sem stateToIntConstr : EnumerateEnv -> Name -> (Int, Expr) -> Name -> [TypeT]
+                      -> (Int, Expr)
+  sem stateToIntConstr env state acc constrId =
+  | paramTypes ->
+    match acc with (offset, accExpr) in
+    let n = nameSym "n" in
+    match
+      match paramTypes with [] then
+        (addi offset 1, int_ offset)
+      else match paramTypes with [paramTy] then
+        -- NOTE(larshum, 2023-12-18): We special-case on when the constructor has
+        -- exactly one argument, because in that case, the argument is inlined
+        -- in MExpr. In other cases, we convert it to an MExpr constructor
+        -- taking a tuple argument (with one entry per parameter).
+        (cardinality env paramTy, addLitExpr (stateToInt env n paramTy) offset)
       else
-        let matchNames: [Name] = create count (lam. nameSym "t") in
-        let repr: [Expr] = map (lam n. intRepr env n t.left) matchNames in
-        let cards: [Int] = make (subi count 1) (cardinality env t.left) in
-        intReprTuple state matchNames repr cards
-    else errorSingle [t.info] "Array size not statically known"
+        let newOffset = addi offset (prod (map (cardinality env) paramTypes)) in
+        (newOffset, addLitExpr (stateToIntTuple env n paramTypes) offset)
+    with (newOffset, e) in
+    let newExpr = match_ (nvar_ state) (npcon_ constrId (npvar_ n)) e accExpr in
+    (newOffset, newExpr)
+
+  sem stateToInt env state =
+  | ConcreteTypeT {n = {v = n}, a = typeArgs, info = info} ->
+    match mapLookup n env.concreteTypes with Some (params, constr) then
+      let env = bindConstrTypeArgs env params typeArgs in
+      match mapFoldWithKey (stateToIntConstr env state) (0, never_) constr with (_, e) in
+      e
+    else errorNameUnbound info n
+
+  sem intToStateConstr : EnumerateEnv -> Name -> Info -> Int -> Name -> [TypeT]
+                      -> (Int, Expr -> Expr)
+  sem intToStateConstr env intVal info offset constrId =
+  | paramTypes ->
+    let n = nameSym "n" in
+    match
+      match paramTypes with [] then
+        (addi offset 1, intToStateTuple env n [])
+      else match paramTypes with [paramTy] then
+        -- NOTE(larshum, 2023-12-18): As above, we assume the structure of the
+        -- resulting expression is different in case the constructor takes one
+        -- argument.
+        let card = cardinality env paramTy in
+        (addi offset card, intToState env n paramTy)
+      else
+        let newOffset = addi offset (prod (map (cardinality env) paramTypes)) in
+        (newOffset, intToStateTuple env n paramTypes)
+    with (newOffset, e) in
+    let conApp = TmConApp {
+      ident = constrId, body = e, ty = TyUnknown {info = info}, info = info
+    } in
+    let thnBody =
+      if null paramTypes then conApp
+      else
+        bind_ (nulet_ n (subLitExpr (nvar_ intVal) offset)) conApp
+    in
+    let newExpr = lam els.
+      if_ (lti_ (nvar_ intVal) (int_ newOffset)) thnBody els
+    in
+    (newOffset, newExpr)
 
   sem intToState env intVal =
-  | ArrayTypeT t ->
-    match t.count with IntegerExprT {i={v=count}} then
-      let cards: [Int] = make count (cardinality env t.left) in
-      intToStateTuple env intVal cards (make count t.left)
-    else errorSingle [t.info] "Array size not statically known"
-
+  | ConcreteTypeT {n = {v = n}, a = typeArgs, info = info} ->
+    match mapLookup n env.concreteTypes with Some (params, constr) then
+      let env = bindConstrTypeArgs env params typeArgs in
+      match mapMapAccum (intToStateConstr env intVal info) 0 constr
+      with (_, constrConds) in
+      foldr
+        (lam condExpr. lam acc. condExpr acc)
+        never_ (mapValues constrConds)
+    else errorNameUnbound info n
 end
 
-lang ConcreteTypeEnumerate = Enumerate + ConcreteTypeTAst + TupleEnumerate
-  -- NOTE(Linnea,2022-05-24): Assumes that Trellis concrete types are compiled
-  -- into MExpr constructors
-
+lang TupleTypeEnumerate = Enumerate + TupleTypeTAst
   sem cardinality env =
-  | ConcreteTypeT ({n = {v = name}} & t) ->
-    match mapLookup name env.concreteTypes with Some (params, constr) then
-      let env = enumerateEnvBindTypeArgs env params t.a in
-      -- The cardinality of a concrete type is the sum of the cardinalities of
-      -- its constructors
-      mapFoldWithKey (lam acc. lam. lam params.
-          addi acc (cardinalityCon t.info env params)
-        ) 0 constr
-    else errorNameUnbound t.info name
+  | TupleTypeT t -> prod (map (cardinality env) t.t)
 
-  -- The cardinality of a constructor is the product of the cardinalities of
-  -- its arguments
-  sem cardinalityCon: Info -> EnumerateEnv -> [TypeT] -> Int
-  sem cardinalityCon info env =
-  | params ->
-    foldl (lam acc. lam ty. muli acc (cardinality env ty)) 1 params
+  sem stateToInt env state =
+  | TupleTypeT t -> stateToIntTuple env state t.t
 
-  -- Returns a sequence 'offset', where 'offset[i]' is the accumulated
-  -- cardinality of the preceding constructors for the ith constructor
-  sem accumOffset: Info -> EnumerateEnv -> (Map Name [TypeT]) -> [Int]
-  sem accumOffset info env =
-  | constr ->
-    match mapFoldWithKey (lam acc. lam. lam cparams.
-        match acc with (accCard, accOffset) in
-        (addi accCard (cardinalityCon info env cparams), snoc accOffset accCard)
-      ) (0, []) constr
-    with (_, offset) in
-    offset
-
-  sem intRepr env state =
-  | ConcreteTypeT ({n = {v = name}} & t) ->
-    match mapLookup name env.concreteTypes with Some (params, constr) then
-      let env = enumerateEnvBindTypeArgs env params t.a in
-      let offset = accumOffset t.info env constr in
-
-      -- Match on each constructor, recursively call intRepr, add offset[i] in
-      -- each arm
-      -- OPT(Linnea, 2022-06-01): Avoid re-computation of cardinality of
-      -- arguments that are in common for several constructors.
-      recursive let matchCon = lam cs: [(Name, [TypeT])]. lam offset: [Int].
-        match cs with [] then never_
-        else match cs with [(cname, cparams)] ++ cs in
-          let subpat = nameSym "t" in
-          let addExpr: Expr =
-            -- NOTE(Linnea, 2022-06-01): special case when the constructor has
-            -- exactly one argument. This assumes that we compile `C(a)` to `C a`,
-            -- whereas a constructor with 0 or >1 arguments takes a tuple:
-            -- `C(a,b)` compiles to `C (a,b)`, and `C` compiles to `C ()`.
-            switch cparams
-            case [p] then
-              match cparams with [ty] in
-              intRepr env subpat ty
-            case _ then
-              -- Matches on a constructor applied to a tuple
-              let names = map (lam. nameSym "t") cparams in
-              -- Get the int representation of the tuple
-              match cparams with [] then int_ 0
-              else
-                let repr: [Expr] = zipWith (intRepr env) names cparams in
-                let cards: [Int] = map (cardinality env) (tail cparams) in
-                intReprTuple subpat names repr cards
-            end
-          in
-          let sum = addi_ (int_ (head offset)) addExpr in
-          match_ (nvar_ state) (npcon_ cname (npvar_ subpat))
-            sum (matchCon cs (tail offset))
-      in
-      matchCon (mapBindings constr) offset
-    else errorNameUnbound t.info name
-
-    sem intToState env intVal =
-    | ConcreteTypeT ({n = {v = name}} & t) ->
-      match mapLookup name env.concreteTypes with Some (params, constr) then
-        let env = enumerateEnvBindTypeArgs env params t.a in
-        let offset = accumOffset t.info env constr in
-
-        -- Matches on ranges to determine constructor
-        recursive let matchRange = lam cs: [(Name, [TypeT])]. lam offset: [Int].
-          match cs with [] then never_
-          else match cs with [(cname, cparams)] ++ cs in
-            -- Get the state of the argument
-            let r = nameSym "r" in
-            let argState: Expr =
-              -- See note above about special case for one-argument constructor
-              switch cparams
-              case [_] then
-                intToState env r (head cparams)
-              case _ then
-                let cards: [Int] = map (cardinality env) cparams in
-                intToStateTuple env r cards cparams
-              end
-            in
-            let bindArgState: Expr =
-              bind_ (nulet_ r (subi_ (nvar_ intVal) (int_ (head offset))))
-                argState
-            in
-            let state: Expr = nconapp_ cname bindArgState in
-            -- Last constructor?
-            match offset with [_] then state
-            -- Less than offset of the next constructor?
-            else match offset with [o1, o2] ++ _ then
-              if_ (lti_ (nvar_ intVal) (int_ o2))
-                state (matchRange cs (tail offset))
-            else never
-          in
-          matchRange (mapBindings constr) offset
-      else errorNameUnbound t.info name
-
-
-end
-
-lang TupleTypeEnumerate = Enumerate + TupleTypeTAst + TupleEnumerate
-  -- NOTE(Linnea,2022-05-24): Assumes Trellis tuples are compiled into MExpr
-  -- tuples
-
-  sem cardinality env =
-  | TupleTypeT t ->
-    foldl (lam acc. lam ty. muli acc (cardinality env ty)) 1 t.t
-
-  sem intRepr env (state: Name) =
-  | TupleTypeT t ->
-    -- (a,b,c) -> (intRepr a)|b||c| + (intRepr b)|c| + (intRepr c)
-    match t.t with [] then int_ 0
-    else
-      let matchNames: [Name] = map (lam. nameSym "t") t.t in
-      let repr: [Expr] = zipWith (intRepr env) matchNames t.t in
-      let cards: [Int] = map (cardinality env) (tail t.t) in
-      intReprTuple state matchNames repr cards
-
-   sem intToState env (intVal: Name) =
-   | TupleTypeT t ->
-     -- i -> (i/(|b||c|) mod |a|, i/|c| mod |b|, i mod |c|)
-     let cards: [Int] = map (cardinality env) t.t in
-     intToStateTuple env intVal cards t.t
-
+  sem intToState env intVal =
+  | TupleTypeT t -> intToStateTuple env intVal t.t
 end
 
 lang IntegerTypeEnumerate = Enumerate + IntegerTypeTAst
   sem cardinality env =
-  | IntegerTypeT t ->
-    match t with {lb = {v = lb}, ub = ub, namedUb = namedUb} in
-    match ub with Some ub then
-      let ub: {i: Info, v: Int} = ub in
-      addi 1 (subi ub.v lb)
-    else match namedUb with Some namedUb then
-      let namedUb: {i: Info, v: Name} = namedUb in
-      errorSingle [namedUb.i] "Named upper bound not supported yet"
-    else errorSingle [t.info] "Unbound integer in cardinality"
+  | IntegerTypeT {lb = {v = lb}, ub = Some {v = ub}, namedUb = None _} ->
+    addi (subi ub lb) 1
+  | IntegerTypeT (t & {ub = None _, namedUb = Some _}) ->
+    errorSingle [t.info] "Cannot determine cardinality of integer with named upper bound"
+  | IntegerTypeT t -> errorSingle [t.info] "Invalid integer type"
 
-  sem intRepr env (state: Name) =
-  | IntegerTypeT t ->
-    match t.lb with {v=lb} in
-    subi_ (nvar_ state) (int_ lb)
+  sem stateToInt env state =
+  | IntegerTypeT {lb = {v = lb}} -> subLitExpr (nvar_ state) lb
 
-  sem intToState env (intVal: Name) =
-  | IntegerTypeT t ->
-    match t.lb with {v=lb} in
-    addi_ (nvar_ intVal) (int_ lb)
-
+  sem intToState env intVal =
+  | IntegerTypeT {lb = {v = lb}} -> addLitExpr (nvar_ intVal) lb
 end
 
 lang BoolTypeEnumerate = Enumerate + BoolTypeTAst
   sem cardinality env =
   | BoolTypeT _ -> 2
 
-  sem intRepr env (state: Name) =
+  sem stateToInt env state =
   | BoolTypeT _ ->
     if_ (nvar_ state) (int_ 1) (int_ 0)
 
-  sem intToState env (intVal: Name) =
-  | BoolTypeT _ ->
-    eqi_ (int_ 1) (nvar_ intVal)
-
-end
-
-lang AutomatonStateTypeEnumerate = Enumerate + AutomatonStateTypeTAst
-
-  sem automatonLookup
-  : all a. EnumerateEnv -> (EnumerateEnv -> TypeT -> a) -> Info -> Name -> a
-  sem automatonLookup env f info =
-  | name ->
-    match mapLookup name env.automatons with Some a then
-      match mapLookup a env.automatonStates with Some ty then
-        f env ty
-      else errorSingle [info] (join [
-        nameGetStr name, " refers to an unknown automaton ",
-        nameGetStr a])
-    else errorNameUnbound info name
-
-  sem cardinality env =
-  | AutomatonStateTypeT {automaton = {i = info, v = name}} ->
-    automatonLookup env cardinality info name
-
-  sem intRepr env state =
-  | AutomatonStateTypeT {automaton = {i = info, v = name}} ->
-    let f = lam env. lam ty. intRepr env state ty in
-    automatonLookup env f info name
-
   sem intToState env intVal =
-  | AutomatonStateTypeT {automaton = {i = info, v = name}} ->
-    let f = lam env. lam ty. intToState env intVal ty in
-    automatonLookup env f info name
-
+  | BoolTypeT _ ->
+    eqi_ (nvar_ intVal) (int_ 1)
 end
 
 lang IntTypeEnumerate = Enumerate + IntTypeTAst
   sem cardinality env =
-  | IntTypeT t -> errorSingle [t.info] "Infinite type in cardinality"
+  | IntTypeT t -> errorSingle [t.info] "Infinite type found in cardinality"
 
-  sem intRepr env state =
-  | IntTypeT t -> errorSingle [t.info] "Infinite type in intRepr"
+  sem stateToInt env state =
+  | IntTypeT t -> errorSingle [t.info] "Infinite type found in stateToInt"
 
   sem intToState env intVal =
-  | IntTypeT t -> errorSingle [t.info] "Infinite type in intToState"
+  | IntTypeT t -> errorSingle [t.info] "Infinite type found in intToState"
 end
 
+lang AutomatonStateEnumerate = Enumerate + AutomatonStateTypeTAst
+  sem automatonLookup : EnumerateEnv -> Info -> Name -> TypeT
+  sem automatonLookup env info =
+  | id ->
+    match mapLookup id env.automatons with Some a then
+      match mapLookup a env.automatonStates with Some ty then
+        ty
+      else
+        errorSingle [info]
+          (join [nameGetStr id, " refers to an unknown automaton ", nameGetStr a])
+    else errorNameUnbound info id
+
+  sem cardinality env =
+  | AutomatonStateTypeT {automaton = {i = info, v = id}} ->
+    cardinality env (automatonLookup env info id)
+
+  sem stateToInt env state =
+  | AutomatonStateTypeT {automaton = {i = info, v = id}} ->
+    stateToInt env state (automatonLookup env info id)
+
+  sem intToState env intVal =
+  | AutomatonStateTypeT {automaton = {i = info, v = id}} ->
+    intToState env intVal (automatonLookup env info id)
+end
 
 lang TrellisEnumerate =
   TypeVarTypeEnumerate + ArrayTypeEnumerate + ConcreteTypeEnumerate +
   TupleTypeEnumerate + IntegerTypeEnumerate + BoolTypeEnumerate +
-  AutomatonStateTypeEnumerate + IntTypeEnumerate
+  IntTypeEnumerate + AutomatonStateEnumerate
 end
 
-lang Test = TrellisEnumerate + MExprEval + MExprEq + MExprPrettyPrint end
-
+lang Test =
+  TrellisEnumerate + TrellisAst + MExprEval + MExprEq + MExprPrettyPrint
+end
 
 mexpr
 
 use Test in
 
--- Trellis AST builders
-let tyboolt_ = BoolTypeT {bool= NoInfo(), info= NoInfo()} in
-let tyintUbt_ =
-  lam lb:Int. lam ub:Int.
-  IntegerTypeT { lb= {i= NoInfo(),v=lb},
-                 ub= Some {i= NoInfo(), v=ub},
-                 namedUb= None(),
-                 v= None(),
-                 info = NoInfo() }
+-- Type AST builder functions
+let tyBool = lam. BoolTypeT {bool = NoInfo (), info = NoInfo ()} in
+let tyInteger = lam lb. lam ub.
+  IntegerTypeT {
+    lb = {i = NoInfo (), v = lb}, ub = Some {i = NoInfo (), v = ub},
+    namedUb = None (), v = None (), info = NoInfo () }
 in
-let tytuplet_ =
-  lam types:[TypeT].
-  TupleTypeT {t=types, info= NoInfo()}
+let tyTuple = lam types.
+  TupleTypeT {t = types, info = NoInfo ()}
 in
-let tyarrayt_ = use ArrayTypeTAst in
-  lam ty:TypeT. lam count:ExprT.
-  ArrayTypeT {left=ty, count=count, info= NoInfo()}
+let tyArray = lam ty. lam count.
+  ArrayTypeT {
+    left = ty, info = NoInfo (),
+    count = IntegerExprT {i = {i = NoInfo (), v = count}, info = NoInfo ()} }
 in
-let tyconcretet_ = use ConcreteTypeTAst in
-  lam n:Name. lam a:[TypeT].
-  ConcreteTypeT {n={i= NoInfo(), v=n}, a=a, info= NoInfo()}
+let tyConcrete = lam n. lam a.
+  ConcreteTypeT {n = {i = NoInfo (), v = n}, a = a, info = NoInfo ()}
 in
-let tyvart_ = use TypeVarTypeTAst in
-  lam n:Name.
-  TypeVarTypeT {n={i= NoInfo(),v=n}, info= NoInfo()}
+let tyVar = lam n.
+  TypeVarTypeT {n = {i = NoInfo (), v = n}, info = NoInfo ()}
 in
-let tyautomatonStatet_ = use AutomatonStateTypeTAst in
-  lam n:Name.
-  AutomatonStateTypeT {automaton={i= NoInfo(), v=n}, info= NoInfo()}
-in
-let intt_ = use IntegerExprTAst in
-  lam v:Int.
-  IntegerExprT {i= {i= NoInfo(), v=v}, info= NoInfo()}
+let tyAutomatonState = lam n.
+  AutomatonStateTypeT {automaton = {i = NoInfo (), v = n}, info = NoInfo ()}
 in
 
--- Test helper functions
-let debug = false in
-let _test = lam f. lam e: Expr. lam t: TypeT.
+-- Helper functions and aliases
+let env = enumerateEnvEmpty () in
+let test = lam f. lam e. lam t.
   let n = nameSym "n" in
-  let eFull = bind_ (nulet_ n e) (f n t) in
-  (if debug then
-     print "\n\n---------------\n\n";
-     print (expr2str eFull)
-   else ());
-  eval {env = evalEnvEmpty ()} eFull
+  let e = bind_ (nulet_ n e) (f n t) in
+  eval {env = evalEnvEmpty ()} e
+in
+let stateToIntTest = lam env. test (stateToInt env) in
+let intToStateTest = lam env. test (intToState env) in
+let idTest = lam env. lam e. lam t.
+  let n1 = nameSym "n" in
+  let n2 = nameSym "n" in
+  let res = eval {env = evalEnvEmpty ()} (bindall_ [
+    nulet_ n1 e,
+    nulet_ n2 (stateToInt env n1 t),
+    intToState env n2 t
+  ]) in
+  eqExpr e res
 in
 
-let intReprTest = _test (intRepr enumerateEnvEmpty) in
-let intToStateTest = _test (intToState enumerateEnvEmpty) in
-
-let intReprTestEnv = lam env. _test (intRepr env) in
-let intToStateTestEnv = lam env. _test (intToState env) in
-
--- Bool type --
-utest cardinality enumerateEnvEmpty tyboolt_ with 2 in
-
-utest intReprTest false_ tyboolt_ with int_ 0 using eqExpr in
-utest intReprTest true_ tyboolt_ with int_ 1 using eqExpr in
-
-utest intToStateTest (int_ 0) tyboolt_ with false_ using eqExpr in
-utest intToStateTest (int_ 1) tyboolt_ with true_ using eqExpr in
-
--- Integer type --
-utest cardinality enumerateEnvEmpty (tyintUbt_ 1 1) with 1 in
-utest cardinality enumerateEnvEmpty (tyintUbt_ 4 10) with 7 in
-
-utest intReprTest (int_ 4) (tyintUbt_ 1 5) with int_ 3 using eqExpr in
-utest intToStateTest (int_ 0) (tyintUbt_ 1 5) with int_ 1 using eqExpr in
-
--- Tuple type --
-utest cardinality enumerateEnvEmpty (tytuplet_ [tyboolt_, tyintUbt_ 1 4]) with 8 in
-
-utest intReprTest uunit_ (tytuplet_ []) with int_ 0 using eqExpr in
-utest intToStateTest (int_ 0) (tytuplet_ []) with uunit_ using eqExpr in
-
-utest
-  let ty = tytuplet_ [tyintUbt_ 2 3, tyintUbt_ 1 5, tyintUbt_ 3 5] in
-  [ intReprTest (utuple_ [int_ 2, int_ 1, int_ 3]) ty
-  , intReprTest (utuple_ [int_ 2, int_ 1, int_ 4]) ty
-  , intReprTest (utuple_ [int_ 3, int_ 4, int_ 5]) ty
-  , intReprTest (utuple_ [int_ 3, int_ 5, int_ 5]) ty
-  ]
-with [int_ 0, int_ 1, int_ 26, int_ 29]
-using eqSeq eqExpr in
-
-utest
-  let ty = tytuplet_ [tyintUbt_ 2 3, tyintUbt_ 1 5, tyintUbt_ 3 5] in
-  map (lam i. intToStateTest i ty) [int_ 0, int_ 1, int_ 26, int_ 29]
-with [ utuple_ [int_ 2, int_ 1, int_ 3]
-     , utuple_ [int_ 2, int_ 1, int_ 4]
-     , utuple_ [int_ 3, int_ 4, int_ 5]
-     , utuple_ [int_ 3, int_ 5, int_ 5]
-     ]
-using eqSeq eqExpr in
-
--- Array type --
-utest cardinality enumerateEnvEmpty (tyarrayt_ (tyintUbt_ 1 5) (intt_ 3)) with 125 in
-
-utest intReprTest uunit_ (tyarrayt_ (tyintUbt_ 1 5) (intt_ 0)) with int_ 0 using eqExpr in
-utest intToStateTest (int_ 0) (tyarrayt_ (tyintUbt_ 1 5) (intt_ 0)) with uunit_ using eqExpr in
-
-utest
-  let ty = tyarrayt_ (tyintUbt_ 1 5) (intt_ 3) in
-  [ intReprTest (utuple_ [int_ 1, int_ 1, int_ 1]) ty
-  , intReprTest (utuple_ [int_ 2, int_ 3, int_ 5]) ty
-  , intReprTest (utuple_ [int_ 5, int_ 5, int_ 5]) ty
-  ]
-with [int_ 0, int_ 39, int_ 124]
-using eqSeq eqExpr in
-
-utest
-  let ty = tyarrayt_ (tyintUbt_ 1 5) (intt_ 3) in
-  map (lam i. intToStateTest i ty) [int_ 0, int_ 39, int_ 124]
-with [ utuple_ [int_ 1, int_ 1, int_ 1]
-     , utuple_ [int_ 2, int_ 3, int_ 5]
-     , utuple_ [int_ 5, int_ 5, int_ 5]
-     ]
-using eqSeq eqExpr in
-
--- Concrete type --
-
-let _mkEnv = lam tys: [(Name, [Name])]. lam constr: [[(Name, [TypeT])]].
-  let binds: [(Name, ([Name], Map Name [TypeT]))] =
-    zipWith (lam ty: (Name, [Name]). lam c: [(Name, [TypeT])].
-      (ty.0, (ty.1, mapFromSeq nameCmp c))
-    ) tys constr
-  in { enumerateEnvEmpty with concreteTypes = mapFromSeq nameCmp binds }
+let sum = lam s. foldl addi 0 s in
+let ppExprs = lam l. lam r.
+  join [ "LHS:\n", expr2str l, "\nRHS:\n", expr2str r ]
 in
 
--- Cardinality tests
+----------
+-- BOOL --
+----------
+
+utest cardinality env (tyBool ()) with 2 in
+
+utest stateToIntTest env false_ (tyBool ()) with int_ 0 using eqExpr else ppExprs in
+utest stateToIntTest env true_ (tyBool ()) with int_ 1 using eqExpr else ppExprs in
+utest intToStateTest env (int_ 0) (tyBool ()) with false_ using eqExpr else ppExprs in
+utest intToStateTest env (int_ 1) (tyBool ()) with true_ using eqExpr else ppExprs in
+utest idTest env true_ (tyBool ()) with true in
+
+----------------------
+-- BOUNDED INTEGERS --
+----------------------
+
+utest cardinality env (tyInteger 1 2) with 2 in
+utest cardinality env (tyInteger 0 10) with 11 in
+
+utest stateToIntTest env (int_ 7) (tyInteger 0 10) with int_ 7 using eqExpr else ppExprs in
+utest stateToIntTest env (int_ 17) (tyInteger 10 20) with int_ 7 using eqExpr else ppExprs in
+utest intToStateTest env (int_ 0) (tyInteger 1 1) with int_ 1 using eqExpr else ppExprs in
+utest intToStateTest env (int_ 7) (tyInteger 10 20) with int_ 17 using eqExpr else ppExprs in
+utest idTest env (int_ 2) (tyInteger 0 10) with true in
+
+------------
+-- TUPLES --
+------------
+
+utest cardinality env (tyTuple []) with 1 in
+utest cardinality env (tyTuple [tyBool ()]) with 2 in
+utest cardinality env (tyTuple [tyBool (), tyBool ()]) with 4 in
+utest cardinality env (tyTuple [tyTuple [tyBool ()], tyTuple [tyInteger 1 10]]) with 20 in
+
+utest stateToIntTest env (utuple_ []) (tyTuple []) with int_ 0 using eqExpr else ppExprs in
+utest intToStateTest env (int_ 0) (tyTuple []) with utuple_ [] using eqExpr else ppExprs in
+utest stateToIntTest env (utuple_ [int_ 7]) (tyTuple [tyInteger 0 10])
+with int_ 7 using eqExpr else ppExprs in
+utest idTest env (utuple_ [int_ 1, int_ 2]) (tyTuple [tyInteger 1 10, tyInteger 1 10])
+with true in
+utest stateToIntTest env (utuple_ [int_ 2, true_]) (tyTuple [tyInteger 1 10, tyBool ()])
+with int_ 11 using eqExpr else ppExprs in
+utest intToStateTest env (int_ 3) (tyTuple [tyInteger 1 10, tyBool ()])
+with utuple_ [int_ 4, false_] using eqExpr else ppExprs in
+
+-- Tests that every valid instantiation of a tuple is mapped back to itself
+-- when using stateToInt followed by intToState.
+let ty = tyTuple [tyInteger 3 5, tyTuple [tyInteger 5 10, tyBool ()]] in
+repeati
+  (lam i.
+    let i = addi i 3 in
+    repeati
+      (lam j.
+        let j = addi j 5 in
+        let t1 = utuple_ [int_ i, utuple_ [int_ j, false_]] in
+        let t2 = utuple_ [int_ i, utuple_ [int_ j, true_]] in
+        utest idTest env t1 ty with true in
+        utest idTest env t2 ty with true in
+        ())
+      6)
+  3;
+
+------------
+-- ARRAYS --
+------------
+
+utest cardinality env (tyArray (tyBool ()) 4) with 16 in
+utest cardinality env (tyArray (tyInteger 1 10) 4) with 10000 in
+
+utest stateToIntTest env (utuple_ []) (tyArray (tyBool ()) 0) with int_ 0
+using eqExpr else ppExprs in
+utest intToStateTest env (int_ 0) (tyArray (tyBool ()) 0) with utuple_ []
+using eqExpr else ppExprs in
+utest stateToIntTest env (utuple_ [int_ 2, int_ 3]) (tyArray (tyInteger 1 10) 2)
+with int_ 21 using eqExpr else ppExprs in
+utest idTest env (utuple_ [int_ 2, int_ 3, int_ 4, int_ 5, int_ 6]) (tyArray (tyInteger 1 10) 5)
+with true in
+
+--------------------
+-- CONCRETE TYPES --
+--------------------
+
+let _mkEnv = lam types : [(Name, [Name])]. lam constr : [[(Name, [TypeT])]].
+  let binds =
+    zipWith (lam ty. lam c. (ty.0, (ty.1, mapFromSeq nameCmp c))) types constr
+  in
+  { env with concreteTypes = mapFromSeq nameCmp binds }
+in
+
 utest
   let t = nameSym "T" in
   let env = _mkEnv [(t, [])] [[]] in
-  cardinality env (tyconcretet_ t [])
+  cardinality env (tyConcrete t [])
 with 0 in
 
 utest
-  let tyName = nameSym "T" in
-  let params = [] in
-  let constr = [(nameSym "A", []), (nameSym "B", []), (nameSym "C", [])] in
-  let env = _mkEnv [(tyName, params)] [constr] in
-  cardinality env (tyconcretet_ tyName [])
-with 3 in
+  let t = nameSym "Nucleotide" in
+  let constr = map (lam x. (nameSym x, [])) ["A", "C", "G", "T"] in
+  let env = _mkEnv [(t, [])] [constr] in
+  cardinality env (tyConcrete t [])
+with 4 in
 
 utest
-  let tyName = nameSym "T" in
+  let t = nameSym "T" in
   let params = map nameSym ["a", "b", "c"] in
-  let tyvarParams = map tyvart_ params in
-  let constr = [(nameSym "A", tyvarParams), (nameSym "B", [tyintUbt_ 1 4]), (nameSym "C", tail tyvarParams)] in
-  let env = _mkEnv [(tyName, params)] [constr] in
-  cardinality env (tyconcretet_ tyName [tyboolt_, tyintUbt_ 1 3, tyintUbt_ 4 7])
-with addi 24 (addi 4 12) in
+  let tyvarParams = map tyVar params in
+  let constr = [
+    (nameSym "A", tyvarParams),
+    (nameSym "B", [tyInteger 1 4]),
+    (nameSym "C", tail tyvarParams)
+  ] in
+  let env = _mkEnv [(t, params)] [constr] in
+  cardinality env (tyConcrete t [tyBool (), tyInteger 1 10, tyBool ()])
+with sum [40, 4, 20] in
 
 utest
-  let t1 = nameSym "T1" in
-  let p1 = map nameSym ["a"] in
-  let c1 = [(nameSym "C1", map tyvart_ p1)] in
+  let foo = nameSym "Foo" in
+  let foop = [nameSym "a"] in
+  let fooc = [(nameSym "C1", map tyVar foop)] in
 
-  let t2 = nameSym "T2" in
-  let p2 = map nameSym ["b"] in
-  let c2 = [(nameSym "C2", map tyvart_ p2), (nameSym "C3", [])] in
+  let bar = nameSym "Bar" in
+  let barp = [nameSym "b"] in
+  let barc = [(nameSym "C2", map tyVar barp), (nameSym "C3", [])] in
 
-  let env = _mkEnv [(t1, p1), (t2, p2)] [c1, c2] in
-  cardinality env (tyconcretet_ t1 [tyconcretet_ t2 [tyintUbt_ 1 3]])
+  let env = _mkEnv [(foo, foop), (bar, barp)] [fooc, barc] in
+  cardinality env (tyConcrete foo [tyConcrete bar [tyInteger 1 3]])
 with addi 3 1 in
 
--- intRepr with one-argument constructors
-utest
-  let t = nameSym "T" in
-  let params = [nameSym "a", nameSym "b"] in
-  let a = nameSym "A" in
-  let b = nameSym "B" in
-  let c = nameSym "C" in
-  let constr = [(a, [tyvart_ (get params 0)]), (b, [tyvart_ (get params 1)]), (c, [tyintUbt_ 2 3])] in
-  let env = _mkEnv [(t, params)] [constr] in
+let nucleotide = nameSym "Nucleotide" in
+let a = nameSym "A" in
+let c = nameSym "C" in
+let g = nameSym "G" in
+let t = nameSym "T" in
+let constr = [(a, []), (c, []), (g, []), (t, [])] in
+let env = _mkEnv [(nucleotide, [])] [constr] in
+let ty = tyConcrete nucleotide [] in
 
-  let ty = tyconcretet_ t [tyintUbt_ 1 3, tyboolt_] in
+utest cardinality env ty with 4 in
+utest stateToIntTest env (nconapp_ a uunit_) ty with int_ 0 using eqExpr else ppExprs in
+utest stateToIntTest env (nconapp_ c uunit_) ty with int_ 1 using eqExpr else ppExprs in
+utest stateToIntTest env (nconapp_ g uunit_) ty with int_ 2 using eqExpr else ppExprs in
+utest stateToIntTest env (nconapp_ t uunit_) ty with int_ 3 using eqExpr else ppExprs in
+utest intToStateTest env (int_ 0) ty with nconapp_ a uunit_ using eqExpr else ppExprs in
+utest intToStateTest env (int_ 1) ty with nconapp_ c uunit_ using eqExpr else ppExprs in
+utest intToStateTest env (int_ 2) ty with nconapp_ g uunit_ using eqExpr else ppExprs in
+utest intToStateTest env (int_ 3) ty with nconapp_ t uunit_ using eqExpr else ppExprs in
 
-  [ intReprTestEnv env (nconapp_ a (int_ 1)) ty
-  , intReprTestEnv env (nconapp_ a (int_ 2)) ty
-  , intReprTestEnv env (nconapp_ a (int_ 3)) ty
-  , intReprTestEnv env (nconapp_ b false_) ty
-  , intReprTestEnv env (nconapp_ b true_) ty
-  , intReprTestEnv env (nconapp_ c (int_ 2)) ty
-  , intReprTestEnv env (nconapp_ c (int_ 3)) ty
-  ]
-with [int_ 0, int_ 1, int_ 2, int_ 3, int_ 4, int_ 5, int_ 6]
-using eqSeq eqExpr in
+let opt = nameSym "Option" in
+let params = [nameSym "a"] in
+let some = nameSym "Some" in
+let none = nameSym "None" in
+let constr = [(some, [tyVar (head params)]), (none, [])] in
+let env = _mkEnv [(opt, params)] [constr] in
+let ty = tyConcrete opt [tyInteger 1 10] in
 
--- intRepr with 0 or more than 1 arguments
-utest
-  let t = nameSym "T" in
-  let params = [nameSym "a", nameSym "b"] in
-  let a = nameSym "A" in
-  let b = nameSym "B" in
-  let constr = [(a, []), (b, map tyvart_ params)] in
-  let env = _mkEnv [(t, params)] [constr] in
+utest cardinality env ty with 11 in
+utest stateToIntTest env (nconapp_ some (int_ 7)) ty with int_ 6 using eqExpr else ppExprs in
+utest stateToIntTest env (nconapp_ none uunit_) ty with int_ 10 using eqExpr else ppExprs in
+utest intToStateTest env (int_ 0) ty with nconapp_ some (int_ 1) using eqExpr else ppExprs in
+utest intToStateTest env (int_ 4) ty with nconapp_ some (int_ 5) using eqExpr else ppExprs in
+utest intToStateTest env (int_ 10) ty with nconapp_ none uunit_ using eqExpr else ppExprs in
 
-  let ty = tyconcretet_ t [tyintUbt_ 1 3, tyboolt_] in
+let t = nameSym "T" in
+let params = map nameSym ["a", "b", "c"] in
+let a = nameSym "A" in
+let b = nameSym "B" in
+let c = nameSym "C" in
+let d = nameSym "D" in
+let constr = [
+  (a, map tyVar params),
+  (b, [tyInteger 1 5, tyVar (get params 1)]),
+  (c, []),
+  (d, [tyVar (head params), tyVar (head params)])
+] in
+let env = _mkEnv [(t, params)] [constr] in
 
-  [ intReprTestEnv env (nconapp_ a uunit_) ty
-  , intReprTestEnv env (nconapp_ b (utuple_ [int_ 1, false_])) ty
-  , intReprTestEnv env (nconapp_ b (utuple_ [int_ 1, true_])) ty
-  , intReprTestEnv env (nconapp_ b (utuple_ [int_ 2, false_])) ty
-  , intReprTestEnv env (nconapp_ b (utuple_ [int_ 2, true_])) ty
-  , intReprTestEnv env (nconapp_ b (utuple_ [int_ 3, false_])) ty
-  , intReprTestEnv env (nconapp_ b (utuple_ [int_ 3, true_])) ty
-  ]
-with [int_ 0, int_ 1, int_ 2, int_ 3, int_ 4, int_ 5, int_ 6]
-using eqSeq eqExpr in
+-- |A| = 120, |B| = 10, |C| = 1, |D| = 144
+-- [0, 120) -> A, [120, 130) -> B, [130, 131) -> C, [131, 167) -> D
+let ty = tyConcrete t [tyTuple [tyBool (), tyInteger 1 3], tyBool (), tyInteger 1 10] in
 
--- intToState with one-argument constructors
-let _a = nameSym "A" in
-let _b = nameSym "B" in
-utest
-  let t = nameSym "T" in
-  let params = [nameSym "a", nameSym "b"] in
-  let constr = [(_a, [tyvart_ (get params 0)]), (_b, [tyvart_ (get params 1)])] in
-  let env = _mkEnv [(t, params)] [constr] in
+utest cardinality env ty with 167 in
+utest stateToIntTest env (nconapp_ a (utuple_ [utuple_ [false_, int_ 1], false_, int_ 2])) ty
+with int_ 12 using eqExpr else ppExprs in
+utest intToStateTest env (int_ 0) ty
+with nconapp_ a (utuple_ [utuple_ [false_, int_ 1], false_, int_ 1]) using eqExpr else ppExprs in
+utest stateToIntTest env (nconapp_ b (utuple_ [int_ 2, false_])) ty
+with int_ 121 using eqExpr else ppExprs in
+utest intToStateTest env (int_ 127) ty
+with nconapp_ b (utuple_ [int_ 3, true_]) using eqExpr else ppExprs in
+utest stateToIntTest env (nconapp_ c uunit_) ty with int_ 130 using eqExpr else ppExprs in
+utest intToStateTest env (int_ 130) ty with nconapp_ c uunit_ using eqExpr else ppExprs in
+utest stateToIntTest env (nconapp_ d (utuple_ [utuple_ [false_, int_ 2], utuple_ [true_, int_ 3]])) ty
+with int_ 163 using eqExpr in
+utest intToStateTest env (int_ 131) ty
+with nconapp_ d (utuple_ [utuple_ [false_, int_ 1], utuple_ [false_, int_ 1]]) using eqExpr else ppExprs in
 
-  let ty = tyconcretet_ t [tyintUbt_ 1 3, tyboolt_] in
+---------------------
+-- AUTOMATON TYPES --
+---------------------
 
-  [ intToStateTestEnv env (int_ 0) ty
-  , intToStateTestEnv env (int_ 1) ty
-  , intToStateTestEnv env (int_ 2) ty
-  , intToStateTestEnv env (int_ 3) ty
-  , intToStateTestEnv env (int_ 4) ty
-  ]
-with
-[ nconapp_ _a (int_ 1)
-, nconapp_ _a (int_ 2)
-, nconapp_ _a (int_ 3)
-, nconapp_ _b false_
-, nconapp_ _b true_
-]
-using eqSeq eqExpr in
+let a = nameSym "A" in
+let aid = nameSym "a" in
+let env = {env with automatons = mapFromSeq nameCmp [(aid, a)],
+                    automatonStates = mapFromSeq nameCmp [(a, tyInteger 1 3)]}
+in
+let ty = tyAutomatonState aid in
 
--- intToState with 0 or more than 1 argument
-utest
-  let t = nameSym "T" in
-  let params = [nameSym "a", nameSym "b"] in
-  let constr = [(_a, []), (_b, map tyvart_ params)] in
-  let env = _mkEnv [(t, params)] [constr] in
-
-  let ty = tyconcretet_ t [tyintUbt_ 1 3, tyboolt_] in
-
-  [ intToStateTestEnv env (int_ 0) ty
-  , intToStateTestEnv env (int_ 1) ty
-  , intToStateTestEnv env (int_ 2) ty
-  , intToStateTestEnv env (int_ 3) ty
-  , intToStateTestEnv env (int_ 4) ty
-  , intToStateTestEnv env (int_ 5) ty
-  , intToStateTestEnv env (int_ 6) ty
-  ]
-with
-[ nconapp_ _a uunit_
-, nconapp_ _b (utuple_ [int_ 1, false_])
-, nconapp_ _b (utuple_ [int_ 1, true_])
-, nconapp_ _b (utuple_ [int_ 2, false_])
-, nconapp_ _b (utuple_ [int_ 2, true_])
-, nconapp_ _b (utuple_ [int_ 3, false_])
-, nconapp_ _b (utuple_ [int_ 3, true_])
-]
-using eqSeq eqExpr in
-
--- Automaton state type --
-
-utest
-  let a = nameSym "A" in
-  let aName = nameSym "a" in
-  let env =
-    { enumerateEnvEmpty with
-      automatonStates = mapFromSeq nameCmp [(a, tyintUbt_ 1 3)],
-      automatons = mapFromSeq nameCmp [(aName, a)] }
-  in
-  cardinality env (tyautomatonStatet_ aName)
-with 3 in
-
-utest
-  let a = nameSym "A" in
-  let aName = nameSym "a" in
-  let env =
-    { enumerateEnvEmpty with
-      automatonStates = mapFromSeq nameCmp [(a, tyintUbt_ 1 3)],
-      automatons = mapFromSeq nameCmp [(aName, a)] }
-  in
-  intReprTestEnv env (int_ 2) (tyautomatonStatet_ aName)
-with int_ 1 using eqExpr in
-
-utest
-  let a = nameSym "A" in
-  let aName = nameSym "a" in
-  let env =
-    { enumerateEnvEmpty with
-      automatonStates = mapFromSeq nameCmp [(a, tyintUbt_ 1 3)],
-      automatons = mapFromSeq nameCmp [(aName, a)] }
-  in
-  intToStateTestEnv env (int_ 1) (tyautomatonStatet_ aName)
-with int_ 2 using eqExpr in
+utest cardinality env ty with 3 in
+utest stateToIntTest env (int_ 2) ty with int_ 1 using eqExpr else ppExprs in
+utest intToStateTest env (int_ 1) ty with int_ 2 using eqExpr else ppExprs in
 
 ()
