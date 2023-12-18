@@ -1,3 +1,8 @@
+include "trellis.mc"
+
+include "name.mc"
+include "option.mc"
+
 lang TrellisResolveVariables = TrellisAst
   type VarDeclMap = Map Name ExprT
   type ResolveType a = VarDeclMap -> a -> (VarDeclMap, a)
