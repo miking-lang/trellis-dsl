@@ -345,7 +345,7 @@ lang TrellisModelCompositionPrettyPrint =
   sem pprintModelComposition env =
   | ModelAtomModelComposition {name = name, automaton = a} ->
     match pprintVarName env name.v with (env, name) in
-    match pprintVarName env a.v with (env, a) in
+    match pprintConName env a.v with (env, a) in
     (env, join [name, " : ", a])
   | ModelNestingModelComposition {left = left, mc = mc} ->
     match pprintModelComposition env left with (env, left) in
