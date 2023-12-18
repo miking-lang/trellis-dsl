@@ -41,9 +41,12 @@ lang TrellisResolveVariables = TrellisAst
 
   sem resolveVariablesAutomatonProp : ResolveType AutomatonProp
   sem resolveVariablesAutomatonProp m =
-  | prop ->
-    match smapAccumL_AutomatonProp_TypeT resolveVariablesType m prop with (m, prop) in
-    smapAccumL_AutomatonProp_SetT resolveVariablesSet m prop
+  | StatePropAutomatonProp t ->
+    match resolveVariablesType m t.ty with (m, ty) in
+    (m, StatePropAutomatonProp {t with ty = ty})
+  | SetPropAutomatonProp t ->
+    match resolveVariablesSet m t.s with (m, s) in
+    (m, SetPropAutomatonProp {t with s = s})
 
   sem resolveVariablesSet : ResolveType SetT
   sem resolveVariablesSet m =
@@ -75,7 +78,7 @@ lang TrellisResolveVariables = TrellisAst
           errorSingle [t.info] "Integer upper bound refers to non-constant variable"
       else (m, IntegerTypeT t)
     else (m, IntegerTypeT t)
-  | ty -> smapAccumL_TypeT_ExprT resolveVariablesExpr m ty
+  | ty -> smapAccumL_TypeT_TypeT resolveVariablesType m ty
 
   sem resolveVariablesExpr : ResolveType ExprT
   sem resolveVariablesExpr m =
