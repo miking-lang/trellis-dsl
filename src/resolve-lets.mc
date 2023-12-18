@@ -60,6 +60,12 @@ lang TrellisResolveVariables = TrellisAst
 
   sem resolveVariablesType : ResolveType TypeT
   sem resolveVariablesType m =
+  | ArrayTypeT t ->
+    match resolveVariablesExpr m t.count with (m, count) in
+    match count with IntegerExprT _ then
+      (m, ArrayTypeT {t with count = count})
+    else
+      errorSingle [t.info] "Array size refers to non-constant value"
   | IntegerTypeT t ->
     match t.namedUb with Some n then
       match mapLookup n.v m with Some e then
