@@ -53,10 +53,9 @@ def generate_predecessors():
 def pad_signals(signals):
     batch_size = 1024
     batch_overlap = 128
-    lens = [len(s) for s in signals]
-    maxlen = max(lens)
+    maxlen = max([len(s) for s in signals])
     batch_output_size = batch_size - batch_overlap
-    lenpb = int(((maxlen + batch_output_size + 1) / batch_output_size) * batch_output_size + batch_overlap)
+    lenpb = ((maxlen + batch_output_size + 1) // batch_output_size) * batch_output_size + batch_overlap
     for s in signals:
         for i in range(lenpb):
             if i < len(s):
@@ -67,29 +66,26 @@ def pad_signals(signals):
 
 def produce_inputs(model_path, signals_path):
     with h5py.File(model_path, "r") as f:
-        obs = np.log(f['Tables']['ObservationProbabilities'][:])
+        with np.errstate(divide="ignore"):
+            obs = np.log(f['Tables']['ObservationProbabilities'][:])
         trans = np.log(f['Tables']['TransitionProbabilities'][:])
         duration = np.log(f['Tables']['DurationProbabilities'][:])
         tail_factor = np.log(f['Tables']['DurationProbabilities'].attrs['TailFactor'])
         trans1 = expand_trans_probs(trans)
         init_probs = generate_init_probs()
         preds = generate_predecessors()
-        print(f"outputProb: {len(obs)} {len(obs[0])}")
-        print(f"initialProb: {len(init_probs)} {len(init_probs[0])}")
-        print(f"trans1: {len(trans)} {len(trans[0])}")
-        print(f"trans2: {len(duration)}")
-        print(f"gamma: {tail_factor}")
-        print(f"predecessors: {len(preds)} {len(preds[0])}")
     with h5py.File(signals_path, "r") as f:
         keys = list(f.keys())
         signals = [f[k]['Raw']['Signal'][:].tolist() for k in keys]
+        lens = [len(s) for s in signals]
         padded_signals = pad_signals(signals)
-        print(f"signals: {len(signals)}")
     with open("output-prob.txt", "w+") as f:
         f.write(f"{len(obs[0])} {len(obs)}\n")
         for i in range(len(obs[0])):
+            i = (i % 4) * 16 + ((i // 4) % 4) * 4 + (i // 16)
             for j in range(len(obs)):
                 f.write(f"{obs[j][i]} ")
+            f.write("\n")
     with open("initial-prob.txt", "w+") as f:
         f.write(f"{len(init_probs)} {len(init_probs[0])}\n")
         for i in range(len(init_probs)):
@@ -105,6 +101,7 @@ def produce_inputs(model_path, signals_path):
         f.write(f"{tail_factor}\n")
     with open("input-signals.txt", "w+") as f:
         f.write(f"{len(padded_signals)} {len(padded_signals[0])}\n")
+        f.write(f"{' '.join([str(n) for n in lens])}\n")
         for s in padded_signals:
             f.write(f"{' '.join([str(x) for x in s])}\n")
     with open("predecessors.txt", "w+") as f:

@@ -5,6 +5,8 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <chrono>
+
 void fail(const char *tyname) {
   fprintf(stderr, "Error: expected %s\n", tyname);
   exit(1);
@@ -81,10 +83,15 @@ void read_i16_2d(futhark_context *ctx, futhark_i16_2d **a, char *file) {
   free(data);
 }
 
-void read_i8_2d(futhark_context *ctx, futhark_i8_2d **a, char *file) {
+void read_input_signals_2d(futhark_context *ctx, futhark_i8_2d **a, int64_t **lens, char *file) {
   FILE *fp = fopen(file, "r");
   int64_t d0 = read_i64(fp);
   int64_t d1 = read_i64(fp);
+  int64_t *n = (int64_t*)malloc(d0 * sizeof(int64_t));
+  for (int i = 0; i < d0; i++) {
+    n[i] = read_i64(fp);
+  }
+  *lens = n;
   int8_t *data = (int8_t*)malloc(d0 * d1 * sizeof(int8_t));
   for (int i = 0; i < d0; i++) {
     for (int j = 0; j < d1; j++) {
@@ -104,16 +111,13 @@ int main(int argc, char **argv) {
   futhark_context_config *config = futhark_context_config_new();
   futhark_context *ctx = futhark_context_new(config);
 
-  // TODO: read all of these to the correct place in memory...
   futhark_f32_2d *output_prob = nullptr;
   futhark_f32_2d *initial_prob = nullptr;
   futhark_f32_2d *trans1 = nullptr;
   futhark_f32_1d *trans2 = nullptr;
   double gamma = NAN;
   futhark_i8_2d *input_signals = nullptr;
-  // TODO: in the generated code, this would either be computed at compile-time
-  // or at runtime by the source language. For now, we assume it's handled
-  // outside of the C code.
+  int64_t *input_signal_lens = nullptr;
   futhark_i16_2d *predecessors = nullptr;
   int i = 1;
   while (i < argc) {
@@ -128,7 +132,7 @@ int main(int argc, char **argv) {
     } else if (strcmp(argv[i], "--gamma") == 0) {
       read_f32_0d(&gamma, argv[i+1]);
     } else if (strcmp(argv[i], "--input-signals") == 0) {
-      read_i8_2d(ctx, &input_signals, argv[i+1]);
+      read_input_signals_2d(ctx, &input_signals, &input_signal_lens, argv[i+1]);
     } else if (strcmp(argv[i], "--predecessors") == 0) {
       read_i16_2d(ctx, &predecessors, argv[i+1]);
     } else {
@@ -138,7 +142,7 @@ int main(int argc, char **argv) {
     i += 2;
   }
   if (output_prob == nullptr || initial_prob == nullptr || trans1 == nullptr ||
-      trans2 == nullptr || isnan(gamma) || input_signals == nullptr ||
+      trans2 == nullptr || std::isnan(gamma) || input_signals == nullptr ||
       predecessors == nullptr) {
     fprintf(stderr, "Not all required arguments were specified\n");
     exit(1);
@@ -147,6 +151,8 @@ int main(int argc, char **argv) {
   // Hard-coded for now...
   int64_t batch_size = 1024;
   int64_t batch_overlap = 128;
+
+  auto start = std::chrono::steady_clock::now();
 
   futhark_i16_2d *out;
   int res = futhark_entry_viterbi(ctx, &out, output_prob, initial_prob, trans1, trans2, gamma, predecessors, input_signals, batch_size, batch_overlap);
@@ -167,22 +173,25 @@ int main(int argc, char **argv) {
   futhark_free_i8_2d(ctx, input_signals);
 
   const int64_t *shape = futhark_shape_i16_2d(ctx, out);
-  printf("output shape: %lld %lld\n", shape[0], shape[1]);
   int16_t *data = (int16_t*)malloc(shape[0] * shape[1] * sizeof(int16_t));
   futhark_values_i16_2d(ctx, out, data);
-  printf("printing output...\n");
-  fflush(stdout);
+  char outc[4] = {'A', 'C', 'G', 'T'};
   for (int i = 0; i < shape[0]; i++) {
-    printf("%d", data[i*shape[1]]);
-    for (int j = 1; j < shape[1]; j++) {
-      printf(" %d", data[i*shape[1]+j]);
+    printf("signal #%d\n", i+1);
+    for (int j = 0; j < input_signal_lens[i]; j++) {
+      if ((data[i*shape[1]+j] & 15) == 0) {
+        int val = (data[i*shape[1]+j] >> 4) & 3;
+        printf("%c", outc[val]);
+      }
     }
     printf("\n");
-    fflush(stdout);
   }
   futhark_free_i16_2d(ctx, out);
+  free(input_signal_lens);
   free(data);
-  printf("finished printing output...\n");
+
+  int t = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
+  fprintf(stderr, "Futhark execution took %d ms\n", t);
 
   futhark_context_free(ctx);
   futhark_context_config_free(config);
