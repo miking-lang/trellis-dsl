@@ -1,3 +1,11 @@
+-- This file shows a sketch of how we could generate code from a model defined
+-- using the Trellis DSL.
+
+-- The parts marked as generated are to be determined by the number of states
+-- available in the model, the number of possible observed values, and
+-- potentially through configuration (e.g., whether to use 32- or 64-bit floats
+-- or batching parameters). The native implementation should be sufficiently
+-- generic that it can be copy-pasted into the generated parts of the code.
 
 -----------------------------------
 -- GENERATED INITIALIZATION CODE --
@@ -10,7 +18,6 @@ type state_t = state.t
 type obs_t = obs.t
 type prob_t = prob.t
 
--- NOTE: similar to Slack-example, but using a 3mer model
 let nstates : i64 = 1024
 
 -----------------------------------
@@ -67,10 +74,6 @@ let main_viterbi [m] (predecessors : [nstates][]state_t) (transp : state_t -> st
 
 -- Checks whether a pair of states belong to a particular set of transitions
 let in_inter (x : state_t) (y : state_t) : bool =
-  (x & 15) + 1 == 1 && ((x >> 4) & 0xFF) == ((y >> 6) & 0xFF)
-
--- Similar to the 'in_inter' function, but for 3mers
-let in_inter_3mer (x : state_t) (y : state_t) : bool =
   (x & 15) + 1 == 1 && ((x >> 4) & 0xF) == y >> 6
 
 let in_max (x : state_t) (y : state_t) : bool =
@@ -95,7 +98,7 @@ let transition_probability
   (table_trans1 : [64][64]prob_t) (table_trans2 : [16]prob_t) (table_gamma : prob_t)
   (x : state_t) (y : state_t) : prob_t =
 
-  if in_inter_3mer x y then table_trans1[x >> 4][y >> 4] + table_trans2[y & 15]
+  if in_inter x y then table_trans1[x >> 4][y >> 4] + table_trans2[y & 15]
   else if in_max x y then table_gamma
   else if in_from_max x y then prob.log (prob.exp 1.0 - prob.exp table_gamma)
   else if in_down x y then prob.log 1.0
