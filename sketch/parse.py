@@ -28,26 +28,6 @@ def generate_init_probs():
             init_probs[kmer][layer] = -inf
     return init_probs
 
-# Computes the predecessors of the model. This function is hard-coded for this
-# particular model, where we know exactly how to compute the predecessors.
-def generate_predecessors():
-    preds = [[] for i in range(1024)]
-    for x in range(0, 4):
-        for y in range(0, 4):
-            for z in range(0, 4):
-                for layer in range(0, 16):
-                    i = x * 256 + y * 64 + z * 16 + layer
-                    # Predecessors from layer 0 shifting
-                    for k in range(0, 4):
-                        j = k * 256 + x * 64 + y * 16
-                        preds[i].append(j)
-                    if layer == 15:
-                        preds[i].append(i)
-                    else:
-                        j = x * 256 + y * 64 + z * 16 + (layer + 1)
-                        preds[i].append(j)
-    return preds
-
 # Pads all signals such that all signals have the same length and match the
 # batch overlaps.
 def pad_signals(signals):
@@ -73,7 +53,6 @@ def produce_inputs(model_path, signals_path):
         tail_factor = np.log(f['Tables']['DurationProbabilities'].attrs['TailFactor'])
         trans1 = expand_trans_probs(trans)
         init_probs = generate_init_probs()
-        preds = generate_predecessors()
     with h5py.File(signals_path, "r") as f:
         keys = list(f.keys())
         signals = [f[k]['Raw']['Signal'][:].tolist() for k in keys]
@@ -104,9 +83,5 @@ def produce_inputs(model_path, signals_path):
         f.write(f"{' '.join([str(n) for n in lens])}\n")
         for s in padded_signals:
             f.write(f"{' '.join([str(x) for x in s])}\n")
-    with open("predecessors.txt", "w+") as f:
-        f.write(f"{len(preds)} {len(preds[0])}\n")
-        for i in range(len(preds)):
-            f.write(f"{' '.join([str(x) for x in preds[i]])}\n")
 
 produce_inputs(sys.argv[1], sys.argv[2])

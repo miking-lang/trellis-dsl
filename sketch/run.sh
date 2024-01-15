@@ -13,7 +13,6 @@ TRANS1=trans1.txt
 TRANS2=trans2.txt
 GAMMA=gamma.txt
 INPUT_SIGNALS=input-signals.txt
-PREDS=predecessors.txt
 
 # Run the executable passing the input files
-./main --output-prob $OUTPROB --initial-prob $INITPROB --trans1 $TRANS1 --trans2 $TRANS2 --gamma $GAMMA --input-signals $INPUT_SIGNALS --predecessors $PREDS
+./main --output-prob $OUTPROB --initial-prob $INITPROB --trans1 $TRANS1 --trans2 $TRANS2 --gamma $GAMMA --input-signals $INPUT_SIGNALS

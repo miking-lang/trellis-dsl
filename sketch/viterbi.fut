@@ -34,7 +34,10 @@ let viterbi_forward [m] (predecessors : [nstates][]state_t) (transp : state_t ->
   let zeta = tabulate m (\_ -> tabulate nstates (\_ -> state.i32 0)) in
   loop {chi, zeta} = {chi = chi1, zeta = zeta} for i < m do
     let x = signal[i] in
-    let log_prob_from (s : state_t) (pre : state_t) : prob_t = chi[state.to_i64 pre] + transp pre s in
+    let log_prob_from (s : state_t) (pre : state_t) : prob_t =
+      if pre >= 0 then chi[state.to_i64 pre] + transp pre s
+      else -prob.inf
+    in
     let new_zeta = tabulate nstates (\s -> max_state (\p -> log_prob_from (state.i64 s) p) predecessors[s]) in
     let new_chi : [nstates]prob_t =
       map2 (\s pre -> log_prob_from (state.i64 s) pre + outp (state.i64 s) x) (indices new_zeta) new_zeta
@@ -98,12 +101,87 @@ let transition_probability
   else if in_down x y then prob.log 1.0
   else -prob.inf
 
+-- 1. Count the number of predecessors of each state
+-- 2. Compute the maximum number of predecessors
+-- 3. Generate an array of predecessors for each state, padded with -1 to
+--    indicate a non-existent predecessor.
+let find_predecessors (transp : state_t -> state_t -> prob_t) (nstates : i64) : [nstates][]state_t =
+  let pred_count =
+    map
+      (\s ->
+        -- inter
+        let count = loop count = 0 for a < 4 do
+          let p = (a << 8) | (((s >> 6) & 0xF) << 4) | 0 in
+          if transp p s != prob.inf then count + 1 else count
+        in
+        -- max
+        let count =
+          if s & 15 == 15 then
+            let p = s in
+            if transp p s != prob.inf then count + 1 else count
+          else count
+        in
+        -- from_max
+        let count =
+          if s & 15 == 14 then
+            let p = (s & 0x3F0) | 15 in
+            if transp p s != prob.inf then count + 1 else count
+          else count
+        in
+        -- down
+        let count =
+          if s & 15 != 15 && s & 15 != 14 then
+            let p = (s & 0x3F0) | ((s & 15) + 1) in
+            if transp p s != prob.inf then count + 1 else count
+          else count
+        in
+        count)
+      (map state.i64 (iota nstates))
+  in
+  let npreds = reduce (\a b -> if a > b then a else b) 0 pred_count in
+  map
+    (\s ->
+      let preds = replicate npreds (state.i64 (-1)) in
+      let i = 0 in
+      -- inter
+      let (i, preds) = loop (i, preds) for a < 4 do
+        let p = (a << 8) | (((s >> 6) & 0xF) << 4) | 0 in
+        if transp p s != prob.inf then (i+1, preds with [i] = p)
+        else (i, preds)
+      in
+      -- max
+      let (i, preds) =
+        if s & 15 == 15 then
+          let p = s in
+          if transp p s != prob.inf then (i+1, preds with [i] = p)
+          else (i, preds)
+        else (i, preds)
+      in
+      -- from_max
+      let (i, preds) =
+        if s & 15 == 14 then
+          let p = (s & 0x3F0) | 15 in
+          if transp p s != prob.inf then (i+1, preds with [i] = p)
+          else (i, preds)
+        else (i, preds)
+      in
+      -- down
+      let (_, preds) =
+        if (s & 15) != 15 && (s & 15) + 1 != 15 then
+          let p = (s & 0x3F0) | ((s & 15) + 1) in
+          if transp p s != prob.inf then (i+1, preds with [i] = p)
+          else (i, preds)
+        else (i, preds)
+      in
+      preds)
+    (map state.i64 (iota nstates))
+
 -- Main entry point to the program.
 entry viterbi [n][m]
   (table_outputProb : [64][101]prob_t) (table_initialProb : [64][16]prob_t)
   (table_trans1 : [64][64]prob_t) (table_trans2 : [16]prob_t) (table_gamma : prob_t)
-  (table_predecessors : [nstates][]state_t) (input_signals : [n][m]obs_t)
-  (batch_size : i64) (batch_overlap : i64) : [n][]state_t =
+  (input_signals : [n][m]obs_t) (batch_size : i64) (batch_overlap : i64)
+  : [n][]state_t =
 
   let transp (x : state_t) (y : state_t) =
     transition_probability table_trans1 table_trans2 table_gamma x y
@@ -117,13 +195,14 @@ entry viterbi [n][m]
   let batch_output_size = batch_size - batch_overlap in
   let nbatches = (m - batch_overlap) / batch_output_size in
   let outsz = nbatches * batch_output_size in
+  let preds = find_predecessors transp nstates in
   map
     (\signal ->
       let bacc = tabulate nbatches (\_ -> tabulate batch_output_size (\_ -> 0)) in
       let bacc = loop bacc for i < nbatches do
         let ofs = i * batch_output_size in
         let batch = signal[ofs:ofs+batch_size] in
-        let out = main_viterbi table_predecessors transp initp outp batch in
+        let out = main_viterbi preds transp initp outp batch in
         bacc with [i] = out[0:batch_output_size]
       in
       flatten bacc :> [outsz]state_t)
