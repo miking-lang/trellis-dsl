@@ -7,12 +7,10 @@ let maxduration = 16
 
 automaton Thing {
   state: @(Nucleotide[merlength], 1..maxduration),
-  initial: @ { x | true, },
   inter: @ { @([a, as...,], 1) -> @([bs..., b,], k) | as = bs, },
-  down: @ { @(x, k) -> @(x2, k2) | x = x2, k2 = k - 1, },
-  max: @ { @(x, n1) -> @(x2, n2) | n1 = maxduration, n2 = maxduration, },
+  down: @ { @(x, k) -> @(x2, k2) | x = x2, k2 = k - 1, k != maxduration },
+  max: @ { @(x, n1) -> @(x2, n2) | x = x2, n1 = maxduration, n2 = maxduration, },
   from_max: @ { @(x, n1) -> @(x2, n2) | n1 = maxduration, n2 = maxduration - 1, },
-  transitions: inter \u down \u max,
 }
 
 model M = s:Thing {
@@ -29,6 +27,6 @@ model M = s:Thing {
     | s.inter => trans1(x.0, y.0) * trans2(y.1)
     | s.max => gamma
     | s.from_max => 1 - gamma
-    | s.down \setminus s.from_max => 1
+    | s.down => 1
   }
 }
