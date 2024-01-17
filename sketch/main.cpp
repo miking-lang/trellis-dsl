@@ -118,6 +118,7 @@ int main(int argc, char **argv) {
   double gamma = NAN;
   futhark_i8_2d *input_signals = nullptr;
   int64_t *input_signal_lens = nullptr;
+  futhark_i16_2d *predecessors = nullptr;
   int i = 1;
   while (i < argc) {
     if (strcmp(argv[i], "--output-prob") == 0) {
@@ -132,6 +133,8 @@ int main(int argc, char **argv) {
       read_f32_0d(&gamma, argv[i+1]);
     } else if (strcmp(argv[i], "--input-signals") == 0) {
       read_input_signals_2d(ctx, &input_signals, &input_signal_lens, argv[i+1]);
+    } else if (strcmp(argv[i], "--predecessors") == 0) {
+      read_i16_2d(ctx, &predecessors, argv[i+1]);
     } else {
       printf("Error: unknown flag %s\n", argv[i]);
       exit(1);
@@ -139,7 +142,8 @@ int main(int argc, char **argv) {
     i += 2;
   }
   if (output_prob == nullptr || initial_prob == nullptr || trans1 == nullptr ||
-      trans2 == nullptr || std::isnan(gamma) || input_signals == nullptr) {
+      trans2 == nullptr || std::isnan(gamma) || input_signals == nullptr ||
+      predecessors == nullptr) {
     fprintf(stderr, "Not all required arguments were specified\n");
     exit(1);
   }
@@ -151,7 +155,7 @@ int main(int argc, char **argv) {
   auto start = std::chrono::steady_clock::now();
 
   futhark_i16_2d *out;
-  int res = futhark_entry_viterbi(ctx, &out, output_prob, initial_prob, trans1, trans2, gamma, input_signals, batch_size, batch_overlap);
+  int res = futhark_entry_viterbi(ctx, &out, output_prob, initial_prob, trans1, trans2, gamma, predecessors, input_signals, batch_size, batch_overlap);
   if (res != FUTHARK_SUCCESS) {
     printf("Futhark call failed: %s\n", futhark_context_get_error(ctx));
     exit(1);
@@ -165,6 +169,7 @@ int main(int argc, char **argv) {
   futhark_free_f32_2d(ctx, initial_prob);
   futhark_free_f32_2d(ctx, trans1);
   futhark_free_f32_1d(ctx, trans2);
+  futhark_free_i16_2d(ctx, predecessors);
   futhark_free_i8_2d(ctx, input_signals);
 
   const int64_t *shape = futhark_shape_i16_2d(ctx, out);
