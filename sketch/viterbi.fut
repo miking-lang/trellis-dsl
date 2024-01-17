@@ -122,6 +122,8 @@ entry viterbi [n][m]
   let outsz = nbatches * batch_output_size in
   map
     (\signal ->
+      -- We could run each batch in parallel here. By doing so, we do not
+      -- reduce the memory usage, but we do improve performance further.
       let bacc = tabulate nbatches (\_ -> tabulate batch_output_size (\_ -> 0)) in
       let bacc = loop bacc for i < nbatches do
         let ofs = i * batch_output_size in
