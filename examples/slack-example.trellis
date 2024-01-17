@@ -8,7 +8,7 @@ let maxduration = 16
 automaton Thing {
   state: @(Nucleotide[merlength], 1..maxduration),
   inter: @ { @([a, as...,], 1) -> @([bs..., b,], k) | as = bs, },
-  down: @ { @(x, k) -> @(x2, k2) | x = x2, k2 = k - 1, k != maxduration },
+  down: @ { @(x, k) -> @(x2, k2) | x = x2, k2 = k - 1, k != maxduration, },
   max: @ { @(x, n1) -> @(x2, n2) | x = x2, n1 = maxduration, n2 = maxduration, },
   from_max: @ { @(x, n1) -> @(x2, n2) | n1 = maxduration, n2 = maxduration - 1, },
 }
