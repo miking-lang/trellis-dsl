@@ -14,15 +14,16 @@
 module state = i16
 module obs = i8
 module prob = f32
-type state_t = state.t
-type obs_t = obs.t
-type prob_t = prob.t
 
 let nstates : i64 = 1024
 
 -----------------------------------
 -- NATIVE VITERBI IMPLEMENTATION --
 -----------------------------------
+
+type state_t = state.t
+type obs_t = obs.t
+type prob_t = prob.t
 
 type forw_res [n][m] = {chi : [n]prob_t, zeta : [m][n]state_t}
 
