@@ -1,0 +1,176 @@
+language Trellis
+
+include "trellis-lexer.mc"
+
+token LIdent {
+  repr = LIdentRepr {},
+  constructor = LIdentTok,
+  fragment = LIdentTokenParser,
+  ty = String,
+}
+token UIdent {
+  repr = UIdentRepr {},
+  constructor = UIdentTok,
+  fragment = UIdentTokenParser,
+  ty = String,
+}
+token Integer {
+  repr = IntRepr {},
+  constructor = IntTok,
+  fragment = UIntTokenParser,
+  ty = Int,
+}
+
+token LName {
+  base = LIdent,
+  wrap = nameNoSym,
+  ty = Name,
+}
+token UName {
+  base = UIdent,
+  wrap = nameNoSym,
+  ty = Name,
+}
+
+-- Token types only used through literals
+token {fragment = OperatorTokenParser,}
+token {fragment = CommaTokenParser,}
+token {fragment = BracketTokenParser,}
+token {fragment = SetTokenParser,}
+token {fragment = TrellisDotsTokenParser,}
+
+-- Whitespace and comments
+token {fragment = TrellisLineCommentParser,}
+token {fragment = WhitespaceParser,}
+
+start TrellisProgram
+
+type TrellisProgram
+type Decl
+type InModelDecl
+type ProbDecl
+
+prod Main : TrellisProgram = d:Decl* "model" "{" indecl:InModelDecl* "}"
+
+-- TODO: Do we want to add arguments to constructors?
+prod TypeDecl : Decl =
+  "type" id:UName "=" "{" (constr:UName ("," constr:UName)*)? "}"
+
+-- TODO: Do we want to add function definitions?
+prod LetDecl : Decl = "let" id:LName (":" ty:TrellisType)? "=" e:TrellisExpr
+
+prod StateProperty : InModelDecl = "state" "=" ty:TrellisType
+
+prod OutputProperty : InModelDecl = "output" "=" ty:TrellisType
+
+prod Set : InModelDecl = "set" id:LName "=" s:TrellisSet
+
+prod Table : InModelDecl =
+  "table" id:LName "(" (dim:TrellisType ("," dim:TrellisType)*)? ")" ":" ty:TrellisType
+
+prod Prob : InModelDecl =
+  "P" "("
+    ( init:"initial" fst:LName
+    | out:"output" fst:LName "|" snd:LName
+    | trans:"transition" fst:LName snd:LName ) ")"
+    ( "=" pd:ProbDecl )
+
+prod One : ProbDecl = e:TrellisExpr
+
+prod Cases : ProbDecl = "{" (cases:{("|" set:LName "=>" e:TrellisExpr)})+ "}"
+
+----------
+-- Sets --
+----------
+
+type TrellisSet
+
+prod Builder : TrellisSet =
+  "{" p:TrellisPat ("->" to:TrellisPat)? "|" (e:TrellisExpr ("," e:TrellisExpr)*) "}"
+
+prod Literal : TrellisSet =
+  "@" "{" (v:{e:TrellisExpr ("->" to:TrellisExpr)?} ("," v:{e:TrellisExpr ("->" to:TrellisExpr)?})*)? "}"
+
+--------------
+-- Patterns --
+--------------
+
+type TrellisPat {
+  grouping = "(" ")",
+}
+
+prod Con : TrellisPat = id:UName
+prod VarP : TrellisPat = id:LName
+prod IntP : TrellisPat = i:Integer
+prod TrueP : TrellisPat = "true"
+prod FalseP : TrellisPat = "false"
+prod ArrayP : TrellisPat = "[" (p:TrellisPat ("," p:TrellisPat)*)? "]"
+prod TupP : TrellisPat = "@" "(" p:TrellisPat ("," p:TrellisPat)+ ")"
+postfix Dots : TrellisPat = "..."
+
+-----------
+-- Types --
+-----------
+
+type TrellisType {
+  grouping = "(" ")",
+}
+
+postfix ArrayT : TrellisType = "[" (count:Integer | namedCount:LName) "]"
+prod Concrete : TrellisType = id:UName
+prod TupleT : TrellisType = "@" "(" t:TrellisType ("," t:TrellisType)+ ")"
+prod IntRange : TrellisType = lb:Integer ".." (ub:Integer | namedUb:LName)
+prod Bool : TrellisType = "Bool"
+prod IntT : TrellisType = "Int"
+prod ProbT : TrellisType = "Probability"
+
+-----------------
+-- Expressions --
+-----------------
+
+type TrellisExpr {
+  grouping = "(" ")",
+}
+
+prod True : TrellisExpr = "true"
+prod False : TrellisExpr = "false"
+prod Var : TrellisExpr = id:LName
+prod Constr : TrellisExpr = id:UName
+prod Int : TrellisExpr = i:Integer
+prod Array : TrellisExpr = "[" (e:TrellisExpr ("," e:TrellisExpr)*)? "]"
+prod Tuple : TrellisExpr = "@" "(" (e:TrellisExpr ("," e:TrellisExpr)+)? "]"
+postfix Application : TrellisExpr = "(" (arg:TrellisExpr ("," arg:TrellisExpr)*)? ")"
+postfix TupleProj : TrellisExpr = "." idx:Integer
+postfix ArrayAccess : TrellisExpr = "[" e:TrellisExpr "]"
+prefix If : TrellisExpr = "if" c:TrellisExpr "then" thn:TrellisExpr "else"
+infix left Add : TrellisExpr = "+"
+infix left Sub : TrellisExpr = "-"
+infix left Mul : TrellisExpr = "*"
+infix left Div : TrellisExpr = "/"
+infix Eq : TrellisExpr = "=="
+infix Neq : TrellisExpr = "!="
+infix Lt : TrellisExpr = "<"
+infix Gt : TrellisExpr = ">"
+infix Leq : TrellisExpr = "<="
+infix Geq : TrellisExpr = ">="
+infix left And : TrellisExpr = "&&"
+infix left Or : TrellisExpr = "||"
+
+precedence {
+  TupleProj ArrayAccess Application;
+  Mul Div;
+  Add Sub;
+  ~ Eq Neq Lt Gt Leq Geq;
+  And Or;
+  If;
+} except {
+  Mul ? Div;
+  And ? Or;
+}
+
+precedence {
+  ~ TupleProj ArrayAccess Application;
+  ~ If And Or;
+} except {
+  TupleProj ArrayAccess Application ? If And Or;
+}

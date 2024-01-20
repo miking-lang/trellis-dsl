@@ -1,464 +1,314 @@
-include "trellis.mc"
-
 include "string.mc"
 include "mexpr/pprint.mc"
 
-lang TrellisPrettyPrintBase = MExprIdentifierPrettyPrint + TrellisBaseAst
-  sem pprintExpr : PprintEnv -> ExprT -> (PprintEnv, String)
-  sem pprintExpr env =
-  | e -> errorSingle [get_ExprT_info e] "Unsupported expression"
+include "ast.mc"
 
-  sem pprintType : PprintEnv -> TypeT -> (PprintEnv, String)
-  sem pprintType env =
-  | ty -> errorSingle [get_TypeT_info ty] "Unsupported type"
-
-  sem pprintPat : PprintEnv -> PatT -> (PprintEnv, String)
-  sem pprintPat env =
-  | p -> errorSingle [get_PatT_info p] "Unsupported pattern"
-
-  sem pprintSet : PprintEnv -> SetT -> (PprintEnv, String)
-  sem pprintSet env =
-  | s -> errorSingle [get_SetT_info s] "Unsupported set"
-
-  sem pprintParam : PprintEnv -> Param -> (PprintEnv, String)
-  sem pprintParam env =
-  | p -> errorSingle [get_Param_info p] "Unsupported parameter"
-
-  sem pprintConstrDecl : PprintEnv -> ConstrDecl -> (PprintEnv, String)
-  sem pprintConstrDecl env =
-  | cd -> errorSingle [get_ConstrDecl_info cd] "Unsupported constructor declaration"
-
-  sem pprintAutomatonProp : PprintEnv -> AutomatonProp -> (PprintEnv, String)
-  sem pprintAutomatonProp env =
-  | ap -> errorSingle [get_AutomatonProp_info ap] "Unsupported automaton property"
-
-  sem pprintModelComposition : PprintEnv -> ModelComposition -> (PprintEnv, String)
-  sem pprintModelComposition env =
-  | mc -> errorSingle [get_ModelComposition_info mc] "Unsupported model composition"
-
-  sem pprintInModelDecl : PprintEnv -> InModelDecl -> (PprintEnv, String)
-  sem pprintInModelDecl env =
-  | md -> errorSingle [get_InModelDecl_info md] "Unsupported in-model declaration"
-
-  sem pprintDecl : PprintEnv -> Decl -> (PprintEnv, String)
-  sem pprintDecl env =
-  | d -> errorSingle [get_Decl_info d] "Unsupported declaration"
-
-  sem pprintTop : PprintEnv -> Top -> (PprintEnv, String)
-  sem pprintTop env =
-  | t -> errorSingle [get_Top_info t] "Unsupported top"
+lang TrellisPrettyPrintBase =
+  PrettyPrint + MExprIdentifierPrettyPrint + TrellisAst
 end
 
-lang TrellisExprPrettyPrint =
-  TrellisPrettyPrintBase + ApplicationExprTAst + PlusExprTAst + MinusExprTAst +
-  MultipliedWithExprTAst + DividedByExprTAst + ProjectionAccessExprTAst +
-  EqualExprTAst + NotEqualExprTAst + LessThanExprTAst + GreaterThanExprTAst +
-  LessThanOrEqualExprTAst + GreaterThanOrEqualExprTAst + AndExprTAst +
-  OrExprTAst + ArrayAccessExprTAst + IfExprTAst + InExprTAst + NotinExprTAst +
-  UnionExprTAst + IntersectionExprTAst + SetMinusExprTAst + OutputExprTAst +
-  TrueExprTAst + FalseExprTAst + VariableExprTAst + ConstructorExprTAst +
-  IntegerExprTAst + SubSeqExprTAst + ArrayExprTAst + TupleExprTAst
-
-  sem pprintExpr : PprintEnv -> ExprT -> (PprintEnv, String)
-  sem pprintExpr env =
-  | ApplicationExprT {left = left, a = a} ->
-    match pprintExpr env left with (env, left) in
-    match mapAccumL pprintExpr env a with (env, a) in
-    (env, join [left, "(", strJoin ", " a, ")"])
-  | PlusExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " + ", right])
-  | MinusExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " - ", right])
-  | MultipliedWithExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " * ", right])
-  | DividedByExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " / ", right])
-  | ProjectionAccessExprT {left = left, label = label, count = count, info = info} ->
-    match pprintExpr env left with (env, left) in
-    match label with Some l then
-      (env, join [left, ".", l.v])
-    else match count with Some c then
-      (env, join [left, ".", int2string c.v])
-    else errorSingle [info] "Invalid projection access expression"
-  | EqualExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " == ", right])
-  | NotEqualExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " != ", right])
-  | LessThanExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " < ", right])
-  | GreaterThanExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " > ", right])
-  | LessThanOrEqualExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " <= ", right])
-  | GreaterThanOrEqualExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " >= ", right])
-  | AndExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " && ", right])
-  | OrExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " || ", right])
-  | ArrayAccessExprT {left = left, e = e} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env e with (env, e) in
-    (env, join [left, "[", e, "]"])
-  | IfExprT {c = c, e = e, right = right} ->
-    match pprintExpr env c with (env, c) in
-    match pprintExpr env e with (env, e) in
-    match pprintExpr env right with (env, right) in
-    (env, join ["if ", c, " then ", e, " else ", right])
-  | InExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " \\in ", right])
-  | NotinExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " \\notin ", right])
-  | UnionExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " \\u ", right])
-  | IntersectionExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " \\n ", right])
-  | SetMinusExprT {left = left, right = right} ->
-    match pprintExpr env left with (env, left) in
-    match pprintExpr env right with (env, right) in
-    (env, join [left, " \\setminus ", right])
-  | OutputExprT _ -> (env, "output")
-  | TrueExprT _ -> (env, "true")
-  | FalseExprT _ -> (env, "false")
-  | VariableExprT {v = v} -> pprintVarName env v.v
-  | ConstructorExprT {c = c} -> pprintConName env c.v
-  | IntegerExprT {i = i} -> (env, int2string i.v)
-  | SubSeqExprT {left = left} ->
-    match pprintExpr env left with (env, left) in
-    (env, join [left, "..."])
-  | ArrayExprT {e = e} ->
-    match mapAccumL pprintExpr env e with (env, e) in
-    (env, join ["[", strJoin ", " e, "]"])
-  | TupleExprT {e = e} ->
-    match mapAccumL pprintExpr env e with (env, e) in
-    (env, join ["@(", strJoin ", " e, ")"])
-end
-
-lang TrellisPatPrettyPrint =
-  TrellisPrettyPrintBase + ConPatTAst + VarPatTAst + WildPatTAst +
-  DotsPatTAst + ArrayPatTAst + TupPatTAst + IntPatTAst + TruePatTAst +
-  FalsePatTAst
-
-  sem pprintPat : PprintEnv -> PatT -> (PprintEnv, String)
-  sem pprintPat env =
-  | ConPatT {c = c, p = p} ->
-    match pprintConName env c.v with (env, v) in
-    match mapAccumL pprintPat env p with (env, p) in
-    (env, join [v, "(", strJoin ", " p, ")"])
-  | VarPatT {id = id} ->
-    match pprintVarName env id.v with (env, id) in
-    (env, id)
-  | WildPatT _ -> (env, "_")
-  | DotsPatT {left = left} ->
-    match pprintPat env left with (env, left) in
-    (env, concat left "...")
-  | ArrayPatT {p = p} ->
-    match mapAccumL pprintPat env p with (env, p) in
+lang TrellisPatPrettyPrint = TrellisPrettyPrintBase
+  sem pprintTrellisPat : PprintEnv -> TrellisPat -> (PprintEnv, String)
+  sem pprintTrellisPat env =
+  | ConTrellisPat {id = {v = id}} -> pprintConName env id
+  | VarPTrellisPat {id = {v = id}} -> pprintVarName env id
+  | IntPTrellisPat {i = {v = i}} -> (env, int2string i)
+  | TruePTrellisPat _ -> (env, "true")
+  | FalsePTrellisPat _ -> (env, "false")
+  | ArrayPTrellisPat {p = p} ->
+    match mapAccumL pprintTrellisPat env p with (env, p) in
     (env, join ["[", strJoin ", " p, "]"])
-  | TupPatT {p = p} ->
-    match mapAccumL pprintPat env p with (env, p) in
+  | TupPTrellisPat {p = p} ->
+    match mapAccumL pprintTrellisPat env p with (env, p) in
     (env, join ["@(", strJoin ", " p, ")"])
-  | IntPatT {i = i} -> (env, int2string i.v)
-  | TruePatT _ -> (env, "true")
-  | FalsePatT _ -> (env, "false")
+  | DotsTrellisPat {left = left} ->
+    match pprintTrellisPat env left with (env, left) in
+    (env, join [left, "..."])
+end
+
+lang TrellisExprPrettyPrint = TrellisPrettyPrintBase
+  sem pprintTrellisExpr : PprintEnv -> TrellisExpr -> (PprintEnv, String)
+  sem pprintTrellisExpr env =
+  | TrueTrellisExpr _ -> (env, "true")
+  | FalseTrellisExpr _ -> (env, "false")
+  | VarTrellisExpr {id = {v = id}} -> pprintVarName env id
+  | ConstrTrellisExpr {id = {v = id}} -> pprintConName env id
+  | IntTrellisExpr {i = {v = i}} -> (env, int2string i)
+  | ApplicationTrellisExpr {left = left, arg = arg} ->
+    match pprintTrellisExpr env left with (env, left) in
+    match mapAccumL pprintTrellisExpr env arg with (env, arg) in
+    (env, join [left, "(", strJoin ", " arg, ")"])
+  | TupleProjTrellisExpr {left = left, idx = {v = idx}} ->
+    match pprintTrellisExpr env left with (env, left) in
+    (env, join [left, ".", int2string idx])
+  | ArrayAccessTrellisExpr {left = left, e = e} ->
+    match pprintTrellisExpr env left with (env, left) in
+    match pprintTrellisExpr env e with (env, e) in
+    (env, join [left, "[", e, "]"])
+  | IfTrellisExpr {c = c, thn = thn, right = right} ->
+    match pprintTrellisExpr env c with (env, c) in
+    match pprintTrellisExpr env thn with (env, thn) in
+    match pprintTrellisExpr env right with (env, right) in
+    (env, join ["if ", c, " then ", thn, " else ", right])
+  | ArrayTrellisExpr {e = e} ->
+    match mapAccumL pprintTrellisExpr env e with (env, e) in
+    (env, join ["[", strJoin ", " e, "]"])
+  | TupleTrellisExpr {e = e} ->
+    match mapAccumL pprintTrellisExpr env e with (env, e) in
+    (env, join ["@(", strJoin ", " e, ")"])
+  | AddTrellisExpr {left = left, right = right} ->
+    match pprintTrellisExpr env left with (env, left) in
+    match pprintTrellisExpr env right with (env, right) in
+    (env, join [left, " + ", right])
+  | SubTrellisExpr {left = left, right = right} ->
+    match pprintTrellisExpr env left with (env, left) in
+    match pprintTrellisExpr env right with (env, right) in
+    (env, join [left, " - ", right])
+  | MulTrellisExpr {left = left, right = right} ->
+    match pprintTrellisExpr env left with (env, left) in
+    match pprintTrellisExpr env right with (env, right) in
+    (env, join [left, " * ", right])
+  | DivTrellisExpr {left = left, right = right} ->
+    match pprintTrellisExpr env left with (env, left) in
+    match pprintTrellisExpr env right with (env, right) in
+    (env, join [left, " / ", right])
+  | EqTrellisExpr {left = left, right = right} ->
+    match pprintTrellisExpr env left with (env, left) in
+    match pprintTrellisExpr env right with (env, right) in
+    (env, join [left, " == ", right])
+  | NeqTrellisExpr {left = left, right = right} ->
+    match pprintTrellisExpr env left with (env, left) in
+    match pprintTrellisExpr env right with (env, right) in
+    (env, join [left, " != ", right])
+  | LtTrellisExpr {left = left, right = right} ->
+    match pprintTrellisExpr env left with (env, left) in
+    match pprintTrellisExpr env right with (env, right) in
+    (env, join [left, " < ", right])
+  | GtTrellisExpr {left = left, right = right} ->
+    match pprintTrellisExpr env left with (env, left) in
+    match pprintTrellisExpr env right with (env, right) in
+    (env, join [left, " > ", right])
+  | LeqTrellisExpr {left = left, right = right} ->
+    match pprintTrellisExpr env left with (env, left) in
+    match pprintTrellisExpr env right with (env, right) in
+    (env, join [left, " <= ", right])
+  | GeqTrellisExpr {left = left, right = right} ->
+    match pprintTrellisExpr env left with (env, left) in
+    match pprintTrellisExpr env right with (env, right) in
+    (env, join [left, " >= ", right])
+  | AndTrellisExpr {left = left, right = right} ->
+    match pprintTrellisExpr env left with (env, left) in
+    match pprintTrellisExpr env right with (env, right) in
+    (env, join [left, " && ", right])
+  | OrTrellisExpr {left = left, right = right} ->
+    match pprintTrellisExpr env left with (env, left) in
+    match pprintTrellisExpr env right with (env, right) in
+    (env, join [left, " || ", right])
+end
+
+lang TrellisTypePrettyPrint = TrellisPrettyPrintBase + TrellisExprPrettyPrint
+  sem pprintTrellisType : PprintEnv -> TrellisType -> (PprintEnv, String)
+  sem pprintTrellisType env =
+  | ArrayTTrellisType {left = left, count = count, namedCount = nc, info = info} ->
+    match pprintTrellisType env left with (env, left) in
+    match
+      match count with Some {v = i} then (env, int2string i)
+      else match nc with Some {v = id} then pprintVarName env id
+      else errorSingle [info] "Invalid array size type"
+    with (env, count) in
+    (env, join [left, "[", count, "]"])
+  | ConcreteTrellisType {id = {v = id}} -> pprintTypeName env id
+  | TupleTTrellisType {t = t} ->
+    match mapAccumL pprintTrellisType env t with (env, t) in
+    (env, join ["@(", strJoin ", " t, ")"])
+  | IntRangeTrellisType {lb = {v = lb}, ub = ub, namedUb = namedUb, info = info} ->
+    match
+      match ub with Some {v = ub} then (env, int2string ub)
+      else match namedUb with Some {v = id} then pprintVarName env id
+      else errorSingle [info] "Invalid integer range type"
+    with (env, upperBound) in
+    (env, join [int2string lb, "..", upperBound])
+  | BoolTrellisType _ -> (env, "Bool")
+  | IntTTrellisType _ -> (env, "Int")
+  | ProbTTrellisType _ -> (env, "Probability")
 end
 
 lang TrellisSetPrettyPrint =
-  TrellisExprPrettyPrint + TrellisPatPrettyPrint + SetUnionSetTAst +
-  SetIntersectionSetTAst + SetTMinusSetTAst + NamedSetSetTAst + SetLitSetTAst +
-  SetBuilderSetTAst + SetProjectionSetTAst
+  TrellisPrettyPrintBase + TrellisPatPrettyPrint + TrellisExprPrettyPrint
 
-  sem pprintSet : PprintEnv -> SetT -> (PprintEnv, String)
-  sem pprintSet env =
-  | SetUnionSetT {left = left, right = right} ->
-    match pprintSet env left with (env, left) in
-    match pprintSet env right with (env, right) in
-    (env, join [left, " \\u ", right])
-  | SetIntersectionSetT {left = left, right = right} ->
-    match pprintSet env left with (env, left) in
-    match pprintSet env right with (env, right) in
-    (env, join [left, " \\n ", right])
-  | SetTMinusSetT {left = left, right = right} ->
-    match pprintSet env left with (env, left) in
-    match pprintSet env right with (env, right) in
-    (env, join [left, " \\setminus ", right])
-  | NamedSetSetT {name = name} ->
-    match pprintVarName env name.v with (env, v) in
-    (env, v)
-  | SetLitSetT {mapping = mapping} ->
-    let pprintMapping = lam env. lam m.
-      match m with {e = e, to = to} in
-      match pprintExpr env e with (env, e) in
-      match
-        match to with Some to then
-          match pprintExpr env to with (env, to) in
-          (env, join [" -> ", to])
-        else (env, "")
-      with (env, tostr) in
-      (env, join [e, tostr])
-    in
-    match mapAccumL pprintMapping env mapping with (env, m) in
-    (env, join ["{", strJoin ", " m, "}"])
-  | SetBuilderSetT {p = p, to = to, e = e} ->
-    match pprintPat env p with (env, p) in
+  sem pprintTrellisSet : PprintEnv -> TrellisSet -> (PprintEnv, String)
+  sem pprintTrellisSet env =
+  | BuilderTrellisSet {p = p, to = to, e = e, info = info} ->
     match
+      match pprintTrellisPat env p with (env, p) in
       match to with Some to then
-        match pprintPat env to with (env, p) in
-        (env, join [" -> ", p])
-      else (env, "")
-    with (env, tostr) in
-    match mapAccumL pprintExpr env e with (env, e) in
-    (env, join ["@{", p, tostr, " | ", strJoin ", " e, "}"])
-  | SetProjectionSetT {left = left, lbl = lbl} ->
-    match pprintSet env left with (env, left) in
-    (env, join [left, ".", lbl.v])
+        match pprintTrellisPat env to with (env, to) in
+        (env, join [p, " -> ", to])
+      else (env, p)
+    with (env, lhs) in
+    match mapAccumL pprintTrellisExpr env e with (env, e) in
+    (env, join ["{", lhs, " | ", strJoin ", " e, "}"])
+  | LiteralTrellisSet {v = v, info = info} ->
+    let pprintSetElement = lam env. lam elem.
+      match pprintTrellisExpr env elem.e with (env, e) in
+      match elem with {to = Some to} then
+        match pprintTrellisExpr env to with (env, to) in
+        (env, join [e, " -> ", to])
+      else (env, e)
+    in
+    match mapAccumL pprintSetElement env v with (env, v) in
+    (env, join ["@{", strJoin ", " v, "}"])
 end
 
-lang TrellisTypePrettyPrint =
-  TrellisExprPrettyPrint + TypeVarTypeTAst + ArrayTypeTAst + ConcreteTypeTAst +
-  TupleTypeTAst + IntegerTypeTAst + BoolTypeTAst + IntTypeTAst +
-  AutomatonStateTypeTAst
+lang TrellisInModelDeclPrettyPrint = TrellisPrettyPrintBase
+  sem pprintTrellisInModelDecl : Int -> PprintEnv -> InModelDecl -> (PprintEnv, String)
+end
 
-  sem pprintType : PprintEnv -> TypeT -> (PprintEnv, String)
-  sem pprintType env =
-  | TypeVarTypeT {n = n} -> pprintVarName env n.v
-  | ArrayTypeT {left = left, count = count} ->
-    match pprintType env left with (env, left) in
-    match pprintExpr env count with (env, count) in
-    (env, join [left, "[", count, "]"])
-  | ConcreteTypeT {n = n, a = a} ->
-    match pprintTypeName env n.v with (env, v) in
-    match
-      if null a then (env, "")
-      else
-        match mapAccumL pprintType env a with (env, a) in
-        (env, join ["(", strJoin ", " a, ")"])
-    with (env, str) in
-    (env, join [v, str])
-  | TupleTypeT {t = t} ->
-    match mapAccumL pprintType env t with (env, t) in
-    (env, join ["@(", strJoin ", " t, ")"])
-  | IntegerTypeT {lb = lb, ub = ub, namedUb = namedUb, v = v} ->
-    let pprintInner = lam env. lam ub. lam namedUb.
-      match ub with Some {v = ubv} then
-        (env, int2string ubv)
-      else match namedUb with Some {v = nubv} then
-        pprintVarName env nubv
-      else error "Invalid integer range type"
+lang TrellisStatePropertyInModelDeclPrettyPrint =
+  TrellisInModelDeclPrettyPrint + TrellisTypePrettyPrint
+
+  sem pprintTrellisInModelDecl indent env =
+  | StatePropertyInModelDecl {ty = ty} ->
+    match pprintTrellisType env ty with (env, ty) in
+    (env, join [pprintSpacing indent, "state = ", ty])
+end
+
+lang TrellisOutputPropertyInModelDeclPrettyPrint =
+  TrellisInModelDeclPrettyPrint + TrellisTypePrettyPrint
+
+  sem pprintTrellisInModelDecl indent env =
+  | OutputPropertyInModelDecl {ty = ty} ->
+    match pprintTrellisType env ty with (env, ty) in
+    (env, join [pprintSpacing indent, "output = ", ty])
+end
+
+lang TrellisSetInModelDeclPrettyPrint =
+  TrellisInModelDeclPrettyPrint + TrellisSetPrettyPrint
+
+  sem pprintTrellisInModelDecl indent env =
+  | SetInModelDecl {id = {v = id}, s = s} ->
+    match pprintVarName env id with (env, id) in
+    match pprintTrellisSet env s with (env, s) in
+    (env, join [pprintSpacing indent, "set ", id, " = ", s])
+end
+
+lang TrellisTableInModelDeclPrettyPrint =
+  TrellisInModelDeclPrettyPrint + TrellisTypePrettyPrint
+
+  sem pprintTrellisInModelDecl indent env =
+  | TableInModelDecl {id = {v = id}, dim = dim, ty = ty} ->
+    match pprintVarName env id with (env, id) in
+    match mapAccumL pprintTrellisType env dim with (env, dim) in
+    match pprintTrellisType env ty with (env, ty) in
+    (env, join [pprintSpacing indent, "table ", id, "(", strJoin ", " dim, ") : ", ty])
+end
+
+lang TrellisProbabilityInModelDeclPrettyPrint =
+  TrellisInModelDeclPrettyPrint + TrellisExprPrettyPrint
+
+  syn ProbKind =
+  | Initial
+  | Output
+  | Transition
+
+  sem pprintTrellisInModelDecl indent env =
+  | ProbInModelDecl {init = init, out = out, trans = trans,
+                     fst = {v = fst}, snd = snd, pd = pd, info = info} ->
+    let kind =
+      match init with Some _ then Initial ()
+      else match out with Some _ then Output ()
+      else match trans with Some _ then Transition ()
+      else errorSingle [info] "Invalid probability declaration"
     in
-    let lb = int2string lb.v in
-    match v with Some {v = v} then
-      match pprintVarName env v with (env, v) in
-      match pprintInner env ub namedUb with (env, innerV) in
-      (env, join [lb, " <= ", v, " <= ", innerV])
+    match pprintVarName env fst with (env, fst) in
+    match pprintProbDecl indent env pd with (env, pd) in
+    match kind with Initial _ then
+      (env, join [pprintSpacing indent, "P(initial ", fst, ") = ", pd])
     else
-      match pprintInner env ub namedUb with (env, v) in
-      (env, join [lb, "..", v])
-  | BoolTypeT _ -> (env, "Bool")
-  | IntTypeT _ -> (env, "Int")
-  | AutomatonStateTypeT {automaton = a} ->
-    match pprintVarName env a.v with (env, a) in
-    (env, join ["state(", a, ")"])
-end
-
-lang TrellisParamPrettyPrint = TrellisTypePrettyPrint + ParamAst
-
-  sem pprintParam : PprintEnv -> Param -> (PprintEnv, String)
-  sem pprintParam env =
-  | Param1 {n = n, ty = ty} ->
-    match pprintVarName env n.v with (env, v) in
-    match pprintType env ty with (env, ty) in
-    (env, join [v, " : ", ty])
-end
-
-lang TrellisConstrDeclPrettyPrint = TrellisTypePrettyPrint + ConstrDeclAst
-
-  sem pprintConstrDecl : PprintEnv -> ConstrDecl -> (PprintEnv, String)
-  sem pprintConstrDecl env =
-  | ConstrDecl1 {vName = n, param = p} ->
-    match
-      if null p then (env, "")
+      let snd =
+        match snd with Some {v = snd} then snd
+        else errorSingle [info] "Invalid probability declaration"
+      in
+      match pprintVarName env snd with (env, snd) in
+      match kind with Output _ then
+        (env, join [pprintSpacing indent, "P(output ", fst, " | ", snd, ") = ", pd])
       else
-        match mapAccumL pprintType env p with (env, params) in
-        (env, join ["(", strJoin ", " params, ")"])
-    with (env, params) in
-    (env, join [nameGetStr n.v, params])
-end
+        (env, join [pprintSpacing indent, "P(transition ", fst, " ", snd, ") = ", pd])
 
-lang TrellisAutomatonPropPrettyPrint =
-  TrellisSetPrettyPrint + StatePropAutomatonPropAst + SetPropAutomatonPropAst
-
-  sem pprintAutomatonProp : PprintEnv -> AutomatonProp -> (PprintEnv, String)
-  sem pprintAutomatonProp env =
-  | StatePropAutomatonProp {ty = ty} ->
-    match pprintType env ty with (env, ty) in
-    (env, join ["state: ", ty])
-  | SetPropAutomatonProp {name = name, initial = init, s = s} ->
-    match
-      match name with Some n then
-        match pprintVarName env n.v with (env, n) in
-        (env, n)
-      else match init with Some _ then
-        (env, "initial")
-      else error "Invalid automaton property"
-    with (env, initstr) in
-    match pprintSet env s with (env, s) in
-    (env, join [initstr, ": ", s])
-end
-
-lang TrellisModelCompositionPrettyPrint =
-  TrellisPrettyPrintBase + ModelAtomModelCompositionAst + ModelNestingModelCompositionAst
-
-  sem pprintModelComposition : PprintEnv -> ModelComposition -> (PprintEnv, String)
-  sem pprintModelComposition env =
-  | ModelAtomModelComposition {name = name, automaton = a} ->
-    match pprintVarName env name.v with (env, name) in
-    match pprintConName env a.v with (env, a) in
-    (env, join [name, " : ", a])
-  | ModelNestingModelComposition {left = left, mc = mc} ->
-    match pprintModelComposition env left with (env, left) in
-    match pprintModelComposition env mc with (env, mc) in
-    (env, join [left, "(", mc, ")"])
-end
-
-lang TrellisInModelDeclPrettyPrint =
-  TrellisSetPrettyPrint + InferredFunctionInModelDeclAst + ProbInModelDeclAst
-
-  sem pprintInModelDecl : PprintEnv -> InModelDecl -> (PprintEnv, String)
-  sem pprintInModelDecl env =
-  | InferredFunctionInModelDecl {f = f, p = p, ret = ret} ->
-    match pprintVarName env f.v with (env, v) in
-    match mapAccumL pprintType env p with (env, p) in
-    match
-      match ret with Some ty then
-        match pprintType env ty with (env, ty) in
-        (env, concat ": " ty)
-      else (env, "")
-    with (env, retstr) in
-    (env, join ["table ", v, "(", strJoin ", " p, ")", retstr])
-  | ProbInModelDecl {
-      output = o, s = s, initial = init, transition = tr, from = from, to = to,
-      e = e, cases = cases, info = info
-    } ->
+  sem pprintProbDecl : Int -> PprintEnv -> ProbDecl -> (PprintEnv, String)
+  sem pprintProbDecl indent env =
+  | OneProbDecl {e = e} -> pprintTrellisExpr env e
+  | CasesProbDecl {cases = cases} ->
     let pprintCase = lam env. lam c.
-      match c with {set = set, e2 = e2} in
-      match pprintSet env set with (env, set) in
-      match pprintExpr env e2 with (env, e2) in
-      (env, join ["| ", set, " => ", e2])
+      match c with {set = {v = id}, e = e} in
+      match pprintVarName env id with (env, id) in
+      match pprintTrellisExpr env e with (env, e) in
+      (env, join ["| ", id, " -> ", e])
     in
-    match
-      match (o, s) with (Some _, Some sid) then
-        match pprintVarName env sid.v with (env, sid) in
-        (env, concat "output | " sid)
-      else match (init, s) with (Some _, Some sid) then
-        match pprintVarName env sid.v with (env, sid) in
-        (env, concat "initial " sid)
-      else match (tr, from, to) with (Some _, Some from, Some to) then
-        match pprintVarName env from.v with (env, from) in
-        match pprintVarName env to.v with (env, to) in
-        (env, join ["transition ", from, " ", to])
-      else errorSingle [info] "Invalid probabilistic specification"
-    with (env, pstr) in
-    match
-      match e with Some e then
-        match pprintExpr env e with (env, e) in
-        (env, join ["= ", e])
-      else
-        match mapAccumL pprintCase env cases with (env, cases) in
-        let cases = join (map (lam c. join ["    ", c, "\n"]) cases) in
-        (env, join ["{\n", cases, "  }"])
-    with (env, tailstr) in
-    (env, join ["P(", pstr, ") ", tailstr])
+    match mapAccumL pprintCase env cases with (env, cases) in
+    let ii = pprintIncr indent in
+    (env, join [ "{", pprintNewline ii, strJoin (pprintNewline ii) cases,
+                 pprintNewline indent, "}" ])
 end
 
-lang TrellisDeclPrettyPrint =
-  TrellisTypePrettyPrint + TrellisExprPrettyPrint + TrellisParamPrettyPrint +
-  TrellisConstrDeclPrettyPrint + TrellisAutomatonPropPrettyPrint +
-  TrellisModelCompositionPrettyPrint + TrellisInModelDeclPrettyPrint +
-  TypeDeclAst + AutomatonDeclAst + FuncDeclAst + ModelDeclAst
+lang TrellisDeclPrettyPrint = TrellisPrettyPrintBase
+  sem pprintTrellisDecl : PprintEnv -> Decl -> (PprintEnv, String)
+end
 
-  sem pprintDecl : PprintEnv -> Decl -> (PprintEnv, String)
-  sem pprintDecl env =
-  | TypeDecl {name = n, param = p, v = v} ->
-    let params =
-      if null p then ""
-      else join ["(", strJoin ", " (map (lam x. nameGetStr x.v) p), ")"]
+lang TrellisTypeDeclPrettyPrint = TrellisDeclPrettyPrint
+  sem pprintTrellisDecl env =
+  | TypeDecl {id = {v = id}, constr = constr} ->
+    recursive let pprintConstrs = lam env. lam constr.
+      switch constr
+      case [] then (env, "")
+      case [c] then pprintConName env c.v
+      case [c] ++ rest then
+        match pprintConName env c.v with (env, s) in
+        match pprintConstrs env rest with (env, rest) in
+        (env, join [s, ", ", rest])
+      end
     in
-    match mapAccumL pprintConstrDecl env v with (env, decls) in
-    let constrDecls = strJoin ", " decls in
-    (env, join ["type ", nameGetStr n.v, params, " {", constrDecls, "}"])
-  | AutomatonDecl {name = n, prop = prop} ->
-    match mapAccumL pprintAutomatonProp env prop with (env, props) in
-    let props = join (map (lam p. join ["  ", p, ",\n"]) props) in
-    (env, join ["automaton ", nameGetStr n.v, " {\n", props, "}"])
-  | FuncDecl {fname = n, p = p, ty = ty, e = e} ->
-    match pprintVarName env n.v with (env, v) in
-    match
-      if null p then (env, "")
-      else
-        match mapAccumL pprintParam env p with (env, p) in
-        (env, join ["(", strJoin ", " p, ") "])
-    with (env, params) in
-    match
-      match ty with Some ty then
-        match pprintType env ty with (env, ty) in
-        (env, join [": ", ty, " "])
-      else
-        (env, "")
-    with (env, ty) in
-    match pprintExpr env e with (env, e) in
-    (env, join ["let ", v, params, ty, " = ", e])
-  | ModelDecl {name = n, mc = mc, indecl = indecl} ->
-    match pprintConName env n.v with (env, n) in
-    match pprintModelComposition env mc with (env, mc) in
-    match mapAccumL pprintInModelDecl env indecl with (env, indecl) in
-    (env, join ["model ", n, " = ", mc, " {\n", join (map (lam s. join ["  ", s, "\n"]) indecl), "}"])
+    match pprintTypeName env id with (env, id) in
+    match pprintConstrs env constr with (env, constr) in
+    (env, join ["type ", id, " = {", constr, "}"])
 end
 
-lang TrellisTopPrettyPrint =
-  TrellisDeclPrettyPrint + TopAst
+lang TrellisLetDeclPrettyPrint =
+  TrellisDeclPrettyPrint + TrellisTypePrettyPrint + TrellisExprPrettyPrint
 
-  sem pprintTop : PprintEnv -> Top -> (PprintEnv, String)
-  sem pprintTop env =
-  | Top1 {d = d} ->
-    match mapAccumL pprintDecl env d with (env, d) in
-    (env, strJoin "\n" d)
+  sem pprintTrellisDecl env =
+  | LetDecl {id = {v = id}, ty = ty, e = e} ->
+    match pprintVarName env id with (env, id) in
+    match
+      match ty with Some t then
+        match pprintTrellisType env t with (env, t) in
+        (env, join [" : ", t])
+      else (env, "")
+    with (env, tystr) in
+    match pprintTrellisExpr env e with (env, e) in
+    (env, join ["let ", id, tystr, " = ", e])
 end
 
-lang TrellisPrettyPrint = TrellisTopPrettyPrint
-  sem pprintTrellis : Top -> String
+lang TrellisPrettyPrint =
+  TrellisTypePrettyPrint + TrellisPatPrettyPrint + TrellisSetPrettyPrint +
+  TrellisExprPrettyPrint +
+
+  -- In-model declarations
+  TrellisStatePropertyInModelDeclPrettyPrint +
+  TrellisOutputPropertyInModelDeclPrettyPrint +
+  TrellisSetInModelDeclPrettyPrint + TrellisTableInModelDeclPrettyPrint +
+  TrellisProbabilityInModelDeclPrettyPrint +
+
+  -- Declarations
+  TrellisTypeDeclPrettyPrint + TrellisLetDeclPrettyPrint +
+
+  -- Trellis AST
+  TrellisAst
+
+  sem pprintTrellis : TrellisProgram -> String
   sem pprintTrellis =
-  | p -> match pprintTop pprintEnvEmpty p with (_, p) in p
+  | MainTrellisProgram {d = d, indecl = indecl} ->
+    match mapAccumL pprintTrellisDecl pprintEnvEmpty d with (env, d) in
+    match mapAccumL (pprintTrellisInModelDecl 2) env indecl with (_, indecl) in
+    join [strJoin "\n" d, "\nmodel {\n", strJoin "\n" indecl, "\n}"]
 end

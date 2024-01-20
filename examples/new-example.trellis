@@ -1,0 +1,38 @@
+type Nucleotide = {A,C,G,T}
+
+let merlength = 3
+let maxduration = 16
+
+model {
+  # Declaring the state and output types
+  state = @(Nucleotide[merlength], 1..maxduration)
+  output = 0..100
+
+  # Set of all states in the first layer (duration = 1)
+  set first = { @(x1, 1) | true }
+
+  # Sets of transitions used to define the transition probability
+  set inter = { @([a, as...], 1) -> @([bs..., b], k) | as == bs }
+  set down = { @(x1, k1) -> @(x2, k2) | x1 == x2, k2 == k1 - 1 }
+  set max = { @(x1, n1) -> @(x2, n2) | x1 == x2, n1 == maxduration, n2 == maxduration }
+  set from_max = { @(x1, n1) -> @(x2, n2) | x1 == x2, n1 == maxduration, n2 == maxduration - 1 }
+
+  # Table declarations representing data provided at runtime
+  table initialProb(Nucleotide[merlength]) : Probability
+  table outputProb(Nucleotide[merlength], 0..100) : Probability
+  table trans1(Nucleotide[merlength], Nucleotide[merlength]) : Probability
+  table trans2(1..maxduration) : Probability
+  table gamma() : Probability
+
+  # Initial, output, and transition probability definitions
+  P(initial x) = {
+    | first => initialProb(x.0)
+  }
+  P(output o | x) = outputProb(x.0, o)
+  P(transition x y) = {
+    | inter => trans1(x.0, y.0) * trans2(y.1)
+    | max => gamma
+    | from_max => 1 - gamma
+    | down => 1
+  }
+}
