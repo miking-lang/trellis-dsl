@@ -1,29 +1,23 @@
 
 .PHONY: test examples clean
 
-main_name=main
-exec_name=trellis
-mcore_stdlib=${MCORE_STDLIB}
+MAIN_NAME=trellis
 
-all: build/${main_name}
+all: build/${MAIN_NAME}
 
-src/trellis.mc: src/trellis.syn
-	mi compile ${mcore_stdlib}/parser/tool.mc
-	./tool src/trellis.syn src/trellis.mc
-	rm -f tool
-
-build/${main_name}: $(shell find . -name "*.mc") src/trellis.syn src/trellis.mc
-	mi compile src/${main_name}.mc
+build/${MAIN_NAME}: $(shell find . -name "*.mc") src/ast.mc
 	mkdir -p build
-	cp ${main_name} build/${main_name}
-	rm ${main_name}
+	mi compile src/${MAIN_NAME}.mc --output build/${MAIN_NAME}
 
-examples: build/${main_name}
-	@$(MAKE) -s -f examples.mk all
+src/ast.mc: src/ast.syn
+	mi syn $< $@
 
-test: build/${main_name}
+#examples: build/${MAIN_NAME}
+#	@$(MAKE) -s -f examples.mk all
+
+test: build/${MAIN_NAME}
 	@$(MAKE) -s -f test.mk all
 
 clean:
 	rm -rf build
-	rm src/trellis.mc
+	rm src/ast.mc

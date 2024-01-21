@@ -31,7 +31,7 @@ test () {
 
 example () {
   set +e
-  compile_cmd="build/main"
+  compile_cmd="build/trellis"
   output=$1
   output="$output\n$($compile_cmd $1 2>&1)"
   exit_code=$?
