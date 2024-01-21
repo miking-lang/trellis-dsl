@@ -12,27 +12,40 @@ model {
   set first = { @(x1, 1) | true }
 
   # Sets of transitions used to define the transition probability
+  # TODO: what is purpose of declaring them here if we only use them once?
   set inter = { @([a, as...], 1) -> @([bs..., b], k) | as == bs }
   set down = { @(x1, k1) -> @(x2, k2) | x1 == x2, k2 == k1 - 1 }
   set max = { @(x1, n1) -> @(x2, n2) | x1 == x2, n1 == maxduration, n2 == maxduration }
   set from_max = { @(x1, n1) -> @(x2, n2) | x1 == x2, n1 == maxduration, n2 == maxduration - 1 }
 
   # Table declarations representing data provided at runtime
-  table initialProb(Nucleotide[merlength]) : Probability
-  table outputProb(Nucleotide[merlength], 0..100) : Probability
-  table trans1(Nucleotide[merlength], Nucleotide[merlength]) : Probability
-  table trans2(1..maxduration) : Probability
-  table gamma() : Probability
+  table initialProb[Nucleotide[merlength]] : Probability
+  table outputProb[Nucleotide[merlength]][0..100] : Probability
+  table trans1[Nucleotide[merlength]][Nucleotide[merlength]] : Probability
+  table trans2[1..maxduration] : Probability
+  table gamma : Probability
 
   # Initial, output, and transition probability definitions
+
+  # We could use a table of dimensions (Nucleotide[merlength], 1..maxduration)
+  # to avoid the case. This would result in slightly larger memory usage
+  # (negligible compared to other tables) but slightly less runtime overhead
+  # (no need to check the condition).
   P(initial x) = {
-    | first => initialProb(x.0)
+    | first => initialProb[x.0]
   }
-  P(output o | x) = outputProb(x.0, o)
+
+  # What is the meaning of a "case" for the output probability? Is that a set
+  # of states or a set of (state, output)?
+  P(output o | x) = outputProb[x.0][o]
+
+  # How do we distinguish between arithmetic operations on integers and on
+  # probabilities? For example, the multiplication below should become an
+  # addition because we use a logarithmic scale for probabilities.
   P(transition x y) = {
-    | inter => trans1(x.0, y.0) * trans2(y.1)
+    | inter => trans1[x.0][y.0] * trans2[y.1]
     | max => gamma
-    | from_max => 1 - gamma
-    | down => 1
+    | from_max => 1.0 - gamma
+    | down => 1.0
   }
 }

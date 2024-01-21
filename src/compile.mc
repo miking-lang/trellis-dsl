@@ -6,6 +6,134 @@ include "ast.mc"
 include "repr.mc"
 include "trellis-arg.mc"
 
+let initialProbabilityId = nameSym "initial_probability"
+let outputProbabilityId = nameSym "output_probability"
+let transitionProbabilityId = nameSym "transition_probability"
+
+let stateTyId = nameSym "state_t"
+let probTyId = nameSym "prob_t"
+let obsTyId = nameSym "obs_t"
+
+lang TrellisCompileExpression = TrellisAst + FutharkAst
+  sem compileTrellisExpr : Map Name FutType -> TrellisExpr -> FutExpr
+  sem compileTrellisExpr params =
+  | TrueTrellisExpr {info = info} ->
+    FEConst {val = FCBool {val = true}, ty = FTyBool {info = info}, info = info}
+  | FalseTrellisExpr {info = info} ->
+    FEConst {val = FCBool {val = false}, ty = FTyBool {info = info}, info = info}
+  | VarTrellisExpr {id = {v = id}, info = info} ->
+    let defaultVar = lam.
+      FEVar {ident = id, ty = FTyUnknown {info = info}, info = info}
+    in
+    match mapLookup id params with Some (FTyIdent {ident = tyId}) then
+      if nameEq tyId stateTyId then
+        -- TODO(larshum, 2024-01-21): We need to handle the state_t parameters
+        -- in a different way, depending on how they are used, as they are
+        -- a bitset in the generated code but may have a different type in the
+        -- DSL code.
+        defaultVar ()
+      else defaultVar ()
+    else defaultVar ()
+  | ConstrTrellisExpr {info = info} ->
+    let msg = join [
+      "Compilation of constructors is not supported.\n",
+      "All constructors should be eliminated in the simplification pass."
+    ] in
+    errorSingle [info] msg
+  | IntTrellisExpr {i = {v = i}, info = info} ->
+    FEConst {val = FCInt {val = i, sz = None ()}, ty = FTyUnknown {info = info}, info = info}
+  | TupleProjTrellisExpr {left = left, idx = {v = idx}, info = info} ->
+    FEProj {
+      target = compileTrellisExpr params left,
+      label = stringToSid (int2string idx), ty = FTyUnknown {info = info},
+      info = info
+    }
+  | ArrayAccessTrellisExpr {left = left, e = e, info = info} ->
+    FEArrayAccess {
+      array = compileTrellisExpr params left, index = compileTrellisExpr params e,
+      ty = FTyUnknown {info = info}, info = info
+    }
+  | IfTrellisExpr {c = c, thn = thn, right = right, info = info} ->
+    FEIf {
+      cond = compileTrellisExpr params c, thn = compileTrellisExpr params thn,
+      els = compileTrellisExpr params right, ty = FTyUnknown {info = info},
+      info = info
+    }
+  | AddTrellisExpr {left = left, right = right, info = info} ->
+    compileTrellisBinOp info params (FCAdd ()) left right
+  | SubTrellisExpr {left = left, right = right, info = info} ->
+    compileTrellisBinOp info params (FCSub ()) left right
+  | MulTrellisExpr {left = left, right = right, info = info} ->
+    -- TODO(larshum, 2024-01-21): Is this integer or probability
+    -- multiplication? If the latter, we need to compile it to use addition
+    -- instead...
+    compileTrellisBinOp info params (FCMul ()) left right
+  | EqTrellisExpr {left = left, right = right, info = info} ->
+    compileTrellisBinOp info params (FCEq ()) left right
+  | NeqTrellisExpr {left = left, right = right, info = info} ->
+    compileTrellisBinOp info params (FCNeq ()) left right
+  | e ->
+    errorSingle [get_TrellisExpr_info e] "Compilation of expression not supported yet"
+
+  sem compileTrellisBinOp : Info -> Map Name FutType -> FutConst -> TrellisExpr
+                         -> TrellisExpr -> FutExpr
+  sem compileTrellisBinOp info param op lhs =
+  | rhs ->
+    FEApp {
+      lhs = FEApp {
+        lhs = FEConst {val = op, ty = FTyUnknown {info = info}, info = info},
+        rhs = compileTrellisExpr param lhs,
+        ty = FTyUnknown {info = info}, info = info
+      },
+      rhs = compileTrellisExpr param rhs,
+      ty = FTyUnknown {info = info}, info = info
+    }
+end
+
+lang TrellisCompileProbabilityDeclaration = TrellisCompileExpression
+  sem compileProbDecl : Map Name Name -> Map Name FutType -> ProbDecl -> FutExpr
+  sem compileProbDecl setIds paramMap =
+  | OneProbDecl {e = e} -> compileTrellisExpr paramMap e
+  | CasesProbDecl {cases = cases, info = info} ->
+    let addParam = lam acc. lam p.
+      match p with (id, ty) in
+      FEApp {
+        lhs = acc, rhs = FEVar {ident = id, ty = ty, info = info},
+        ty = FTyBool {info = info}, info = info
+      }
+    in
+    let probTy = FTyIdent {ident = probTyId, info = info} in
+    let compileCase = lam c. lam acc.
+      match c with {set = {v = setId}, e = e} in
+      let params = mapBindings paramMap in
+      let setContainsId =
+        match mapLookup setId setIds with Some setContainsFunId then
+          setContainsFunId
+        else errorSingle [info] "Probability function case depends on undefined set"
+      in
+      let setContainsExpr = FEVar {
+        ident = setContainsId, ty = FTyUnknown {info = info}, info = info
+      } in
+      let condExpr = foldl addParam setContainsExpr params in
+      let body = compileTrellisExpr paramMap e in
+      FEIf {cond = condExpr, thn = body, els = acc, ty = probTy, info = info}
+    in
+    let probModule = FEVar {
+      ident = nameNoSym "prob", ty = FTyUnknown {info = info}, info = info
+    } in
+    let defaultCase = FEApp {
+      lhs = FEProj {
+        target = probModule, label = stringToSid "neg",
+        ty = FTyArrow {from = probTy, to = probTy, info = info}, info = info
+      },
+      rhs = FEProj {
+        target = probModule, label = stringToSid "inf", ty = probTy, info = info
+      },
+      ty = probTy, info = info
+    } in
+    foldr compileCase defaultCase cases
+end
+
 lang TrellisGenerateInitialization =
   FutharkAst + FutharkTypePrettyPrint + TrellisRepresentation
 
@@ -39,8 +167,10 @@ lang TrellisGenerateInitialization =
       FTyFloat {info = NoInfo (), sz = if useDoublePrecision then F64 () else F32 ()}
     in
     match pprintType 0 pprintEnvEmpty probType with (_, probTypeStr) in
-    -- TODO(larshum, 2024-01-19): Add support for states with components that
-    -- are not even powers of two.
+    -- TODO(larshum, 2024-01-19): When the number of states are not continuous,
+    -- we will not have the number of states be a power of two. In these cases,
+    -- we may want to use the actual count and an array to map index to the
+    -- corresponding (valid) state representation.
     let nstates = slli 1 stateBits in
     FProg {decls = [
       FDeclModuleAlias {ident = nameNoSym "state", moduleId = stateTypeStr, info = NoInfo ()},
@@ -101,13 +231,13 @@ lang TrellisGenerateSetContainsChecks =
   sem generateSetConstraintsSet : TrellisType -> TrellisSet -> ([FutExpr], [(Name, FutType)])
   sem generateSetConstraintsSet stateType =
   | BuilderTrellisSet {p = p, to = None _, e = e, info = info} ->
-    let argType = FTyIdent {ident = nameNoSym "state_t", info = info} in
+    let argType = FTyIdent {ident = stateTyId, info = info} in
     let argId = nameSym "x" in
     match generateConstraintsPat stateType (nFutVar_ argId) p with (patConstraints, bound) in
     let exprConstraints = map (generateConstraintsExpr bound) e in
     (concat patConstraints exprConstraints, [(argId, argType)])
   | BuilderTrellisSet {p = p, to = Some to, e = e, info = info} ->
-    let argType = FTyIdent {ident = nameNoSym "state_t", info = info} in
+    let argType = FTyIdent {ident = stateTyId, info = info} in
     let fstId = nameSym "x" in
     let sndId = nameSym "y" in
     let args = map (lam id. (id, argType)) [fstId, sndId] in
@@ -129,7 +259,7 @@ lang TrellisGenerateSetContainsChecks =
                                 -> ([FutExpr], Map Name FutExpr, Int)
   sem generateElementConstraints e elem =
   | (constraints, bound, shift) ->
-    match elem with (elemBitsize, p, elemType) in
+    match elem with (elemBitwidth, p, elemType) in
     let e =
       -- 1. Shift the bits of the provided expression to the right to align the
       -- bits belonging to this particular element with the least significant
@@ -141,21 +271,11 @@ lang TrellisGenerateSetContainsChecks =
 
       -- 2. Use bitwise AND to cancel out bits belonging to elements to the left
       -- of this element.
-      let e2 =
-        futAppSeq_ (futConst_ (FCBitAnd ())) [e1, futInt_ (subi (slli 1 elemBitsize) 1)]
-      in
-
-      -- 3. If the type of the element is an integer range with a non-zero
-      -- lower bound, we need to translate the range back by adding its lower
-      -- bound. This is because we always encode the lowest integer in the
-      -- range as 0.
-      match elemType with IntRangeTrellisType {lb = {v = lb & !0}} then
-        futAdd_ e2 (futInt_ lb)
-      else e2
+      futAppSeq_ (futConst_ (FCBitAnd ())) [e1, futInt_ (subi (slli 1 elemBitwidth) 1)]
     in
     match generateConstraintsPatH elemType e constraints bound p
     with (constraints, bound) in
-    (constraints, bound, addi shift elemBitsize)
+    (constraints, bound, addi shift elemBitwidth)
 
   sem generateConstraintsPatH : TrellisType -> FutExpr -> [FutExpr] -> Map Name FutExpr
                              -> TrellisPat -> ([FutExpr], Map Name FutExpr)
@@ -190,13 +310,13 @@ lang TrellisGenerateSetContainsChecks =
         else errorSingle [i] "Array type does not have an integer count"
       else errorSingle [info] "Array type mismatch"
     with (elemType, count) in
-    let elemBitsize = bitReprCount (findTypeRepresentation (mapEmpty nameCmp) elemType) in
+    let elemBitwidth = bitReprCount (findTypeRepresentation (mapEmpty nameCmp) elemType) in
     match partitionArrayPatterns [] p with (lhs, dots, rhs) in
 
     -- We process the array from right to left, so that we can accumulate the
     -- number of bits needed to shift right to access the bits of the current
     -- element.
-    let rhsElem = map (lam p. (elemBitsize, p, elemType)) rhs in
+    let rhsElem = map (lam p. (elemBitwidth, p, elemType)) rhs in
     let acc = foldr (generateElementConstraints e) (constraints, bound, 0) rhsElem in
     let acc =
       match dots with Some dotsPat then
@@ -205,12 +325,12 @@ lang TrellisGenerateSetContainsChecks =
           left = elemType, count = Some {i = info, v = dotsLength},
           namedCount = None (), info = info
         } in
-        let dotsBitsize = muli dotsLength elemBitsize in
-        let dotsElem = (dotsBitsize, dotsPat, dotsType) in
+        let dotsBitwidth = muli dotsLength elemBitwidth in
+        let dotsElem = (dotsBitwidth, dotsPat, dotsType) in
         generateElementConstraints e dotsElem acc
       else acc
     in
-    let lhsElem = map (lam p. (elemBitsize, p, elemType)) lhs in
+    let lhsElem = map (lam p. (elemBitwidth, p, elemType)) lhs in
     match foldr (generateElementConstraints e) acc lhsElem with (constraints, bound, _) in
     (constraints, bound)
   | TupPTrellisPat {p = p, info = info} ->
@@ -222,8 +342,8 @@ lang TrellisGenerateSetContainsChecks =
       map
         (lam e.
           match e with (p, elemType) in
-          let bits = bitReprCount (findTypeRepresentation (mapEmpty nameCmp) elemType) in
-          (bits, p, elemType))
+          let bitWidth = bitReprCount (findTypeRepresentation (mapEmpty nameCmp) elemType) in
+          (bitWidth, p, elemType))
         (zip p elemTypes)
     in
     match foldr (generateElementConstraints e) (constraints, bound, 0) elems
@@ -260,8 +380,175 @@ lang TrellisGenerateSetContainsChecks =
     errorSingle [get_TrellisExpr_info e] "Constraint generation not supported for this expression"
 end
 
+lang TrellisGenerateProbabilityFunctions =
+  TrellisRepresentation + TrellisCompileProbabilityDeclaration
+
+  type ProbDef = {
+    -- Mapping from the table arguments expected by the probability function to
+    -- their type.
+    tableArgs : Map Name FutType,
+
+    -- The generated Futhark declaration of a probability function.
+    decl : FutDecl
+  }
+
+  -- We encode each of the initial, output, and transition probabilities as an
+  -- optional value, initially None. When we find the definition in the Trellis
+  -- AST, we generate the required properties and set it to some. In a valid
+  -- Trellis program, all three should be Some after extraction.
+  type ProbDefs = {
+    initial : Option ProbDef,
+    output : Option ProbDef,
+    transition : Option ProbDef
+  }
+
+  sem emptyProbDefs : () -> ProbDefs
+  sem emptyProbDefs =
+  | _ -> {initial = None (), output = None (), transition = None ()}
+
+  sem generateProbabilityDefinitions : Map Name Name -> TrellisProgram -> (Map Name FutType, [FutDecl])
+  sem generateProbabilityDefinitions setIds =
+  | MainTrellisProgram {indecl = indecl} ->
+    let tables = collectModelTables (mapEmpty nameCmp) indecl in
+    let probDefs =
+      foldl (extractProbabilityDefinition setIds tables) (emptyProbDefs ()) indecl
+    in
+    match probDefs with {initial = Some i, output = Some o, transition = Some t} then
+      (mapUnion (mapUnion i.tableArgs o.tableArgs) t.tableArgs, [i.decl, o.decl, t.decl])
+    else error "Model does not define initial, output, and transition probabilities"
+
+  sem collectModelTables : Map Name FutType -> [InModelDecl] -> Map Name FutType
+  sem collectModelTables acc =
+  | [TableInModelDecl {id = {v = id}, dim = dim, ty = ty, info = info}] ++ rest ->
+    let addTypeDimension = lam card. lam ty.
+      FTyArray { elem = ty, dim = Some (AbsDim card), info = info }
+    in
+    let cards = map (findTypeCardinality (mapEmpty nameCmp)) dim in
+    let outType =
+      match ty with ProbTTrellisType {info = info} then
+        FTyIdent {ident = probTyId, info = info}
+      else
+        errorSingle [info] "Currently, we only support tables of probabilities"
+    in
+    let tableType = foldr addTypeDimension outType cards in
+    collectModelTables (mapInsert id tableType acc) rest
+  | [_] ++ rest -> collectModelTables acc rest
+  | [] -> acc
+
+  sem extractProbabilityDefinition : Map Name Name -> Map Name FutType -> ProbDefs
+                                  -> InModelDecl -> ProbDefs
+  sem extractProbabilityDefinition setIds tables probDefs =
+  | ProbInModelDecl (p & {init = Some _, out = None _, trans = None _}) ->
+    match p with {fst = {v = xId}, pd = pd} in
+    let tables = collectTableReferences tables (mapEmpty nameCmp) p.pd in
+    let stateParam = (xId, FTyIdent {ident = stateTyId, info = p.info}) in
+    let paramMap = mapFromSeq nameCmp [stateParam] in
+    let initialDecl = FDeclFun {
+      ident = initialProbabilityId, entry = false, typeParams = [],
+      params = snoc (mapBindings tables) stateParam,
+      ret = FTyIdent {ident = probTyId, info = p.info},
+      body = compileProbDecl setIds paramMap p.pd, info = p.info
+    } in
+    let def = {tableArgs = tables, decl = initialDecl} in
+    {probDefs with initial = Some def}
+  | ProbInModelDecl (p & {init = None _, out = Some _, trans = None _}) ->
+    match p with {fst = {v = xId}, snd = Some {v = outId}} in
+    let tables = collectTableReferences tables (mapEmpty nameCmp) p.pd in
+    let params =
+      [ (xId, FTyIdent {ident = stateTyId, info = p.info})
+      , (outId, FTyIdent {ident = obsTyId, info = p.info}) ]
+    in
+    let paramMap = mapFromSeq nameCmp params in
+    let outputDecl = FDeclFun {
+      ident = outputProbabilityId, entry = false, typeParams = [],
+      params = concat (mapBindings tables) params,
+      ret = FTyIdent {ident = probTyId, info = p.info},
+      body = compileProbDecl setIds paramMap p.pd, info = p.info
+    } in
+    let def = {tableArgs = tables, decl = outputDecl} in
+    {probDefs with output = Some def}
+  | ProbInModelDecl (p & {init = None _, out = None _, trans = Some _}) ->
+    match p with {fst = {v = xId}, snd = Some {v = yId}} in
+    let tables = collectTableReferences tables (mapEmpty nameCmp) p.pd in
+    let params =
+      [ (xId, FTyIdent {ident = stateTyId, info = p.info})
+      , (yId, FTyIdent {ident = stateTyId, info = p.info}) ]
+    in
+    let paramMap = mapFromSeq nameCmp params in
+    let transitionDecl = FDeclFun {
+      ident = transitionProbabilityId, entry = false, typeParams = [],
+      params = concat (mapBindings tables) params,
+      ret = FTyIdent {ident = probTyId, info = p.info},
+      body = compileProbDecl setIds paramMap p.pd, info = p.info
+    } in
+    let def = {tableArgs = tables, decl = transitionDecl} in
+    {probDefs with transition = Some def}
+  | _ -> probDefs
+
+  sem collectTableReferences : Map Name FutType -> Map Name FutType -> ProbDecl -> Map Name FutType
+  sem collectTableReferences tables acc =
+  | OneProbDecl {e = e} -> collectTableReferencesExpr tables acc e
+  | CasesProbDecl {cases = cases} ->
+    let collectTableReferencesCase = lam acc. lam c.
+      match c with {e = e} in
+      collectTableReferencesExpr tables acc e
+    in
+    foldl collectTableReferencesCase acc cases
+
+  sem collectTableReferencesExpr : Map Name FutType -> Map Name FutType -> TrellisExpr -> Map Name FutType
+  sem collectTableReferencesExpr tables acc =
+  | VarTrellisExpr {id = {v = id}} ->
+    match mapLookup id tables with Some ty then mapInsert id ty acc
+    else acc
+  | e -> sfold_TrellisExpr_TrellisExpr (collectTableReferencesExpr tables) acc e
+end
+
+lang TrellisGenerateEntryPoint = TrellisAst + FutharkAst
+  sem generateViterbiEntryPoint : Map Name FutType -> FutDecl
+  sem generateViterbiEntryPoint =
+  | tables ->
+    let stateTy = FTyIdent {ident = stateTyId, info = NoInfo ()} in
+    let obsTy = FTyIdent {ident = obsTyId, info = NoInfo ()} in
+    let nId = nameSym "n" in
+    let mId = nameSym "m" in
+    let retType = FTyArray {
+      elem = FTyArray {
+        elem = stateTy, dim = None (), info = NoInfo ()
+      },
+      dim = Some (NamedDim nId), info = NoInfo ()
+    } in
+    -- TODO(larshum, 2024-01-21): Include the predecessors and input signals as
+    -- parameters to the entry point function.
+    let predsId = nameSym "predecessors" in
+    let predsTy = FTyArray {
+      elem = FTyArray {elem = stateTy, dim = None (), info = NoInfo ()},
+      dim = Some (NamedDim (nameNoSym "nstates")), info = NoInfo ()
+    } in
+    let inputSignalsId = nameSym "input_signals" in
+    let inputSignalsTy = FTyArray {
+      elem = FTyArray {elem = obsTy, dim = Some (NamedDim mId), info = NoInfo ()},
+      dim = Some (NamedDim nId), info = NoInfo ()
+    } in
+    let params =
+      concat
+        (mapBindings tables)
+        [ (predsId, predsTy), (inputSignalsId, inputSignalsTy) ]
+    in
+    let body = FEConst {
+      val = FCInt {val = 0, sz = None ()}, ty = FTyUnknown {info = NoInfo ()},
+      info = NoInfo ()
+    } in
+    FDeclFun {
+      ident = nameNoSym "viterbi", entry = true,
+      typeParams = [FPSize {val = nId}, FPSize {val = mId}],
+      params = params, ret = retType, body = body,
+      info = NoInfo ()
+    }
+end
+
 lang TrellisCompile =
-  TrellisGenerateInitialization + TrellisGenerateSetContainsChecks
+  TrellisGenerateInitialization + TrellisGenerateSetContainsChecks +
+  TrellisGenerateProbabilityFunctions + TrellisGenerateEntryPoint
 
   type TrellisCompileResult = {
     -- Contains the initialization parts of the program
@@ -277,9 +564,10 @@ lang TrellisCompile =
   | p ->
     let init = generateInitializationHelper options p in
     match generateSetConstraints p with (setIds, decls) in
-    -- TODO(larshum, 2024-01-19): generate the remaining parts of the code...
+    match generateProbabilityDefinitions setIds p with (tables, probDecl) in
+    let entry = generateViterbiEntryPoint tables in
     { initialization = generateInitializationHelper options p
-    , probabilityFunctions = FProg {decls = decls} }
+    , probabilityFunctions = FProg {decls = join [decls, probDecl, [entry]]} }
 end
 
 lang TestLang = FutharkPrettyPrint + TrellisCompile

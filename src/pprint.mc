@@ -34,10 +34,6 @@ lang TrellisExprPrettyPrint = TrellisPrettyPrintBase
   | VarTrellisExpr {id = {v = id}} -> pprintVarName env id
   | ConstrTrellisExpr {id = {v = id}} -> pprintConName env id
   | IntTrellisExpr {i = {v = i}} -> (env, int2string i)
-  | ApplicationTrellisExpr {left = left, arg = arg} ->
-    match pprintTrellisExpr env left with (env, left) in
-    match mapAccumL pprintTrellisExpr env arg with (env, arg) in
-    (env, join [left, "(", strJoin ", " arg, ")"])
   | TupleProjTrellisExpr {left = left, idx = {v = idx}} ->
     match pprintTrellisExpr env left with (env, left) in
     (env, join [left, ".", int2string idx])

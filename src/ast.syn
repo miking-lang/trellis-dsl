@@ -66,7 +66,7 @@ prod OutputProperty : InModelDecl = "output" "=" ty:TrellisType
 prod Set : InModelDecl = "set" id:LName "=" s:TrellisSet
 
 prod Table : InModelDecl =
-  "table" id:LName "(" (dim:TrellisType ("," dim:TrellisType)*)? ")" ":" ty:TrellisType
+  "table" id:LName ("[" dim:TrellisType "]")* ":" ty:TrellisType
 
 prod Prob : InModelDecl =
   "P" "("
@@ -139,7 +139,7 @@ prod Constr : TrellisExpr = id:UName
 prod Int : TrellisExpr = i:Integer
 prod Array : TrellisExpr = "[" (e:TrellisExpr ("," e:TrellisExpr)*)? "]"
 prod Tuple : TrellisExpr = "@" "(" (e:TrellisExpr ("," e:TrellisExpr)+)? "]"
-postfix Application : TrellisExpr = "(" (arg:TrellisExpr ("," arg:TrellisExpr)*)? ")"
+-- TODO: This conflicts with floating-point numbers, so how can we parse those?
 postfix TupleProj : TrellisExpr = "." idx:Integer
 postfix ArrayAccess : TrellisExpr = "[" e:TrellisExpr "]"
 prefix If : TrellisExpr = "if" c:TrellisExpr "then" thn:TrellisExpr "else"
@@ -157,7 +157,7 @@ infix left And : TrellisExpr = "&&"
 infix left Or : TrellisExpr = "||"
 
 precedence {
-  TupleProj ArrayAccess Application;
+  TupleProj ArrayAccess;
   Mul Div;
   Add Sub;
   ~ Eq Neq Lt Gt Leq Geq;
@@ -169,8 +169,8 @@ precedence {
 }
 
 precedence {
-  ~ TupleProj ArrayAccess Application;
+  ~ TupleProj ArrayAccess;
   ~ If And Or;
 } except {
-  TupleProj ArrayAccess Application ? If And Or;
+  TupleProj ArrayAccess ? If And Or;
 }

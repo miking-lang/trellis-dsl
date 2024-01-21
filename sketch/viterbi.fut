@@ -100,7 +100,7 @@ let transition_probability
   else if in_max x y then table_gamma
   else if in_from_max x y then prob.log (prob.exp 1.0 - prob.exp table_gamma)
   else if in_down x y then prob.log 1.0
-  else -prob.inf
+  else prob.neg prob.inf
 
 -- Main entry point to the program.
 entry viterbi [n][m]
