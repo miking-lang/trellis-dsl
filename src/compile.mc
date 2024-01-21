@@ -16,11 +16,14 @@ lang TrellisGenerateInitialization =
     -- NOTE(larshum, 2024-01-19): Currently, we represent the state using a
     -- signed integer, because using unsigned integers requires a lot of
     -- additional casts to work properly. Therefore, we lose one bit of information.
-    if lti n 8 then FTyInt8 {info = NoInfo ()}
-    else if lti n 16 then FTyInt16 {info = NoInfo ()}
-    else if lti n 32 then FTyInt32 {info = NoInfo ()}
-    else if lti n 64 then FTyInt64 {info = NoInfo ()}
-    else error "Trellis does not support states that require more than 64 bits to encode"
+    let sz =
+      if lti n 8 then I8 ()
+      else if lti n 16 then I16 ()
+      else if lti n 32 then I32 ()
+      else if lti n 64 then I64 ()
+      else error "Trellis does not support states that require more than 63 bits to encode"
+    in
+    FTyInt {info = NoInfo (), sz = sz}
 
   -- Generates the initialization part of the Futhark program, declaring the
   -- state, observation, and probability types and defining the total number of
@@ -33,8 +36,7 @@ lang TrellisGenerateInitialization =
     let obsType = findSmallestIntegerType obsBits in
     match pprintType 0 pprintEnvEmpty obsType with (_, obsTypeStr) in
     let probType =
-      if useDoublePrecision then FTyFloat64 {info = NoInfo ()}
-      else FTyFloat32 {info = NoInfo ()}
+      FTyFloat {info = NoInfo (), sz = if useDoublePrecision then F64 () else F32 ()}
     in
     match pprintType 0 pprintEnvEmpty probType with (_, probTypeStr) in
     -- TODO(larshum, 2024-01-19): Add support for states with components that
@@ -45,7 +47,8 @@ lang TrellisGenerateInitialization =
       FDeclModuleAlias {ident = nameNoSym "obs", moduleId = obsTypeStr, info = NoInfo ()},
       FDeclModuleAlias {ident = nameNoSym "prob", moduleId = probTypeStr, info = NoInfo ()},
       FDeclFun {ident = nameNoSym "nstates", entry = false, typeParams = [], params = [],
-                ret = FTyInt64 {info = NoInfo ()}, body = futInt_ nstates, info = NoInfo ()}
+                ret = FTyInt {info = NoInfo (), sz = I64 ()}, body = futInt_ nstates,
+                info = NoInfo ()}
     ]}
 
     sem generateInitializationHelper : TrellisOptions -> TrellisProgram -> FutProg
