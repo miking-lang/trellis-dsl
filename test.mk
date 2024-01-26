@@ -2,6 +2,8 @@
 
 test-files=
 test-files+=${wildcard src/*.mc}
+test-files+=${wildcard src/model/*.mc}
+test-files+=${wildcard src/parser/*.mc}
 
 # NOTE(Linnea,2022-05-25): Cannot yet be compiled
 test-files := $(filter-out src/forward-backward.mc,$(test-files))

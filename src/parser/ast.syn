@@ -20,6 +20,12 @@ token Integer {
   fragment = UIntTokenParser,
   ty = Int,
 }
+token Probability {
+  repr = FloatRepr {},
+  constructor = FloatTok,
+  fragment = UFloatTokenParser,
+  ty = Float,
+}
 
 token LName {
   base = LIdent,
@@ -52,23 +58,21 @@ type ProbDecl
 
 prod Main : TrellisProgram = d:Decl* "model" "{" indecl:InModelDecl* "}"
 
--- TODO: Do we want to add arguments to constructors?
 prod TypeDecl : Decl =
   "type" id:UName "=" "{" (constr:UName ("," constr:UName)*)? "}"
 
--- TODO: Do we want to add function definitions?
 prod LetDecl : Decl = "let" id:LName (":" ty:TrellisType)? "=" e:TrellisExpr
+
+prod AliasDecl : Decl = "alias" id:UName "=" ty:TrellisType
 
 prod StateProperty : InModelDecl = "state" "=" ty:TrellisType
 
 prod OutputProperty : InModelDecl = "output" "=" ty:TrellisType
 
-prod Set : InModelDecl = "set" id:LName "=" s:TrellisSet
-
 prod Table : InModelDecl =
-  "table" id:LName ("[" dim:TrellisType "]")* ":" ty:TrellisType
+  "table" id:LName "(" (dim:TrellisType ("," dim:TrellisType)*)? ")" ":" ty:TrellisType
 
-prod Prob : InModelDecl =
+prod ProbInModelDecl : InModelDecl =
   "P" "("
     ( init:"initial" fst:LName
     | out:"output" fst:LName "|" snd:LName
@@ -77,7 +81,7 @@ prod Prob : InModelDecl =
 
 prod One : ProbDecl = e:TrellisExpr
 
-prod Cases : ProbDecl = "{" (cases:{("|" set:LName "=>" e:TrellisExpr)})+ "}"
+prod Cases : ProbDecl = "{" (cases:{("|" s:TrellisSet "=>" e:TrellisExpr)})+ "}"
 
 ----------
 -- Sets --
@@ -95,9 +99,7 @@ prod Literal : TrellisSet =
 -- Patterns --
 --------------
 
-type TrellisPat {
-  grouping = "(" ")",
-}
+type TrellisPat
 
 prod Con : TrellisPat = id:UName
 prod VarP : TrellisPat = id:LName
@@ -105,20 +107,18 @@ prod IntP : TrellisPat = i:Integer
 prod TrueP : TrellisPat = "true"
 prod FalseP : TrellisPat = "false"
 prod ArrayP : TrellisPat = "[" (p:TrellisPat ("," p:TrellisPat)*)? "]"
-prod TupP : TrellisPat = "@" "(" p:TrellisPat ("," p:TrellisPat)+ ")"
+prod TupleP : TrellisPat = "(" p:TrellisPat ("," p:TrellisPat)+ ")"
 postfix Dots : TrellisPat = "..."
 
 -----------
 -- Types --
 -----------
 
-type TrellisType {
-  grouping = "(" ")",
-}
+type TrellisType
 
 postfix ArrayT : TrellisType = "[" (count:Integer | namedCount:LName) "]"
 prod Concrete : TrellisType = id:UName
-prod TupleT : TrellisType = "@" "(" t:TrellisType ("," t:TrellisType)+ ")"
+prod TupleT : TrellisType = "(" t:TrellisType ("," t:TrellisType)+ ")"
 prod IntRange : TrellisType = lb:Integer ".." (ub:Integer | namedUb:LName)
 prod Bool : TrellisType = "Bool"
 prod IntT : TrellisType = "Int"
@@ -137,11 +137,9 @@ prod False : TrellisExpr = "false"
 prod Var : TrellisExpr = id:LName
 prod Constr : TrellisExpr = id:UName
 prod Int : TrellisExpr = i:Integer
-prod Array : TrellisExpr = "[" (e:TrellisExpr ("," e:TrellisExpr)*)? "]"
-prod Tuple : TrellisExpr = "@" "(" (e:TrellisExpr ("," e:TrellisExpr)+)? "]"
--- TODO: This conflicts with floating-point numbers, so how can we parse those?
-postfix TupleProj : TrellisExpr = "." idx:Integer
-postfix ArrayAccess : TrellisExpr = "[" e:TrellisExpr "]"
+prod Prob : TrellisExpr = p:Probability
+postfix Proj : TrellisExpr = "[" idx:Integer "]"
+postfix TableAccess : TrellisExpr = "(" (e:TrellisExpr ("," e:TrellisExpr)*)? ")"
 prefix If : TrellisExpr = "if" c:TrellisExpr "then" thn:TrellisExpr "else"
 infix left Add : TrellisExpr = "+"
 infix left Sub : TrellisExpr = "-"
@@ -157,7 +155,7 @@ infix left And : TrellisExpr = "&&"
 infix left Or : TrellisExpr = "||"
 
 precedence {
-  TupleProj ArrayAccess;
+  Proj TableAccess;
   Mul Div;
   Add Sub;
   ~ Eq Neq Lt Gt Leq Geq;
@@ -169,8 +167,8 @@ precedence {
 }
 
 precedence {
-  ~ TupleProj ArrayAccess;
+  ~ Proj TableAccess;
   ~ If And Or;
 } except {
-  TupleProj ArrayAccess ? If And Or;
+  Proj TableAccess ? If And Or;
 }

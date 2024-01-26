@@ -1,32 +1,38 @@
-type Nucleotide {
-  A, C, G, T,  # Comma-separated list of constructors (final comma is presently mandatory)
-}
-
-let merlength = 5
+let merlength = 3
 let maxduration = 16
 
-automaton Thing {
-  state: @(Nucleotide[merlength], 1..maxduration),
-  inter: @ { @([a, as...,], 1) -> @([bs..., b,], k) | as = bs, },
-  down: @ { @(x, k) -> @(x2, k2) | x = x2, k2 = k - 1, k != maxduration, },
-  max: @ { @(x, n1) -> @(x2, n2) | x = x2, n1 = maxduration, n2 = maxduration, },
-  from_max: @ { @(x, n1) -> @(x2, n2) | n1 = maxduration, n2 = maxduration - 1, },
-}
+type Nucleotide = {A, C, G, T}
 
-model M = s:Thing {
-  table outputProb(Nucleotide[merlength], 1..1024,): Probability
-  table initialProb(Nucleotide[merlength], 1..maxduration,): Probability
+alias Kmer = Nucleotide[merlength]
+alias Duration = 1 .. maxduration
+alias ObsType = 0 .. 100
 
-  table trans1(Nucleotide[merlength], Nucleotide[merlength],): Probability
-  table trans2(1..maxduration,): Probability
-  table gamma(): Probability
+model {
+  # Declaration of the state and output types
+  state = (Kmer, Duration)
+  output = ObsType
 
-  P(output | x) = outputProb(x.0, output)
-  P(initial x) = initialProb(x.0, x.1)
-  P(transition x y) {
-    | s.inter => trans1(x.0, y.0) * trans2(y.1)
-    | s.max => gamma
-    | s.from_max => 1 - gamma
-    | s.down => 1
+  # Declaration of tables containing data provided at runtime
+  table initialProb(Kmer, Duration) : Probability
+  table outputProb(Kmer, ObsType) : Probability
+  table trans1(Kmer, Kmer) : Probability
+  table trans2(Duration) : Probability
+  table gamma() : Probability
+
+  # Definitions of the initial, output, and transition probability functions
+  P(initial x) = initialProb(x[0], x[1])
+  P(output o | x) = outputProb(x[0], o)
+  P(transition x y) = {
+    | { ([a, as...], 1) -> ([bs..., b], k) | as == bs } =>
+      trans1(x[0], y[0]) * trans2(y[1])
+
+    | { (x1, n1) -> (x2, n2) | x1 == x2, n2 == n1 - 1 } =>
+      gamma()
+
+    | { (x1, n1) -> (x2, n2) | x1 == x2, n1 == maxduration, n2 == maxduration } =>
+      1.0 - gamma()
+
+    | { (x1, n1) -> (x2, n2) | x1 == y2, n1 == maxduration, n2 == maxduration - 1 } =>
+      1.0
   }
 }

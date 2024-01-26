@@ -2,20 +2,28 @@
 .PHONY: test examples clean
 
 MAIN_NAME=trellis
+BIN_PATH=$(HOME)/.local/bin
+SRC_PATH=$(HOME)/.local/src/trellis
 
-all: build/${MAIN_NAME}
+default: build/$(MAIN_NAME)
 
-build/${MAIN_NAME}: $(shell find . -name "*.mc") src/ast.mc
+build/$(MAIN_NAME): $(shell find . -name "*.mc") src/parser/ast.mc
 	mkdir -p build
-	mi compile src/${MAIN_NAME}.mc --output build/${MAIN_NAME}
+	mi compile src/$(MAIN_NAME).mc --output build/$(MAIN_NAME)
 
-src/ast.mc: src/ast.syn
+src/parser/ast.mc: src/parser/ast.syn
 	mi syn $< $@
 
-#examples: build/${MAIN_NAME}
-#	@$(MAKE) -s -f examples.mk all
+install: default
+	cp build/$(MAIN_NAME) $(BIN_PATH)/$(MAIN_NAME)
+	chmod +x $(BIN_PATH)/$(MAIN_NAME)
+	cp -rf src/. $(SRC_PATH)
 
-test: build/${MAIN_NAME}
+uninstall:
+	rm -f $(BIN_PATH)/$(MAIN_NAME)
+	rm -rf $(SRC_PATH)
+
+test: build/$(MAIN_NAME)
 	@$(MAKE) -s -f test.mk all
 
 clean:

@@ -155,7 +155,8 @@ int main(int argc, char **argv) {
   auto start = std::chrono::steady_clock::now();
 
   futhark_i16_2d *out;
-  int res = futhark_entry_viterbi(ctx, &out, output_prob, initial_prob, trans1, trans2, gamma, predecessors, input_signals, batch_size, batch_overlap);
+  int res = futhark_entry_viterbi(ctx, &out, gamma, trans1, trans2, output_prob, initial_prob, predecessors, input_signals);
+  //int res = futhark_entry_viterbi(ctx, &out, output_prob, initial_prob, trans1, trans2, gamma, predecessors, input_signals, batch_size, batch_overlap);
   if (res != FUTHARK_SUCCESS) {
     printf("Futhark call failed: %s\n", futhark_context_get_error(ctx));
     exit(1);
