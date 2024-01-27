@@ -104,11 +104,17 @@ let transition_probability
 
 -- Main entry point to the program.
 entry viterbi [n][m]
-  (table_outputProb : [64][101]prob_t) (table_initialProb : [64][16]prob_t)
-  (table_trans1 : [64][64]prob_t) (table_trans2 : [16]prob_t) (table_gamma : prob_t)
-  (table_predecessors : [nstates][]state_t) (input_signals : [n][m]obs_t)
-  (batch_size : i64) (batch_overlap : i64) : [n][]state_t =
+  (table_gamma : prob_t)
+  (table_trans1 : [64][64]prob_t)
+  (table_trans2 : [16]prob_t)
+  (table_outputProb : [64][101]prob_t)
+  (table_initialProb : [64][16]prob_t)
+  (table_predecessors : [nstates][]state_t)
+  (input_signals : [n][m]obs_t)
+  : [n][]state_t =
 
+  let batch_size = 1024 in
+  let batch_overlap = 128 in
   let transp (x : state_t) (y : state_t) =
     transition_probability table_trans1 table_trans2 table_gamma x y
   in
