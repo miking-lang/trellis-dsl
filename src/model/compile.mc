@@ -72,15 +72,11 @@ lang TrellisCompileInitializer = TrellisCompileBase + FutharkPrettyPrint
   sem chooseIntegerType : Int -> FutType
   sem chooseIntegerType =
   | bits ->
-    -- TODO(larshum, 2024-01-24): Update the implementation to work with
-    -- unsigned integers, so we can use another bit of information. Also,
-    -- unsigned integers can be more efficient when doing multiplication and
-    -- division (if we want to use a different encoding of states).
     let sz =
-      if lti bits 8 then I8 ()
-      else if lti bits 16 then I16 ()
-      else if lti bits 32 then I32 ()
-      else if lti bits 64 then I64 ()
+      if leqi bits 8 then U8 ()
+      else if leqi bits 16 then U16 ()
+      else if leqi bits 32 then U32 ()
+      else if leqi bits 64 then U64 ()
       else error "Trellis does not support states requiring more than 63 bits to encode"
     in
     FTyInt {sz = sz, info = NoInfo ()}
@@ -170,8 +166,9 @@ lang TrellisCompileExpr = TrellisCompileBase + TrellisCompileType
     errorSingle [info] "Internal error: Found slice when compiling intermediate AST"
   | ETableAccess {table = table, args = args, ty = ty, info = info} ->
     let compileTableArg = lam acc. lam targ.
+      let index = compileTrellisExpr env targ in
       FEArrayAccess {
-        array = acc, index = compileTrellisExpr env targ,
+        array = acc, index = convertToI64 index,
         ty = FTyUnknown {info = info}, info = info
       }
     in
@@ -198,9 +195,10 @@ lang TrellisCompileExpr = TrellisCompileBase + TrellisCompileType
   sem constructBinOp : Info -> FutExpr -> FutExpr -> FutExpr -> FutExpr
   sem constructBinOp info op lhs =
   | rhs ->
+    let resultTy = tyFutTm lhs in
     let tyuk = FTyUnknown {info = info} in
     FEApp { lhs = FEApp {lhs = op, rhs = lhs, ty = tyuk, info = info}
-          , rhs = rhs, ty = tyuk, info = info }
+          , rhs = rhs, ty = resultTy, info = info }
 
   sem compileTrellisBinOp : Info -> BOp -> FutConst
   sem compileTrellisBinOp info =
@@ -248,6 +246,23 @@ lang TrellisCompileExpr = TrellisCompileBase + TrellisCompileType
         let op = FEConst {val = c, ty = ty, info = t.info} in
         constructBinOp t.info op lhs rhs
       end
+
+  sem convertToI64 : FutExpr -> FutExpr
+  sem convertToI64 =
+  | e ->
+    let i = infoFutTm e in
+    match tyFutTm e with FTyInt {sz = sz} then
+      use FutharkLiteralSizePrettyPrint in
+      let intModuleId = nameNoSym (pprintIntSize sz) in
+      FEApp {
+        lhs = FEProj {
+          target = FEVar {ident = intModuleId, ty = FTyUnknown {info = i}, info = i},
+          label = stringToSid "to_i64", ty = FTyUnknown {info = i}, info = i},
+        rhs = e, ty = FTyInt {sz = I64 (), info = i}, info = i}
+    else
+      match pprintType 0 pprintEnvEmpty (tyFutTm e) with (_, s) in
+      printLn (join ["Expression has type ", s]);
+      errorSingle [i] "Table access index was transformed to non-integer type"
 end
 
 -- Compiles set expressions to a boolean expression determining whether a given

@@ -45,19 +45,17 @@ lang TrellisBitwiseType = TrellisBitwiseBase + TrellisTypeCardinality
 end
 
 lang TrellisBitwiseExpr = TrellisBitwiseType
-  sem applyBitmask : Int -> Int -> TExpr -> TExpr
-  sem applyBitmask targetCardinality bitmask =
+  sem applyBitmask : Info -> Int -> Int -> TExpr -> TExpr
+  sem applyBitmask info targetCardinality bitmask =
   | e ->
-    let info = infoTExpr e in
     let ty = TInt {bounds = Some (0, targetCardinality), info = info} in
     let rhs = EInt {i = bitmask, ty = ty, info = info} in
     EBinOp {op = OBitAnd (), lhs = e, rhs = rhs, ty = ty, info = info}
 
-  sem applyRightShift : Int -> Int -> TExpr -> TExpr
-  sem applyRightShift targetCardinality shiftAmount =
+  sem applyRightShift : Info -> Int -> Int -> TExpr -> TExpr
+  sem applyRightShift info targetCardinality shiftAmount =
   | e ->
     if eqi shiftAmount 0 then e else
-    let info = infoTExpr e in
     let ty = TInt {bounds = Some (0, targetCardinality), info = info} in
     let e = withTyTExpr ty e in
     let rhs = EInt {i = shiftAmount, ty = ty, info = info} in
@@ -81,7 +79,8 @@ lang TrellisBitwiseExpr = TrellisBitwiseType
       let shift = foldl addi 0 (subsequence bitwidths (addi hi 1) (length tys)) in
       let sliceBitwidths = subsequence bitwidths lo (addi (subi hi lo) 1) in
       let mask = subi (slli 1 (foldl addi 0 sliceBitwidths)) 1 in
-      applyBitmask cardinality mask (applyRightShift cardinality shift target)
+      applyBitmask info cardinality mask
+        (applyRightShift info cardinality shift target)
     else errorSingle [info] "Projection has invalid type"
   | EBinOp (t & { op = OEq _ | ONeq _ | OLt _ | OGt _ | OLeq _ | OGeq _ }) ->
     -- NOTE(larshum, 2024-01-25): When we compare a bit-encoded value with an

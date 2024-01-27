@@ -11,8 +11,8 @@
 -- GENERATED INITIALIZATION CODE --
 -----------------------------------
 
-module state = i16
-module obs = i8
+module state = u16
+module obs = u8
 module prob = f32
 
 let nstates : i64 = 1024
@@ -87,16 +87,17 @@ let in_down (x : state_t) (y : state_t) : bool =
 -- probabilities based on the definitions in the automaton.
 let output_probability (table_outputProb : [64][101]prob_t) (x : state_t)
                        (output : obs_t) : prob_t =
-  table_outputProb[x >> 4][output]
+  table_outputProb[state.to_i64 (x >> 4)][obs.to_i64 output]
 
 let initial_probability (table_initialProb : [64][16]prob_t) (x : state_t) : prob_t =
-  table_initialProb[x >> 4][x & 15]
+  table_initialProb[state.to_i64 (x >> 4)][state.to_i64 (x & 15)]
 
 let transition_probability
   (table_trans1 : [64][64]prob_t) (table_trans2 : [16]prob_t) (table_gamma : prob_t)
   (x : state_t) (y : state_t) : prob_t =
 
-  if in_inter x y then table_trans1[x >> 4][y >> 4] + table_trans2[y & 15]
+  if in_inter x y then
+    table_trans1[state.to_i64 (x >> 4)][state.to_i64 (y >> 4)] + table_trans2[state.to_i64 (y & 15)]
   else if in_max x y then table_gamma
   else if in_from_max x y then prob.log (prob.exp 1.0 - prob.exp table_gamma)
   else if in_down x y then prob.log 1.0
