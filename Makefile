@@ -28,4 +28,4 @@ test: build/$(MAIN_NAME)
 
 clean:
 	rm -rf build
-	rm src/ast.mc
+	rm src/parser/ast.mc
