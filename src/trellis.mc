@@ -3,17 +3,16 @@ include "parser/ast.mc"
 include "parser/pprint.mc"
 include "parser/resolve.mc"
 include "model/ast.mc"
-include "model/bitwise.mc"
 include "model/compile.mc"
 include "model/convert.mc"
+include "model/encode.mc"
 include "model/pprint.mc"
 include "model/viterbi.mc"
 include "trellis-arg.mc"
 
 lang Trellis =
-  TrellisAst + TrellisModelAst + TrellisModelConvert + TrellisBitwise +
-  TrellisCompileModel + TrellisGenerateViterbiEntry +
-  TrellisGenerateViterbiProgram
+  TrellisAst + TrellisModelAst + TrellisModelConvert + TrellisCompileModel +
+  TrellisEncode + TrellisGenerateViterbiEntry + TrellisGenerateViterbiProgram
 end
 
 mexpr
@@ -45,6 +44,9 @@ match result with ParseOK r then
     (if options.printModel then
       printLn (use TrellisModelPrettyPrint in pprintTrellisModel modelAst)
     else ());
+
+    -- Encodes state types as integers when in table accesses.
+    let modelAst = encodeStateOperations options modelAst in
 
     -- Compile the Trellis model to Futhark, resulting in initializer code,
     -- definitions of the initial, output, and transition probabilities, as

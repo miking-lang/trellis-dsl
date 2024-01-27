@@ -4,6 +4,7 @@ type TrellisOptions = {
   batchSize : Int,
   batchOverlap : Int,
   useDoublePrecisionFloats : Bool,
+  useBitsetEncoding : Bool,
   printParse : Bool,
   printModel : Bool
 }
@@ -12,6 +13,7 @@ let trellisDefaultOptions = {
   batchSize = 1024,
   batchOverlap = 128,
   useDoublePrecisionFloats = false,
+  useBitsetEncoding = false,
   printParse = false,
   printModel = false
 }
@@ -29,6 +31,10 @@ let config = [
     "Use double-precision floating point numbers",
     lam p.
       let o = p.options in {o with useDoublePrecisionFloats = true}),
+  ([("--use-bitset-encoding", "", "")],
+    "Enables encoding of states using a bitset approach",
+    lam p.
+      let o = p.options in {o with useBitsetEncoding = true}),
   ([("--print-parse", "", "")],
     "Pretty-prints the parsed AST",
     lam p.

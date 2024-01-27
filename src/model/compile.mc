@@ -4,8 +4,7 @@ include "futhark/ast.mc"
 include "futhark/pprint.mc"
 
 include "ast.mc"
-include "bitwise.mc"
-include "cardinality.mc"
+include "encode.mc"
 include "../trellis-arg.mc"
 
 let initialProbabilityId = nameSym "initialProbability"
@@ -22,7 +21,7 @@ let nstatesId = nameSym "nstates"
 
 let viterbiId = nameSym "viterbi"
 
-lang TrellisCompileBase = TrellisModelAst + TrellisBitwise + FutharkAst
+lang TrellisCompileBase = TrellisModelAst + FutharkAst
   -- The environment used throughout compilation of the Trellis model AST.
   type TrellisCompileEnv = {
     -- The command-line options provided by the user
@@ -68,7 +67,9 @@ lang TrellisCompileBase = TrellisModelAst + TrellisBitwise + FutharkAst
       ty = FTyUnknown {info = info}, info = info}
 end
 
-lang TrellisCompileInitializer = TrellisCompileBase + FutharkPrettyPrint
+lang TrellisCompileInitializer =
+  TrellisCompileBase + TrellisTypeBitwidth + FutharkPrettyPrint
+
   sem chooseIntegerType : Int -> FutType
   sem chooseIntegerType =
   | bits ->
@@ -81,17 +82,6 @@ lang TrellisCompileInitializer = TrellisCompileBase + FutharkPrettyPrint
     in
     FTyInt {sz = sz, info = NoInfo ()}
 
-  sem validateType : TType -> ()
-  sem validateType =
-  | TBool _ | TInt {bounds = Some _} -> ()
-  | TInt {bounds = None _} | TProb _ | TTable _ ->
-    error "Type validation failed: see comment in generateInitializer"
-  | TTuple {tys = tys} ->
-    iter validateType tys;
-    if forAll (lam ty. eqi (slli 1 (bitwidthType ty)) (typeCardinality ty)) tys then
-      ()
-    else error "Type validation failed: see comment in generateInitializer"
-
   sem generateInitializer : TrellisCompileEnv -> FutProg
   sem generateInitializer =
   | env ->
@@ -99,12 +89,6 @@ lang TrellisCompileInitializer = TrellisCompileBase + FutharkPrettyPrint
       match pprintType 0 pprintEnvEmpty ty with (_, str) in
       str
     in
-    -- TODO(larshum, 2024-01-24): The below validation is meant as a sanity
-    -- check, to prevent compilation of programs where the index of each value
-    -- and its bitwise representation may differ. I'll get to work on that once
-    -- the whole toolchain works.
-    validateType env.stateType;
-    validateType env.outputType;
     let stateBitwidth = bitwidthType env.stateType in
     let stateTyStr = pprintType (chooseIntegerType stateBitwidth) in
     let outTyStr = pprintType (chooseIntegerType (bitwidthType env.outputType)) in
@@ -124,7 +108,9 @@ lang TrellisCompileInitializer = TrellisCompileBase + FutharkPrettyPrint
     ]}
 end
 
-lang TrellisCompileType = TrellisCompileInitializer + TrellisTypeCardinality
+lang TrellisCompileType =
+  TrellisCompileInitializer + TrellisTypeCardinality + TrellisTypeBitwidth
+
   sem compileTrellisType : TrellisCompileEnv -> TType -> FutType
   sem compileTrellisType env =
   | TBool {info = info} -> FTyBool {info = info}
@@ -139,12 +125,14 @@ lang TrellisCompileType = TrellisCompileInitializer + TrellisTypeCardinality
     let buildSizedArrayType = lam dim. lam ty.
       FTyArray {elem = ty, dim = Some (AbsDim dim), info = info}
     in
-    let dims = map typeCardinality args in
+    let dims = map cardinalityType args in
     let elemTy = compileTrellisType env ret in
     foldr buildSizedArrayType elemTy dims
 end
 
-lang TrellisCompileExpr = TrellisCompileBase + TrellisCompileType
+lang TrellisCompileExpr =
+  TrellisCompileBase + TrellisCompileType + TrellisEncode
+
   sem compileTrellisExpr : TrellisCompileEnv -> TExpr -> FutExpr
   sem compileTrellisExpr env =
   | EBool {b = b, ty = ty, info = info} ->
@@ -215,6 +203,7 @@ lang TrellisCompileExpr = TrellisCompileBase + TrellisCompileType
   | OOr _ -> FCOr ()
   | OBitAnd _ -> FCBitAnd ()
   | OSrl _ -> FCSrl ()
+  | OMod _ -> FCRem ()
 
   sem compileArithmeticOperation : TrellisCompileEnv -> BinOpStruct -> FutExpr
   sem compileArithmeticOperation env =
@@ -267,7 +256,7 @@ end
 
 -- Compiles set expressions to a boolean expression determining whether a given
 -- state (or pairs of states) are in the set.
-lang TrellisCompileSet = TrellisCompileExpr + TrellisCompileType + TrellisBitwise
+lang TrellisCompileSet = TrellisCompileExpr + TrellisCompileType
   sem binaryOp : FutConst -> FutExpr -> FutExpr -> FutExpr
   sem binaryOp c lhs =
   | rhs ->
@@ -292,14 +281,11 @@ lang TrellisCompileSet = TrellisCompileExpr + TrellisCompileType + TrellisBitwis
     FEConst {val = FCBool {val = true}, ty = FTyBool {info = info}, info = info}
   | SValueBuilder {conds = conds, info = info}
   | STransitionBuilder {conds = conds, info = info} ->
-    let conds = map insertBitwiseOperations conds in
     foldl1 boolAnd (map (compileTrellisExpr env) conds)
   | SValueLiteral {exprs = exprs, info = info} ->
-    let exprs = map insertBitwiseOperations exprs in
     foldl1 boolOr (map (compileTrellisExpr env) exprs)
   | STransitionLiteral {exprs = exprs, info = info} ->
     let applyPair = lam f. lam e. (f e.0, f e.1) in
-    let exprs = map (applyPair insertBitwiseOperations) exprs in
     let exprs = map (applyPair (compileTrellisExpr env)) exprs in
     foldl1 boolOr (map (lam e. boolAnd e.0 e.1) exprs)
 end
@@ -347,7 +333,7 @@ lang TrellisCompileProbabilityFunction =
     let compileCase = lam c. lam acc.
       let tables = collectUsedTables env.tables acc.0 c.body in
       let cond = compileTrellisSet env c.cond in
-      let thn = compileTrellisExpr env (insertBitwiseOperations c.body) in
+      let thn = compileTrellisExpr env c.body in
       ( tables
       , FEIf {
           cond = cond, thn = thn, els = acc.1,
