@@ -42,7 +42,6 @@ token UName {
 token {fragment = OperatorTokenParser,}
 token {fragment = CommaTokenParser,}
 token {fragment = BracketTokenParser,}
-token {fragment = SetTokenParser,}
 token {fragment = TrellisDotsTokenParser,}
 
 -- Whitespace and comments

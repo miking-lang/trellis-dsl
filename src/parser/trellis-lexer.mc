@@ -1,43 +1,5 @@
 include "parser/lexer.mc"
 
-lang SetTokenParser = TokenParser
-  syn Token =
-  | SetUnionTok {info : Info}
-  | SetIntersectionTok {info : Info}
-  | SetMinusTok {info : Info}
-  | SetInTok {info : Info}
-  | SetNotinTok {info : Info}
-  syn TokenRepr =
-  | SetUnionRepr ()
-  | SetIntersectionRepr ()
-  | SetMinusRepr ()
-  | SetInRepr ()
-  | SetNotinRepr ()
-
-  sem parseToken (pos : Pos) =
-  | "\\u" ++ str ->
-    let pos2 = advanceCol pos 3 in
-    let info = makeInfo pos pos2 in
-    {token = SetUnionTok {info = info}, lit = "\\u", info = info, stream = {pos = pos2, str = str}}
-  | "\\n" ++ str ->
-    let pos2 = advanceCol pos 3 in
-    let info = makeInfo pos pos2 in
-    {token = SetIntersectionTok {info = info}, lit = "\\n", info = info, stream = {pos = pos2, str = str}}
-  | "\\in" ++ str ->
-    let pos2 = advanceCol pos 4 in
-    let info = makeInfo pos pos2 in
-    {token = SetInTok {info = info}, lit = "\\in", info = info, stream = {pos = pos2, str = str}}
-  | "\\notin" ++ str ->
-    let pos2 = advanceCol pos 7 in
-    let info = makeInfo pos pos2 in
-    {token = SetNotinTok {info = info}, lit = "\\notin", info = info, stream = {pos = pos2, str = str}}
-  | "\\setminus" ++ str ->
-    let pos2 = advanceCol pos 10 in
-    let info = makeInfo pos pos2 in
-    {token = SetMinusTok {info = info}, lit = "\\setminus", info = info, stream = {pos = pos2, str = str}}
-
-end
-
 -- Eat line comments of the form #
 lang TrellisLineCommentParser = WSACParser
   sem eatWSAC (p : Pos)  =
