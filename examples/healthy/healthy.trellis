@@ -1,0 +1,20 @@
+# Example taken from the Viterbi algorithm Wikipedia page
+
+type HealthState = {
+  Healthy, Fever
+}
+
+alias Obs = 0 .. 2
+
+model {
+  state = HealthState
+  output = Obs
+
+  table initp(HealthState) : Probability
+  table outp(HealthState, Obs) : Probability
+  table transp(HealthState, HealthState) : Probability
+
+  P(initial x) = initp(x)
+  P(output o | x) = outp(x, o)
+  P(transition x y) = transp(x, y)
+}
