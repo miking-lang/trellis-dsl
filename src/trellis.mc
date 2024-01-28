@@ -8,11 +8,13 @@ include "model/convert.mc"
 include "model/encode.mc"
 include "model/pprint.mc"
 include "model/viterbi.mc"
+include "build.mc"
 include "trellis-arg.mc"
 
 lang Trellis =
   TrellisAst + TrellisModelAst + TrellisModelConvert + TrellisCompileModel +
-  TrellisEncode + TrellisGenerateViterbiEntry + TrellisGenerateViterbiProgram
+  TrellisEncode + TrellisGenerateViterbiEntry + TrellisGenerateViterbiProgram +
+  TrellisBuild
 end
 
 mexpr
@@ -51,21 +53,15 @@ match result with ParseOK r then
     -- Compile the Trellis model to Futhark, resulting in initializer code,
     -- definitions of the initial, output, and transition probabilities, as
     -- well and the compilation environment (to use later).
-    let fut = use TrellisCompileModel in compileTrellisModel options modelAst in
+    let fut = compileTrellisModel options modelAst in
 
     -- Generate a complete Futhark program by gluing together parts from the
     -- compilation results with a pre-defined Viterbi implementation (found
     -- under "src/skeleton").
     let prog = generateViterbiProgram fut in
 
-    -- TODO(larshum, 2024-01-26): We need to generate additional wrapper code
-    -- since Futhark programs are not standalone. Apart from a crude wrapper in
-    -- C, it's not obvious what that should be.
-    let outfile = "out.fut" in
-    writeFile outfile prog;
-    printLn (join ["Wrote generated code to ", outfile]);
-
-    ()
+    buildPythonWrapper fut.env prog;
+    printLn (concat "Wrote output code to " options.outputDir)
 else
   argPrintError result;
   exit 1

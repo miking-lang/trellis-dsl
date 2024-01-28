@@ -70,7 +70,8 @@ lang TrellisCompileBase = TrellisModelAst + FutharkAst
 end
 
 lang TrellisCompileInitializer =
-  TrellisCompileBase + TrellisTypeBitwidth + FutharkPrettyPrint
+  TrellisCompileBase + TrellisTypeBitwidth + TrellisTypeCardinality +
+  FutharkPrettyPrint
 
   sem chooseIntegerType : Int -> FutType
   sem chooseIntegerType =
