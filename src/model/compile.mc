@@ -2,10 +2,12 @@ include "math.mc"
 include "seq.mc"
 include "futhark/ast.mc"
 include "futhark/pprint.mc"
+include "mexpr/info.mc"
 
 include "ast.mc"
 include "encode.mc"
 include "../trellis-arg.mc"
+include "../trellis-common.mc"
 
 let initialProbabilityId = nameSym "initialProbability"
 let outputProbabilityId = nameSym "outputProbability"
@@ -399,3 +401,100 @@ lang TrellisCompileModel =
     { env = env, initializer = generateInitializer env, initial = initial
     , output = output, transition = transition }
 end
+
+lang TestLang = TrellisCompileModel + FutharkPrettyPrint
+end
+
+mexpr
+
+use TestLang in
+
+let pprintType = lam ty.
+  match pprintType 0 pprintEnvEmpty ty with (_, s) in s
+in
+let pprintExpr = lam e.
+  match pprintExpr 0 pprintEnvEmpty e with (_, s) in s
+in
+let compEnv = lam opts. lam tables. lam sty. lam oty.
+  {options = opts, tables = tables, stateType = sty, outputType = oty}
+in
+let eqStringIgnoreWhitespace = lam l. lam r.
+  eqString
+    (filter (lam c. not (isWhitespace c)) l)
+    (filter (lam c. not (isWhitespace c)) r)
+in
+let i = trellisInfo "trellis-compile" in
+
+utest pprintType (chooseIntegerType 1) with "u8" using eqString else ppStrings in
+utest pprintType (chooseIntegerType 8) with "u8" using eqString else ppStrings in
+utest pprintType (chooseIntegerType 9) with "u16" using eqString else ppStrings in
+utest pprintType (chooseIntegerType 31) with "u32" using eqString else ppStrings in
+utest pprintType (chooseIntegerType 37) with "u64" using eqString else ppStrings in
+
+-- Types
+let boolTy = TBool {info = i} in
+let emptyEnv = compEnv trellisDefaultOptions (mapEmpty nameCmp) boolTy boolTy in
+utest pprintType (compileTrellisType emptyEnv boolTy) with "bool"
+using eqString else ppStrings in
+
+let intTy1 = TInt {bounds = Some (2, 7), info = i} in
+let intTy2 = TInt {bounds = Some (5, 278), info = i} in
+utest pprintType (compileTrellisType emptyEnv intTy1) with "u8"
+using eqString else ppStrings in
+utest pprintType (compileTrellisType emptyEnv intTy2) with "u16"
+using eqString else ppStrings in
+
+let probTy = TProb {info = i} in
+utest pprintType (compileTrellisType emptyEnv probTy) with "prob_t"
+using eqString else ppStrings in
+
+let tableTy = TTable {args = [intTy1, intTy2, boolTy], ret = probTy, info = i} in
+utest pprintType (compileTrellisType emptyEnv tableTy) with "[6][274][2]prob_t"
+using eqString else ppStrings in
+
+-- Expressions
+let x = lam ty. EVar {id = nameNoSym "x", ty = ty, info = i} in
+utest pprintExpr (compileTrellisExpr emptyEnv (x boolTy))
+with "x" using eqString else ppStrings in
+
+let p = EProb {p = 1.0, ty = TProb {info = i}, info = i} in
+utest pprintExpr (compileTrellisExpr emptyEnv p)
+with "0.0" using eqString else ppStrings in
+
+let probAdd = EBinOp {
+  op = OMul (), lhs = x probTy, rhs = p, ty = probTy, info = i
+} in
+utest pprintExpr (compileTrellisExpr emptyEnv probAdd)
+with "(+) x 0.0"
+using eqStringIgnoreWhitespace else ppStrings in
+
+let intLit = EInt {i = 3, ty = TInt {bounds = None (), info = i}, info = i} in
+utest pprintExpr (compileTrellisExpr emptyEnv intLit) with "3"
+using eqString else ppStrings in
+
+let intAdd = EBinOp {
+  op = OAdd (), lhs = x intTy1, rhs = intLit, ty = intTy1, info = i
+} in
+utest pprintExpr (compileTrellisExpr emptyEnv intAdd) with "(+) x 3"
+using eqStringIgnoreWhitespace else ppStrings in
+
+let intEq = EBinOp {
+  op = OEq (), lhs = x intTy1, rhs = intLit, ty = boolTy, info = i
+} in
+utest pprintExpr (compileTrellisExpr emptyEnv intEq) with "(==) x 3"
+using eqStringIgnoreWhitespace else ppStrings in
+
+-- Sets
+let allSet = SAll {info = i} in
+utest pprintExpr (compileTrellisSet emptyEnv allSet) with "true"
+using eqString else ppStrings in
+
+let xId = nameNoSym "x" in
+let valueSet1 = SValueBuilder {x = xId, conds = [intEq], info = i} in
+let valueSet2 = SValueBuilder {x = xId, conds = [intEq, intEq], info = i} in
+utest pprintExpr (compileTrellisSet emptyEnv valueSet1) with "(==) x 3"
+using eqStringIgnoreWhitespace else ppStrings in
+utest pprintExpr (compileTrellisSet emptyEnv valueSet2) with "(&&) ((==) x 3) ((==) x 3)"
+using eqStringIgnoreWhitespace else ppStrings in
+
+()

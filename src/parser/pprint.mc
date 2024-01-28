@@ -2,6 +2,7 @@ include "string.mc"
 include "mexpr/pprint.mc"
 
 include "ast.mc"
+include "../trellis-common.mc"
 
 lang TrellisPrettyPrintBase =
   PrettyPrint + MExprIdentifierPrettyPrint + TrellisAst
@@ -293,13 +294,7 @@ mexpr
 
 use TrellisPrettyPrint in
 
-let ppStrings = lam l. lam r.
-  join [
-    "    LHS: \"", l, "\"\n",
-    "    RHS: \"", r, "\""
-  ]
-in
-let i = Info {filename = "Trellis pprint test", row1 = 0, row2 = 0, col1 = 0, col2 = 0} in
+let i = trellisInfo "trellis-parser-pprint" in
 let x = nameNoSym "x" in
 let y = nameNoSym "y" in
 let a = nameNoSym "A" in

@@ -2,6 +2,7 @@ include "mexpr/info.mc"
 
 include "ast.mc"
 include "pprint.mc"
+include "../trellis-common.mc"
 
 lang TrellisTypeBitwidth = TrellisModelAst
   -- Finds the number of bits needed to represent integers from zero to n.
@@ -187,9 +188,6 @@ use TestLang in
 let pprintExpr = lam e.
   match pprintTrellisExpr pprintEnvEmpty e with (_, s) in s
 in
-let ppStrings = lam l. lam r.
-  join ["    LHS: ", l, "\n    RHS: ", r]
-in
 
 utest findBitwidth 0 with 0 in
 utest findBitwidth 1 with 1 in
@@ -199,7 +197,7 @@ utest findBitwidth 12 with 4 in
 utest findBitwidth 16 with 4 in
 utest findBitwidth 100 with 7 in
 
-let i = infoVal "trellis-encode" 0 0 0 0 in
+let i = trellisInfo "trellis-encode" in
 let ty1 = TBool {info = i} in
 let ty2 = TInt {bounds = Some (2, 7), info = i} in
 let ty3 = TInt {bounds = Some (0, 100), info = i} in

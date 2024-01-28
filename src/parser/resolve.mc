@@ -124,7 +124,7 @@ let test = lam str.
   in
   map pprint indecls
 in
-let ppStrings = lam lhs. lam rhs.
+let ppStringSeqs = lam lhs. lam rhs.
   let asStr = lam strs. map (lam s. join ["\"", s, "\""]) strs in
   join [
     "    LHS: [", strJoin ", " (asStr lhs), "]\n",
@@ -138,7 +138,7 @@ model {
   state = T
 }
 " in
-utest test s with ["state = 1 .. 10"] using eqSeq eqString else ppStrings in
+utest test s with ["state = 1 .. 10"] using eqSeq eqString else ppStringSeqs in
 
 let s = "
 let n = 0.5
@@ -146,7 +146,7 @@ model {
   P(initial x) = n
 }
 " in
-utest test s with ["P(initial x) = 0.5"] using eqSeq eqString else ppStrings in
+utest test s with ["P(initial x) = 0.5"] using eqSeq eqString else ppStringSeqs in
 
 let s = "
 type Nucleotide = {A, C, G, T}
@@ -161,6 +161,6 @@ model {
 }
 " in
 utest test s with ["state = (0 .. 3[5], 1 .. 16)", "output = 1 .. 1024"]
-using eqSeq eqString else ppStrings in
+using eqSeq eqString else ppStringSeqs in
 
 ()
