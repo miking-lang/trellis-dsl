@@ -75,13 +75,6 @@ lang TrellisModelSetPrettyPrint =
   TrellisModelPrettyPrintBase + TrellisModelSetAst +
   TrellisModelExprPrettyPrint
 
-  syn Set =
-  | SAll {info : Info}
-  | SValueBuilder {x : Name, conds : [TExpr], info : Info}
-  | SValueLiteral {exprs : [TExpr], info : Info}
-  | STransitionBuilder {x : Name, y : Name, conds : [TExpr], info : Info}
-  | STransitionLiteral {exprs : [(TExpr, TExpr)], info : Info}
-
   sem pprintTrellisSet : PprintType TSet
   sem pprintTrellisSet env =
   | SAll _ -> (env, "{_ | true}")
