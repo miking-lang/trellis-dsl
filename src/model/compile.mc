@@ -99,7 +99,7 @@ lang TrellisCompileInitializer =
       info = NoInfo ()
     } in
     let probTyStr = pprintType probTy in
-    let nstates = slli 1 stateBitwidth in
+    let nstates = cardinalityType env.stateType in
     FProg {decls = [
       FDeclModuleAlias {ident = stateModuleId, moduleId = stateTyStr, info = NoInfo ()},
       FDeclModuleAlias {ident = obsModuleId, moduleId = outTyStr, info = NoInfo ()},
