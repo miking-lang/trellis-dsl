@@ -1,5 +1,7 @@
 include "seq.mc"
+include "sys.mc"
 
+include "src-loc.mc"
 include "trellis-arg.mc"
 include "model/compile.mc"
 
