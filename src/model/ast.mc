@@ -28,10 +28,6 @@ lang TrellisModelTypeAst
   | TTuple t -> TTuple {t with tys = map f t.tys}
   | TTable t -> TTable {t with args = map f t.args, ret = f t.ret}
 
-  sem eqTType : TType -> TType -> Option TType
-  sem eqTType l =
-  | r -> optionIsSome (checkTType l r)
-
   sem checkTType : TType -> TType -> Option TType
   sem checkTType l =
   | r -> checkTTypeH (l, r)
