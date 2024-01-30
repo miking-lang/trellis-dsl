@@ -3,6 +3,7 @@ include "sys.mc"
 
 include "src-loc.mc"
 include "trellis-arg.mc"
+include "trellis-common.mc"
 include "model/compile.mc"
 
 lang TrellisBuild = TrellisCompileBase
@@ -15,7 +16,7 @@ lang TrellisBuild = TrellisCompileBase
     let absPath = lam file. join [options.outputDir, "/", file] in
 
     -- 1. Write the generated Futhark code to a file
-    let futFileName = "generated" in
+    let futFileName = generatedFileName in
     let futFile = concat futFileName ".fut" in
     writeFile (absPath futFile) futharkProgramStr;
 
@@ -44,7 +45,7 @@ lang TrellisBuild = TrellisCompileBase
     -- 4. Write our generated Python wrapper code, which handles the Futhark
     -- call and automatically pads input signals.
     let pythonWrapperStr = generatePythonWrapper env futFileName in
-    writeFile (absPath "viterbi.py") pythonWrapperStr;
+    writeFile (absPath "trellis.py") pythonWrapperStr;
 
     -- 5. Create an empty file '__init__.py' to allow calling the generated
     -- Python wrapper from another directory.
@@ -68,7 +69,6 @@ lang TrellisBuild = TrellisCompileBase
       strJoin ", "
         (map (lam x. join ["args['", nameGetStr x, "']"]) tableIds)
     in
-    -- TODO(larshum, 2024-01-28): How and where do we generate the predecessors?
     let pythonCode = strJoin "\n" [
       join ["def viterbi(", signalsId, ", args):"],
       join ["  nsignals = len(", signalsId, ")"],

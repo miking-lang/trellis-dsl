@@ -7,14 +7,15 @@ include "model/compile.mc"
 include "model/convert.mc"
 include "model/encode.mc"
 include "model/pprint.mc"
+include "model/predecessors.mc"
 include "model/viterbi.mc"
 include "build.mc"
 include "trellis-arg.mc"
 
 lang Trellis =
   TrellisAst + TrellisModelAst + TrellisModelConvert + TrellisCompileModel +
-  TrellisEncode + TrellisGenerateViterbiEntry + TrellisGenerateViterbiProgram +
-  TrellisBuild
+  TrellisEncode + TrellisPredecessors + TrellisGenerateViterbiEntry +
+  TrellisGenerateViterbiProgram + TrellisBuild
 end
 
 mexpr
@@ -55,13 +56,26 @@ match result with ParseOK r then
     -- well and the compilation environment (to use later).
     let fut = compileTrellisModel options modelAst in
 
+    -- If enabled, compute the predecessors of each state and write this to a
+    -- file to be used at runtime. As this takes a long time to complete,
+    -- because of an unoptimized implementation, this is currently disabled by
+    -- default.
+    -- OPT(larshum, 2024-01-30): Implement a more sophisticated approach which
+    -- excludes "impossible" predecessors based on the conditions, to vastly
+    -- improve the performance for most models (sparse models, in particular).
+    (if options.computePredecessors then
+      let preds = computePredecessors modelAst in
+      writePredecessors options.outputDir preds
+    else ());
+
     -- Generate a complete Futhark program by gluing together parts from the
     -- compilation results with a pre-defined Viterbi implementation (found
     -- under "src/skeleton").
     let prog = generateViterbiProgram fut in
 
-    buildPythonWrapper fut.env prog;
-    printLn (concat "Wrote output code to " options.outputDir)
+    -- Runs the building to produce a working Python wrapper which can be used
+    -- to call the Futhark code.
+    buildPythonWrapper fut.env prog
 else
   argPrintError result;
   exit 1

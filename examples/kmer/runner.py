@@ -3,7 +3,7 @@ from math import log, inf
 import time
 import h5py
 import numpy as np
-from viterbi import viterbi
+from trellis import viterbi
 
 # Expands the transition probabilities from a 4 x 64 matrix to a 64 x 64
 # matrix.

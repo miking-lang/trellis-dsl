@@ -5,13 +5,13 @@ SIGNAL_PATH=../../synthetic_dna/data/signals100_1.fast5
 
 case $1 in
   build)
-    trellis --output-dir . kmer.trellis > /dev/null
+    trellis --compute-predecessors --output-dir . kmer.trellis > /dev/null
     ;;
   run)
     python3 runner.py $MODEL_PATH $SIGNAL_PATH
     ;;
   clean)
-    rm -rf *generated* viterbi.py __init__.py __pycache__
+    rm -rf *generated* trellis.py __init__.py __pycache__ predecessors.txt
     ;;
   *)
     >&2 echo "Expected argument 'build', 'run' or 'clean'"

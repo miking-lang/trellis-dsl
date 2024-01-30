@@ -9,6 +9,7 @@ type TrellisOptions = {
   batchOverlap : Int,
   useDoublePrecisionFloats : Bool,
   useBitsetEncoding : Bool,
+  computePredecessors : Bool,
   printParse : Bool,
   printModel : Bool,
   outputDir : String,
@@ -20,6 +21,7 @@ let trellisDefaultOptions = {
   batchOverlap = 128,
   useDoublePrecisionFloats = false,
   useBitsetEncoding = false,
+  computePredecessors = false,
   printParse = false,
   printModel = false,
   outputDir = "build",
@@ -47,6 +49,11 @@ let config = [
       "Enables encoding of states using a bitset approach",
     lam p.
       let o = p.options in {o with useBitsetEncoding = true}),
+  ([("--compute-predecessors", "", "")],
+    defaultStr (bool2string trellisDefaultOptions.computePredecessors)
+      "Compute the predecessors of all states, which can take a long time",
+    lam p.
+      let o = p.options in {o with computePredecessors = true}),
   ([("--print-parse", "", "")],
     "Pretty-prints the initial AST after parsing",
     lam p.

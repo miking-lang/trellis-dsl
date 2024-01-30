@@ -1,5 +1,5 @@
 import numpy as np
-from viterbi import viterbi
+from trellis import viterbi
 
 tables = {
     'initp' : np.log(np.array([0.6, 0.4])),
