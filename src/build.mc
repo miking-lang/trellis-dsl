@@ -75,13 +75,13 @@ lang TrellisBuild = TrellisCompileBase
       join [
         indent 2, "padded_signals = pad_signals(", signalsId, ", ",
         int2string batchOutputSize, ", ", int2string batchOverlap, ")"],
-      join [indent 2, "res = self.hmm.viterbi(", tableArgs, ", self.preds, padded_signals)"],
+      join [indent 2, "res = self.hmm.viterbi(", tableArgs, ", self.vpreds, padded_signals)"],
       join [indent 2, "output = self.hmm.from_futhark(res)"],
       join [indent 2, "return unpad_outputs(output, ", signalsId, ")"],
       "",
       join [indent 1, "def forward(self, ", signalsId, "):"],
       join [indent 2, "padded_signals = pad_signals(", signalsId, ", 0, 0)"],
-      join [indent 2, "res = self.hmm.forward(", tableArgs, ", self.preds, padded_signals)"],
+      join [indent 2, "res = self.hmm.forward(", tableArgs, ", self.fwpreds, padded_signals)"],
       join [indent 2, "return self.hmm.from_futhark(res)"]
     ] in
     let pythonInitCode = readFile (concat trellisSrcLoc "skeleton/wrap.py") in
