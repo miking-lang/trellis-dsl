@@ -5,17 +5,8 @@ import math
 # We always observe exactly two or exactly three walls
 outp = [ [0.0, 1.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [0.0, 1.0] ]
 
-transp = [
-    [0.75, 0.25, 0.0, 0.0, 0.0],
-    [0.25, 0.5, 0.25, 0.0, 0.0],
-    [0.0, 0.25, 0.5, 0.25, 0.0],
-    [0.0, 0.0, 0.25, 0.5, 0.25],
-    [0.0, 0.0, 0.0, 0.25, 0.75]
-]
-
 tables = {
     'outp' : np.log(np.array(outp)),
-    'transp' : np.log(np.array(transp))
 }
 
 # Observations represent the number of walls we see at a particular state of
