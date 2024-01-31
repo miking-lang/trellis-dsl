@@ -1,4 +1,4 @@
-# Example taken from the Viterbi algorithm Wikipedia page
+# Hallway problem from https://www.cs.mcgill.ca/~dprecup/courses/ML/Lectures/ml-lecture-hmm.pdf
 
 alias HallwayState = 1 .. 5
 alias Obs = 2 .. 3
@@ -22,6 +22,5 @@ model {
     | { a -> b | a == b, a == 1 || a == 5 } => 0.75
     | { a -> b | a == b } => 0.5
     | { a -> b | a == b-1 || a == b+1 } => 0.25
-    | { a -> b | true } => 0.0
   }
 }
