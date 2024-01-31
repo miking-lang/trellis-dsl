@@ -82,23 +82,11 @@ lang TrellisModelSetPrettyPrint =
     match pprintVarName env x with (env, x) in
     match mapAccumL pprintTrellisExpr env conds with (env, conds) in
     (env, join ["{", x, " | ", strJoin ", " conds, "}"])
-  | SValueLiteral {exprs = exprs} ->
-    match mapAccumL pprintTrellisExpr env exprs with (env, exprs) in
-    (env, join ["{", strJoin ", " exprs, "}"])
   | STransitionBuilder {x = x, y = y, conds = conds} ->
     match pprintVarName env x with (env, x) in
     match pprintVarName env y with (env, y) in
     match mapAccumL pprintTrellisExpr env conds with (env, conds) in
     (env, join ["{", x, " -> ", y, " | ", strJoin ", " conds, "}"])
-  | STransitionLiteral {exprs = exprs} ->
-    let pprintTransitionExpr = lam env. lam e.
-      match e with (lexpr, rexpr) in
-      match pprintTrellisExpr env lexpr with (env, lexpr) in
-      match pprintTrellisExpr env rexpr with (env, rexpr) in
-      (env, join [lexpr, " -> ", rexpr])
-    in
-    match mapAccumL pprintTransitionExpr env exprs with (env, exprs) in
-    (env, join ["{", strJoin ", " exprs, "}"])
 end
 
 lang TrellisModelPrettyPrint =
@@ -121,7 +109,7 @@ lang TrellisModelPrettyPrint =
 
   sem pprintCases : PprintType [Case]
   sem pprintCases env =
-  | [{body = body}] ->
+  | [{cond = SAll _, body = body}] ->
     pprintTrellisExpr env body
   | cases ->
     match mapAccumL pprintCase env cases with (env, cases) in

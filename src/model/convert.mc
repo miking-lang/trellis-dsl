@@ -164,6 +164,8 @@ lang TrellisModelConvertSet = TrellisModelConvertExpr
       SValueBuilder {x = x, conds = concat conds c1, info = info}
   | LiteralTrellisSet {v = v, info = info} ->
     let isTransitionValue = lam v. match v.to with Some _ then true else false in
+    let x = nameNoSym "x" in
+    let y = nameNoSym "y" in
     if isTransitionValue (head v) then
       let convertTransition = lam t.
         let to =
@@ -172,17 +174,41 @@ lang TrellisModelConvertSet = TrellisModelConvertExpr
           else
             errorSingle [info] "Literal values must either all be values or transitions"
         in
-        (convertTrellisExpr tyEnv t.e, to)
+        let from = convertTrellisExpr tyEnv t.e in
+        trellisExprBoolAnd (eqVar info stateType x from) (eqVar info stateType y to)
       in
-      STransitionLiteral {exprs = map convertTransition v, info = info}
+      let eqExprs = map convertTransition v in
+      let conds = foldl1 trellisExprBoolOr eqExprs in
+      STransitionBuilder {x = x, y = y, conds = [conds], info = info}
     else
       let convertValue = lam v.
         match v.to with Some _ then
           errorSingle [info] "Literal values must either all be values or transitions"
         else
-          convertTrellisExpr tyEnv v.e
+          eqVar info stateType x (convertTrellisExpr tyEnv v.e)
       in
-      SValueLiteral {exprs = map convertValue v, info = info}
+      let eqExprs = map convertValue v in
+      let conds = foldl1 trellisExprBoolOr eqExprs in
+      SValueBuilder {x = x, conds = [conds], info = info}
+
+  sem eqVar : Info -> TType -> Name -> TExpr -> TExpr
+  sem eqVar info ty x =
+  | e ->
+    EBinOp {
+      op = OEq (), lhs = EVar {id = x, ty = ty, info = info},
+      rhs = e, ty = TBool {info = info}, info = info }
+
+  sem trellisExprBoolAnd : TExpr -> TExpr -> TExpr
+  sem trellisExprBoolAnd lhs =
+  | rhs ->
+    let info = mergeInfo (infoTExpr lhs) (infoTExpr rhs) in
+    EBinOp {op = OAnd (), lhs = lhs, rhs = rhs, ty = TBool {info = info}, info = info}
+
+  sem trellisExprBoolOr : TExpr -> TExpr -> TExpr
+  sem trellisExprBoolOr lhs =
+  | rhs ->
+    let info = mergeInfo (infoTExpr lhs) (infoTExpr rhs) in
+    EBinOp {op = OOr (), lhs = lhs, rhs = rhs, ty = TBool {info = info}, info = info}
 
   sem collectPatternConstraints : Map Name TType -> TExpr -> TrellisPat
                               -> (Map Name TExpr, [TExpr])

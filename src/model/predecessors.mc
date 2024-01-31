@@ -55,9 +55,7 @@ lang TrellisPredecessors =
     let conds = map (substituteVariables subMap) t.conds in
     let conds = map constantFold conds in
     forAll isTrue conds
-  | STransitionLiteral _ ->
-    false
-  | SValueBuilder {info = info} | SValueLiteral {info = info} ->
+  | SValueBuilder {info = info} ->
     errorSingle [info]
       "Transition probability function cannot use sets of states in conditions"
 

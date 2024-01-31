@@ -268,25 +268,9 @@ lang TrellisCompileSet = TrellisCompileExpr + TrellisCompileType
         rhs = lhs, ty = FTyUnknown {info = info}, info = info},
       rhs = rhs, ty = FTyUnknown {info = info}, info = info}
 
-  sem boolOr : FutExpr -> FutExpr -> FutExpr
-  sem boolOr lhs =
-  | rhs -> binaryOp (FCOr ()) lhs rhs
-
   sem boolAnd : FutExpr -> FutExpr -> FutExpr
   sem boolAnd lhs =
   | rhs -> binaryOp (FCAnd ()) lhs rhs
-
-  sem setEqArg : Info -> Name -> FutExpr -> FutExpr
-  sem setEqArg info id =
-  | expr ->
-    FEApp {
-      lhs = FEApp {
-        lhs = FEConst {val = FCEq (), ty = FTyUnknown {info = info}, info = info},
-        rhs = FEVar {ident = id, ty = FTyUnknown {info = info}, info = info},
-        ty = FTyUnknown {info = info}, info = info
-      },
-      rhs = expr, ty = FTyBool {info = info}, info = info
-    }
 
   sem compileTrellisSet : TrellisCompileEnv -> TSet -> FutExpr
   sem compileTrellisSet env =
@@ -295,19 +279,6 @@ lang TrellisCompileSet = TrellisCompileExpr + TrellisCompileType
   | SValueBuilder {conds = conds, info = info}
   | STransitionBuilder {conds = conds, info = info} ->
     foldl1 boolAnd (map (compileTrellisExpr env) conds)
-  | SValueLiteral {exprs = exprs, info = info} ->
-    let x = nameNoSym "x" in
-    foldl1 boolOr (map (setEqArg info x) (map (compileTrellisExpr env) exprs))
-  | STransitionLiteral {exprs = exprs, info = info} ->
-    let x = nameNoSym "x" in
-    let y = nameNoSym "y" in
-    let compilePair = lam p.
-      let l = setEqArg info x (compileTrellisExpr env p.0) in
-      let r = setEqArg info y (compileTrellisExpr env p.1) in
-      (l, r)
-    in
-    let exprs = map compilePair exprs in
-    foldl1 boolOr (map (lam e. boolAnd e.0 e.1) exprs)
 end
 
 lang TrellisCompileProbabilityFunction =
