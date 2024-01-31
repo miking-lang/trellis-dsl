@@ -28,16 +28,27 @@ def read_predecessors():
                 p[j] = last
     return preds
 
-def pad_signals(signals, lens, bos, boverlap):
-    padded_len = ((max(lens) + bos + 1) // bos) * bos + boverlap
+def pad_signals(signals, bos, boverlap):
+    lens = [len(s) for s in signals]
+    if bos == 0:
+        padded_len = max(lens)
+    else:
+        padded_len = ((max(lens) + bos + 1) // bos) * bos + boverlap
     padded_signals = np.zeros((len(signals), padded_len), dtype=np.float32)
     for i, s in enumerate(signals):
         padded_signals[i][0:len(s)] = s
     return padded_signals
 
-def unpad_outputs(output, lens):
+def unpad_outputs(output, signals):
+    lens = [len(s) for s in signals]
     out = []
     for i, o in enumerate(output):
         out.append(o[0:lens[i]])
     return out
+
+class HMM:
+    def __init__(self, args):
+        self.preds = read_predecessors()
+        self.args = args
+        self.hmm = Futhark(_generated)
 

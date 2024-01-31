@@ -1,52 +1,30 @@
--- Generates the Futhark entry point for the Viterbi algorithm.
+-- Generates the Futhark entry points for the various algorithms to apply to a
+-- HMM.
+
+include "mexpr/info.mc"
 
 include "compile.mc"
 include "../src-loc.mc"
 
--- The name of the reference implementation of Viterbi, which we need to glue
--- in with the generated code.
+-- The names of the pre-defined functions in the skeleton code which we glue
+-- together with our generated code.
 let mainViterbiId = nameSym "main_viterbi"
+let mainForwardId = nameSym "main_forward"
+
+let i = infoVal "trellis-generated" 0 0 0 0
 
 let n = nameSym "n"
 let m = nameSym "m"
 let predecessorsId = nameSym "predecessors"
 let inputsId = nameSym "inputSignals"
 
-lang TrellisGenerateViterbiEntry = TrellisCompileModel + FutharkAst
+lang TrellisGenerateEntry = TrellisCompileModel + FutharkAst
   type FutFunArgs = [(Name, FutType)]
 
   sem stateI64 : FutExpr -> FutExpr
   sem stateI64 =
   | e ->
     futApp_ (futProj_ (nFutVar_ stateModuleId) "i64") e
-
-  sem generateViterbiEntry : TrellisCompileEnv -> FutFunArgs -> FutFunArgs
-                          -> FutFunArgs -> FutDecl
-  sem generateViterbiEntry env initArgs outArgs =
-  | transArgs ->
-    let i = NoInfo () in
-    let arrayTy2d = lam tyId. lam fstDim. lam sndDim.
-      FTyArray {
-        elem = FTyArray {
-          elem = FTyIdent {ident = tyId, info = i},
-          dim = fstDim, info = i},
-        dim = sndDim, info = i
-      }
-    in
-    let params =
-      concat
-        (mapBindings env.tables)
-        [ (predecessorsId, arrayTy2d stateTyId (None ()) (Some (NamedDim nstatesId)))
-        , (inputsId, arrayTy2d obsTyId (Some (NamedDim m)) (Some (NamedDim n))) ]
-    in
-    let retTy = arrayTy2d stateTyId (None ()) (Some (NamedDim n)) in
-    match generateHigherOrderProbabilityFunctions initArgs outArgs transArgs
-    with (expr, probFunIds) in
-    let body = futBind_ expr (generateBatchingMap env probFunIds) in
-    FDeclFun {
-      ident = viterbiId, entry = true,
-      typeParams = [FPSize {val = n}, FPSize {val = m}], params = params,
-      ret = retTy, body = body, info = NoInfo ()}
 
   sem generateHigherOrderProbabilityFunctions : FutFunArgs -> FutFunArgs
                                              -> FutFunArgs -> (FutExpr, [Name])
@@ -81,8 +59,39 @@ lang TrellisGenerateViterbiEntry = TrellisCompileModel + FutharkAst
     let body = futAppSeq_ (nFutVar_ mainDefId) (map nFutVar_ argIds) in
     nuFutLet_ id (foldr nFutLam_ body mainArgIds)
 
-  sem generateBatchingMap : TrellisCompileEnv -> [Name] -> FutExpr
-  sem generateBatchingMap env =
+  sem arrayTy2d : Name -> Option FutArrayDim -> Option FutArrayDim -> FutType
+  sem arrayTy2d tyId fstDim =
+  | sndDim ->
+    FTyArray {
+      elem = FTyArray {
+        elem = FTyIdent {ident = tyId, info = i},
+        dim = fstDim, info = i},
+      dim = sndDim, info = i
+    }
+end
+
+lang TrellisGenerateViterbiEntry = TrellisGenerateEntry
+  sem generateViterbiEntry : TrellisCompileEnv -> FutFunArgs -> FutFunArgs
+                          -> FutFunArgs -> FutDecl
+  sem generateViterbiEntry env initArgs outArgs =
+  | transArgs ->
+    let params =
+      concat
+        (mapBindings env.tables)
+        [ (predecessorsId, arrayTy2d stateTyId (None ()) (Some (NamedDim nstatesId)))
+        , (inputsId, arrayTy2d obsTyId (Some (NamedDim m)) (Some (NamedDim n))) ]
+    in
+    let retTy = arrayTy2d stateTyId (None ()) (Some (NamedDim n)) in
+    match generateHigherOrderProbabilityFunctions initArgs outArgs transArgs
+    with (expr, probFunIds) in
+    let body = futBind_ expr (generateViterbiBatchingMap env probFunIds) in
+    FDeclFun {
+      ident = viterbiId, entry = true,
+      typeParams = [FPSize {val = n}, FPSize {val = m}], params = params,
+      ret = retTy, body = body, info = i}
+
+  sem generateViterbiBatchingMap : TrellisCompileEnv -> [Name] -> FutExpr
+  sem generateViterbiBatchingMap env =
   | probFunIds ->
     let batchOutputSize = subi env.options.batchSize env.options.batchOverlap in
     let bosExpr = futInt_ batchOutputSize in
@@ -130,14 +139,47 @@ lang TrellisGenerateViterbiEntry = TrellisCompileModel + FutharkAst
     ]
 end
 
-lang TrellisGenerateViterbiProgram =
-  TrellisGenerateViterbiEntry + FutharkPrettyPrint
+lang TrellisGenerateForwardEntry = TrellisGenerateEntry
+  sem generateForwardEntry : TrellisCompileEnv -> FutFunArgs -> FutFunArgs
+                          -> FutFunArgs -> FutDecl
+  sem generateForwardEntry env initArgs outArgs =
+  | transArgs ->
+    match generateHigherOrderProbabilityFunctions initArgs outArgs transArgs
+    with (expr, probFunIds) in
+    let forwardArgs =
+      cons
+        (nFutVar_ predecessorsId)
+        (map nFutVar_ probFunIds)
+    in
+    let params =
+      concat
+        (mapBindings env.tables)
+        [ (predecessorsId, arrayTy2d stateTyId (None ()) (Some (NamedDim nstatesId)))
+        , (inputsId, arrayTy2d obsTyId (None ()) (Some (NamedDim n))) ]
+    in
+    let retTy = FTyArray {
+      elem = nFutIdentTy_ probTyId, dim = Some (NamedDim n), info = i
+    } in
+    let body = futBind_
+      expr
+      (futMap_ (futAppSeq_ (nFutVar_ mainForwardId) forwardArgs) (nFutVar_ inputsId))
+    in
+    FDeclFun {
+      ident = forwardId, entry = true,
+      typeParams = [FPSize {val = n}], params = params,
+      ret = retTy, body = body, info = i}
+end
 
-  sem generateViterbiProgram : TrellisCompileOutput -> String
-  sem generateViterbiProgram =
+lang TrellisGenerateHMMProgram =
+  TrellisGenerateViterbiEntry + TrellisGenerateForwardEntry +
+  FutharkPrettyPrint
+
+  sem generateHMMProgram : TrellisCompileOutput -> String
+  sem generateHMMProgram =
   | {env = env, initializer = init, initial = i, output = o, transition = t} ->
     let viterbi = generateViterbiEntry env i.args o.args t.args in
-    let pregenCode = readFile (concat trellisSrcLoc "skeleton/viterbi.fut") in
-    let trailingCode = FProg {decls = [i.decl, o.decl, t.decl, viterbi]} in
+    let forward = generateForwardEntry env i.args o.args t.args in
+    let pregenCode = readFile (concat trellisSrcLoc "skeleton/hmm.fut") in
+    let trailingCode = FProg {decls = [i.decl, o.decl, t.decl, viterbi, forward]} in
     strJoin "\n" [printFutProg init, pregenCode, printFutProg trailingCode]
 end

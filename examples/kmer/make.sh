@@ -5,7 +5,7 @@ SIGNAL_PATH=../../synthetic_dna/data/signals100_1.fast5
 
 case $1 in
   build)
-    trellis --compute-predecessors --output-dir . kmer.trellis > /dev/null
+    trellis --futhark-target cuda --compute-predecessors --output-dir . kmer.trellis
     ;;
   run)
     python3 runner.py $MODEL_PATH $SIGNAL_PATH

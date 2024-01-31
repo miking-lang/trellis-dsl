@@ -6,16 +6,16 @@ include "model/ast.mc"
 include "model/compile.mc"
 include "model/convert.mc"
 include "model/encode.mc"
+include "model/entry.mc"
 include "model/pprint.mc"
 include "model/predecessors.mc"
-include "model/viterbi.mc"
 include "build.mc"
 include "trellis-arg.mc"
 
 lang Trellis =
   TrellisAst + TrellisModelAst + TrellisModelConvert + TrellisCompileModel +
   TrellisEncode + TrellisPredecessors + TrellisGenerateViterbiEntry +
-  TrellisGenerateViterbiProgram + TrellisBuild
+  TrellisGenerateHMMProgram + TrellisBuild
 end
 
 mexpr
@@ -69,9 +69,9 @@ match result with ParseOK r then
     else ());
 
     -- Generate a complete Futhark program by gluing together parts from the
-    -- compilation results with a pre-defined Viterbi implementation (found
-    -- under "src/skeleton").
-    let prog = generateViterbiProgram fut in
+    -- compilation results with pre-defined implemenentations of the core HMM
+    -- algorithms (found under "src/skeleton").
+    let prog = generateHMMProgram fut in
 
     -- Runs the building to produce a working Python wrapper which can be used
     -- to call the Futhark code.

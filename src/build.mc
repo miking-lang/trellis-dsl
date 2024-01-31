@@ -67,23 +67,23 @@ lang TrellisBuild = TrellisCompileBase
     let tableIds = mapKeys env.tables in
     let tableArgs =
       strJoin ", "
-        (map (lam x. join ["args['", nameGetStr x, "']"]) tableIds)
+        (map (lam x. join ["self.args['", nameGetStr x, "']"]) tableIds)
     in
-    let pythonCode = strJoin "\n" [
-      join ["def viterbi(", signalsId, ", args):"],
-      join ["  nsignals = len(", signalsId, ")"],
-      join ["  signal_lengths = [len(s) for s in ", signalsId, "]"],
+    let indent = lam n. create (muli n 4) (lam. ' ') in
+    let pythonGlueCode = strJoin "\n" [
+      join [indent 1, "def viterbi(self, ", signalsId, "):"],
       join [
-        "  padded_signals = pad_signals(", signalsId, ", signal_lengths, ",
+        indent 2, "padded_signals = pad_signals(", signalsId, ", ",
         int2string batchOutputSize, ", ", int2string batchOverlap, ")"],
-      "  for i, s in enumerate(signals):",
-      "    padded_signals[i][0:len(s)] = s",
-      "  predecessors = read_predecessors()",
-      join ["  viterbi = Futhark(_", futFileName, ")"],
-      join ["  res = viterbi.viterbi(", tableArgs, ", predecessors, padded_signals)"],
-      "  output = viterbi.from_futhark(res)",
-      "  return unpad_outputs(output, signal_lengths)"
+      join [indent 2, "res = self.hmm.viterbi(", tableArgs, ", self.preds, padded_signals)"],
+      join [indent 2, "output = self.hmm.from_futhark(res)"],
+      join [indent 2, "return unpad_outputs(output, ", signalsId, ")"],
+      "",
+      join [indent 1, "def forward(self, ", signalsId, "):"],
+      join [indent 2, "padded_signals = pad_signals(", signalsId, ", 0, 0)"],
+      join [indent 2, "res = self.hmm.forward(", tableArgs, ", self.preds, padded_signals)"],
+      join [indent 2, "return self.hmm.from_futhark(res)"]
     ] in
     let pythonInitCode = readFile (concat trellisSrcLoc "skeleton/wrap.py") in
-    concat pythonInitCode pythonCode
+    concat pythonInitCode pythonGlueCode
 end

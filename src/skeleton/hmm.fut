@@ -17,9 +17,13 @@ let max_index_by_state (s : []prob_t) : i64 =
   let is = map (\i -> (i, s[i])) (indices s) in
   (reduce cmp is[0] is[1:]).0
 
-let viterbi_forward [m] (predecessors : [nstates][]state_t) (transp : state_t -> state_t -> prob_t)
-                        (outp : state_t -> obs_t -> prob_t) (signal : [m]obs_t)
-                        (chi1 : [nstates]prob_t) : forw_res[nstates][m] =
+let viterbi_forward [m]
+  (predecessors : [nstates][]state_t)
+  (transp : state_t -> state_t -> prob_t)
+  (outp : state_t -> obs_t -> prob_t)
+  (signal : [m]obs_t)
+  (chi1 : [nstates]prob_t) : forw_res[nstates][m] =
+
   let zeta = tabulate m (\_ -> tabulate nstates (\_ -> state.i32 0)) in
   loop {chi, zeta} = {chi = chi1, zeta = zeta} for i < m do
     let x = signal[i] in
@@ -35,10 +39,13 @@ let viterbi_backward [m] (s_last : state_t) (zeta : [m][nstates]state_t) : [1+m]
   loop acc for i < m do
     acc with [i+1] = zeta[i][state.to_i64 acc[i]]
 
-let main_viterbi [m] (predecessors : [nstates][]state_t)
-                     (initp : state_t -> prob_t) (outp : state_t -> obs_t -> prob_t)
-                     (transp : state_t -> state_t -> prob_t)
-                     (signal : [m]obs_t) : [m]state_t =
+let main_viterbi [m]
+  (predecessors : [nstates][]state_t)
+  (initp : state_t -> prob_t)
+  (outp : state_t -> obs_t -> prob_t)
+  (transp : state_t -> state_t -> prob_t)
+  (signal : [m]obs_t) : [m]state_t =
+
   let x = signal[0] in
   let rest = signal[1:m] in
   let chi1 = tabulate nstates (\s -> initp (state.i64 s) + outp (state.i64 s) x) in
@@ -47,3 +54,28 @@ let main_viterbi [m] (predecessors : [nstates][]state_t)
   case {chi = chi, zeta = zeta} ->
     let sLast = max_index_by_state chi in
     reverse (viterbi_backward (state.i64 sLast) (reverse zeta)) :> [m]state_t
+
+let log_sum_exp (s : []prob_t) : prob_t =
+  let x = prob.maximum s in
+  x + prob.log (prob.sum (map (\y -> prob.exp(y - x)) s))
+
+let main_forward [m]
+  (predecessors : [nstates][]state_t)
+  (initp : state_t -> prob_t)
+  (outp : state_t -> obs_t -> prob_t)
+  (transp : state_t -> state_t -> prob_t)
+  (signal : [m]obs_t) : prob_t =
+
+  let x = signal[0] in
+  let alpha0 = tabulate nstates (\s -> initp (state.i64 s) + outp (state.i64 s) x) in
+  let alphaTminus1 = loop alpha = alpha0 for t < m-1 do
+    tabulate nstates (\i ->
+      let sum =
+        log_sum_exp
+          (map
+            (\pre -> alpha[state.to_i64 pre] + transp pre (state.i64 i))
+            predecessors[i])
+      in
+      sum + outp (state.i64 i) signal[t+1])
+  in
+  log_sum_exp alphaTminus1

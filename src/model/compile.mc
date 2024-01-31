@@ -21,8 +21,6 @@ let probModuleId = nameSym "prob"
 let obsModuleId = nameSym "obs"
 let nstatesId = nameSym "nstates"
 
-let viterbiId = nameSym "viterbi"
-
 lang TrellisCompileBase = TrellisModelAst + FutharkAst
   -- The environment used throughout compilation of the Trellis model AST.
   type TrellisCompileEnv = {

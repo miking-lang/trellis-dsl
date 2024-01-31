@@ -3,7 +3,7 @@ from math import log, inf
 import time
 import h5py
 import numpy as np
-from trellis import viterbi
+from trellis import HMM
 
 # Expands the transition probabilities from a 4 x 64 matrix to a 64 x 64
 # matrix.
@@ -60,11 +60,13 @@ tables = {
     'outputProb': output_probs,
     'initialProb': init_probs
 }
-outputs = viterbi(signals, tables)
+hmm = HMM(tables)
+outputs = hmm.viterbi(signals)
+probs = hmm.forward(signals)
 
 outc = ['A','C','G','T']
 for i, signal in enumerate(outputs):
-    print(f"Signal #{i+1}")
+    print(f"Signal #{i+1} ({probs[i]})")
     for s in signal:
         if s % 16 == 0:
             print(outc[(s // 16) % 4], end="")
