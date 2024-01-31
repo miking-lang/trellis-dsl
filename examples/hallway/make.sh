@@ -2,7 +2,7 @@
 
 case $1 in
   build)
-    trellis --compute-predecessors --output-dir . healthy.trellis
+    trellis --compute-predecessors --output-dir . hallway.trellis
     ;;
   run)
     python3 runner.py
