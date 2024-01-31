@@ -17,6 +17,7 @@ let n = nameSym "n"
 let m = nameSym "m"
 let predecessorsId = nameSym "predecessors"
 let inputsId = nameSym "inputSignals"
+let inputLengthsId = nameSym "inputLengths"
 
 lang TrellisGenerateEntry = TrellisCompileModel + FutharkAst
   type FutFunArgs = [(Name, FutType)]
@@ -151,18 +152,25 @@ lang TrellisGenerateForwardEntry = TrellisGenerateEntry
         (nFutVar_ predecessorsId)
         (map nFutVar_ probFunIds)
     in
+    let inputLengthsType = FTyArray {
+      elem = FTyInt {sz = I64 (), info = i}, dim = Some (NamedDim n), info = i
+    } in
     let params =
       concat
         (mapBindings env.tables)
         [ (predecessorsId, arrayTy2d stateTyId (None ()) (Some (NamedDim nstatesId)))
-        , (inputsId, arrayTy2d obsTyId (None ()) (Some (NamedDim n))) ]
+        , (inputsId, arrayTy2d obsTyId (None ()) (Some (NamedDim n)))
+        , (inputLengthsId, inputLengthsType ) ]
     in
     let retTy = FTyArray {
       elem = nFutIdentTy_ probTyId, dim = Some (NamedDim n), info = i
     } in
     let body = futBind_
       expr
-      (futMap_ (futAppSeq_ (nFutVar_ mainForwardId) forwardArgs) (nFutVar_ inputsId))
+      (futMap2_
+        (futAppSeq_ (nFutVar_ mainForwardId) forwardArgs)
+        (nFutVar_ inputsId)
+        (nFutVar_ inputLengthsId))
     in
     FDeclFun {
       ident = forwardId, entry = true,

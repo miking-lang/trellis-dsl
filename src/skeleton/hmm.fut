@@ -60,16 +60,17 @@ let log_sum_exp (s : []prob_t) : prob_t =
   if x == -prob.inf then x
   else x + prob.log (prob.sum (map (\y -> prob.exp(y - x)) s))
 
-let main_forward [m]
+let main_forward
   (predecessors : [nstates][]state_t)
   (initp : state_t -> prob_t)
   (outp : state_t -> obs_t -> prob_t)
   (transp : state_t -> state_t -> prob_t)
-  (signal : [m]obs_t) : prob_t =
+  (signal : []obs_t)
+  (signal_len : i64) : prob_t =
 
   let x = signal[0] in
   let alpha0 = tabulate nstates (\s -> initp (state.i64 s) + outp (state.i64 s) x) in
-  let alphaTminus1 = loop alpha = alpha0 for t < m-1 do
+  let alphaTminus1 = loop alpha = alpha0 for t < signal_len-1 do
     tabulate nstates (\i ->
       let sum =
         log_sum_exp

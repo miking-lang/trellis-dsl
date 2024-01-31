@@ -80,8 +80,9 @@ lang TrellisBuild = TrellisCompileBase
       join [indent 2, "return unpad_outputs(output, ", signalsId, ")"],
       "",
       join [indent 1, "def forward(self, ", signalsId, "):"],
+      join [indent 2, "lens = np.array([len(x) for x in ", signalsId, "])"],
       join [indent 2, "padded_signals = pad_signals(", signalsId, ", 0, 0)"],
-      join [indent 2, "res = self.hmm.forward(", tableArgs, ", self.fwpreds, padded_signals)"],
+      join [indent 2, "res = self.hmm.forward(", tableArgs, ", self.fwpreds, padded_signals, lens)"],
       join [indent 2, "return self.hmm.from_futhark(res)"]
     ] in
     let pythonInitCode = readFile (concat trellisSrcLoc "skeleton/wrap.py") in
