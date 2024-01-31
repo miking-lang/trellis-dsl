@@ -36,6 +36,10 @@ let max_index_by_state (s : []prob_t) : i64 =
   let is = map (\i -> (i, s[i])) (indices s) in
   (reduce cmp is[0] is[1:]).0
 
+let log_sum_exp (s : []prob_t) : prob_t =
+  let x = prob.maximum s in
+  x + prob.log (prob.sum (map (\y -> prob.exp(y - x)) s))
+
 let viterbi_forward [m] (predecessors : [nstates][]state_t) (transp : state_t -> state_t -> prob_t)
                         (outp : state_t -> obs_t -> prob_t) (signal : [m]obs_t)
                         (chi1 : [nstates]prob_t) : forw_res[nstates][m] =
@@ -58,13 +62,27 @@ let main_viterbi [m] (predecessors : [nstates][]state_t) (transp : state_t -> st
                      (initp : state_t -> prob_t) (outp : state_t -> obs_t -> prob_t)
                      (signal : [m]obs_t) : [m]state_t =
   let x = signal[0] in
-  let rest = signal[1:m] in
+  let rest = signal[1:] in
   let chi1 = tabulate nstates (\s -> initp (state.i64 s) + outp (state.i64 s) x) in
   let r = viterbi_forward predecessors transp outp rest chi1 in
   match r
   case {chi = chi, zeta = zeta} ->
     let sLast = max_index_by_state chi in
     reverse (viterbi_backward (state.i64 sLast) (reverse zeta)) :> [m]state_t
+
+let main_forward [m] (predecessors : [nstates][]state_t) (transp : state_t -> state_t -> prob_t)
+                     (outp : state_t -> obs_t -> prob_t) (initp : state_t -> prob_t)
+                     (signal : [m]obs_t) : prob_t =
+  let x = signal[0] in
+  let alpha0 = tabulate nstates (\s -> initp (state.i64 s) + outp (state.i64 s) x) in
+  let alphaTminus1 =
+    loop alpha = alpha0 for t < m-1 do
+      tabulate nstates (\i ->
+        let sum = log_sum_exp (map (\j -> alpha[state.to_i64 j] + transp j (state.i64 i)) predecessors[i]) in
+        let obs = outp (state.i64 i) (signal[t+1]) in
+        sum + obs)
+  in
+  log_sum_exp alphaTminus1
 
 --------------------
 -- GENERATED CODE --
@@ -103,7 +121,7 @@ let transition_probability
   else if in_down x y then prob.log 1.0
   else prob.neg prob.inf
 
--- Main entry point to the program.
+-- Viterbi entry point
 entry viterbi [n][m]
   (table_gamma : prob_t)
   (table_trans1 : [64][64]prob_t)
@@ -141,3 +159,25 @@ entry viterbi [n][m]
       in
       flatten bacc :> [outsz]state_t)
     input_signals
+
+-- Forward algorithm entry point
+entry forward [n][m]
+  (gamma : prob_t)
+  (trans1 : [64][64]prob_t)
+  (trans2 : [16]prob_t)
+  (outputProb : [64][101]prob_t)
+  (initialProb : [64][16]prob_t)
+  (predecessors : [nstates][]state_t)
+  (input_signals : [n][m]obs_t)
+  : [n]prob_t =
+
+  let transp (x : state_t) (y : state_t) =
+    transition_probability trans1 trans2 gamma x y
+  in
+  let outp (x : state_t) (o : obs_t) =
+    output_probability outputProb x o
+  in
+  let initp (x : state_t) =
+    initial_probability initialProb x
+  in
+  map (main_forward predecessors transp outp initp) input_signals

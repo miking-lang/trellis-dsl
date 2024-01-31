@@ -150,8 +150,13 @@ int main(int argc, char **argv) {
 
   auto start = std::chrono::steady_clock::now();
 
+#ifdef FORWARD_ALG
+  futhark_f32_1d *out;
+  int res = futhark_entry_forward(ctx, &out, gamma, trans1, trans2, output_prob, initial_prob, predecessors, input_signals);
+#else
   futhark_u16_2d *out;
   int res = futhark_entry_viterbi(ctx, &out, gamma, trans1, trans2, output_prob, initial_prob, predecessors, input_signals);
+#endif
   if (res != FUTHARK_SUCCESS) {
     printf("Futhark call failed: %s\n", futhark_context_get_error(ctx));
     exit(1);
@@ -168,6 +173,18 @@ int main(int argc, char **argv) {
   futhark_free_u16_2d(ctx, predecessors);
   futhark_free_u8_2d(ctx, input_signals);
 
+#ifdef FORWARD_ALG
+  free(input_signal_lens);
+  const int64_t *shape = futhark_shape_f32_1d(ctx, out);
+  float *probs = (float*)malloc(shape[0] * sizeof(float));
+  futhark_values_f32_1d(ctx, out, probs);
+  for (int i = 0; i < shape[0]; i++) {
+    printf("%lf ", probs[i]);
+  }
+  printf("\n");
+  free(probs);
+  futhark_free_f32_1d(ctx, out);
+#else
   const int64_t *shape = futhark_shape_u16_2d(ctx, out);
   uint16_t *data = (uint16_t*)malloc(shape[0] * shape[1] * sizeof(uint16_t));
   futhark_values_u16_2d(ctx, out, data);
@@ -182,9 +199,10 @@ int main(int argc, char **argv) {
     }
     printf("\n");
   }
-  futhark_free_u16_2d(ctx, out);
-  free(input_signal_lens);
   free(data);
+  free(input_signal_lens);
+  futhark_free_u16_2d(ctx, out);
+#endif
 
   int t = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
   fprintf(stderr, "Futhark execution took %d ms\n", t);
