@@ -149,7 +149,10 @@ lang TrellisCompileExpr =
       -- NOTE(larshum, 2024-01-24): Here, we convert probability literals to
       -- logscale.
       let ty = compileTrellisType env ty in
-      FEConst {val = FCFloat {val = log p, sz = None ()}, ty = ty, info = info}
+      let floatSz =
+        Some (if env.options.useDoublePrecisionFloats then F64 () else F32 ())
+      in
+      FEConst {val = FCFloat {val = log p, sz = floatSz}, ty = ty, info = info}
     else errorSingle [info] "Probability literal was assigned an invalid type"
   | ESlice {target = target, lo = lo, hi = hi, ty = ty, info = info} ->
     errorSingle [info] "Internal error: Found slice when compiling intermediate AST"
@@ -448,13 +451,13 @@ with "x" using eqString else ppStrings in
 
 let p = EProb {p = 1.0, ty = TProb {info = i}, info = i} in
 utest pprintExpr (compileTrellisExpr emptyEnv p)
-with "0.0" using eqString else ppStrings in
+with "0.0f32" using eqString else ppStrings in
 
 let probAdd = EBinOp {
   op = OMul (), lhs = x probTy, rhs = p, ty = probTy, info = i
 } in
 utest pprintExpr (compileTrellisExpr emptyEnv probAdd)
-with "(+) x 0.0"
+with "(+) x 0.0f32"
 using eqStringIgnoreWhitespace else ppStrings in
 
 let intLit = EInt {i = 3, ty = TInt {bounds = None (), info = i}, info = i} in
