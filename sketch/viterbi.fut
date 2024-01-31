@@ -36,10 +36,6 @@ let max_index_by_state (s : []prob_t) : i64 =
   let is = map (\i -> (i, s[i])) (indices s) in
   (reduce cmp is[0] is[1:]).0
 
-let log_sum_exp (s : []prob_t) : prob_t =
-  let x = prob.maximum s in
-  x + prob.log (prob.sum (map (\y -> prob.exp(y - x)) s))
-
 let viterbi_forward [m] (predecessors : [nstates][]state_t) (transp : state_t -> state_t -> prob_t)
                         (outp : state_t -> obs_t -> prob_t) (signal : [m]obs_t)
                         (chi1 : [nstates]prob_t) : forw_res[nstates][m] =
@@ -69,6 +65,11 @@ let main_viterbi [m] (predecessors : [nstates][]state_t) (transp : state_t -> st
   case {chi = chi, zeta = zeta} ->
     let sLast = max_index_by_state chi in
     reverse (viterbi_backward (state.i64 sLast) (reverse zeta)) :> [m]state_t
+
+let log_sum_exp (s : []prob_t) : prob_t =
+  let x = prob.maximum s in
+  if x == -prob.inf then x
+  else x + prob.log (prob.sum (map (\y -> prob.exp(y - x)) s))
 
 let main_forward [m] (predecessors : [nstates][]state_t) (transp : state_t -> state_t -> prob_t)
                      (outp : state_t -> obs_t -> prob_t) (initp : state_t -> prob_t)

@@ -57,7 +57,8 @@ let main_viterbi [m]
 
 let log_sum_exp (s : []prob_t) : prob_t =
   let x = prob.maximum s in
-  x + prob.log (prob.sum (map (\y -> prob.exp(y - x)) s))
+  if x == -prob.inf then x
+  else x + prob.log (prob.sum (map (\y -> prob.exp(y - x)) s))
 
 let main_forward [m]
   (predecessors : [nstates][]state_t)
