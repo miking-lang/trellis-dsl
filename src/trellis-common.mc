@@ -13,6 +13,3 @@ let trellisInfo = lam id. infoVal id 0 0 0 0
 
 let generatedFileName = "generated"
 let predecessorsFileName = "predecessors.txt"
-
-let viterbiId = nameSym "viterbi"
-let forwardId = nameSym "forward"

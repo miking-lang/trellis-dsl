@@ -28,6 +28,18 @@ let trellisDefaultOptions = {
   futharkTarget = "multicore"
 }
 
+let _supportedFutharkTargets = setOfSeq cmpString [
+  "c", "multicore", "cuda", "opencl"
+]
+let validateFutharkTarget = lam target.
+  if setMem target _supportedFutharkTargets then target
+  else
+    let msg = join [
+      "Futhark target '", target, "' is not supported\n",
+      "Supported Futhark targets: ", strJoin " " (setToSeq _supportedFutharkTargets)
+    ] in
+    error msg
+
 let config = [
   ([("--batch-size", " ", "<n>")],
     defaultStr (int2string trellisDefaultOptions.batchSize)
@@ -71,7 +83,7 @@ let config = [
     defaultStr trellisDefaultOptions.futharkTarget
       "Specifies the target backend to use when compiling Futhark",
     lam p.
-      let o = p.options in {o with futharkTarget = argToString p})
+      let o = p.options in {o with futharkTarget = validateFutharkTarget (argToString p)})
 ]
 
 let menu = lam. join [

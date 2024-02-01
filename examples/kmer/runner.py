@@ -4,6 +4,7 @@ import time
 import h5py
 import numpy as np
 from trellis import HMM
+import time
 
 # Expands the transition probabilities from a 4 x 64 matrix to a 64 x 64
 # matrix.
@@ -61,13 +62,23 @@ tables = {
     'initialProb': init_probs
 }
 hmm = HMM(tables)
-outputs = hmm.viterbi(signals)
-probs = hmm.forward(signals)
 
-outc = ['A','C','G','T']
-for i, signal in enumerate(outputs):
-    print(f"Signal #{i+1} ({probs[i]})")
-    for s in signal:
-        if s % 16 == 0:
-            print(outc[(s // 16) % 4], end="")
-    print("")
+times = []
+for i in range(1):
+    t0 = time.time()
+    p = hmm.forward(signals)
+    t1 = time.time()
+    times.append(t1-t0)
+
+print(np.average(times), np.std(times))
+
+#with open("measurements.txt", "w+") as f:
+#    f.write(f"{' '.join([str(x) for x in times])}")
+
+#outc = ['A','C','G','T']
+#for i, signal in enumerate(outputs):
+#    print(f"Signal #{i+1} ({probs[i]})")
+#    for s in signal:
+#        if s % 16 == 0:
+#            print(outc[(s // 16) % 4], end="")
+#    print("")
