@@ -74,15 +74,14 @@ lang TrellisBuild = TrellisCompileBase
     let signalsId = "signals" in
     let tableIds = mapKeys env.tables in
     let tableArgs =
-      strJoin ", "
-        (map (lam x. join ["self.args['", nameGetStr x, "']"]) tableIds)
+      join (map (lam x. join ["self.args['", nameGetStr x, "'], "]) tableIds)
     in
     let pythonGlueCode = strJoin "\n" [
       join [indent 1, "def viterbi(self, ", signalsId, "):"],
       join [
         indent 2, "padded_signals = pad_signals(", signalsId, ", ",
         int2string batchOutputSize, ", ", int2string batchOverlap, ")"],
-      join [indent 2, "res = self.hmm.viterbi(", tableArgs, ", self.vpreds, padded_signals)"],
+      join [indent 2, "res = self.hmm.viterbi(", tableArgs, "self.vpreds, padded_signals)"],
       join [indent 2, "output = self.hmm.from_futhark(res)"],
       join [indent 2, "return unpad_outputs(output, ", signalsId, ")"],
       "",
@@ -101,7 +100,7 @@ lang TrellisBuild = TrellisCompileBase
       join [indent 1, "def forward(self, ", signalsId, "):"],
       join [indent 2, "lens = np.array([len(x) for x in ", signalsId, "])"],
       join [indent 2, "padded_signals = pad_signals(", signalsId, ", 0, 0)"],
-      join [indent 2, "res = self.hmm.forward_cpu(", tableArgs, ", self.fwpreds, padded_signals, lens)"],
+      join [indent 2, "res = self.hmm.forward_cpu(", tableArgs, "self.fwpreds, padded_signals, lens)"],
       join [indent 2, "return self.hmm.from_futhark(res)"]
     ]
 
@@ -114,7 +113,7 @@ lang TrellisBuild = TrellisCompileBase
       join [indent 1, "def forward(self, ", signalsId, "):"],
       join [indent 2, "lens = np.array([len(x) for x in ", signalsId, "])"],
       join [indent 2, "padded_signals = pad_signals(", signalsId, ", 0, 0)"],
-      join [indent 2, "res = self.hmm.forward_gpu(", tableArgs, ", self.fwpreds, padded_signals)"],
+      join [indent 2, "res = self.hmm.forward_gpu(", tableArgs, "self.fwpreds, padded_signals)"],
       join [indent 2, "out = self.hmm.log_sum_exp_entry(res, lens)"],
       join [indent 2, "return self.hmm.from_futhark(out)"]
     ]
