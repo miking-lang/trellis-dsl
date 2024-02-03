@@ -1,4 +1,5 @@
 include "arg.mc"
+include "set.mc"
 include "string.mc"
 
 let defaultStr = lam defaultOptStr. lam msg.

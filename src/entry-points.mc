@@ -4,8 +4,8 @@
 
 include "mexpr/info.mc"
 
-include "compile.mc"
-include "../src-loc.mc"
+include "model/compile.mc"
+include "src-loc.mc"
 
 -- The names of the pre-defined functions in the skeleton code which we glue
 -- together with our generated code.
@@ -35,36 +35,32 @@ lang TrellisGenerateEntry = TrellisCompileModel + FutharkAst
   | e ->
     futApp_ (futProj_ (nFutVar_ stateModuleId) "i64") e
 
-  sem generateHigherOrderProbabilityFunctions : FutFunArgs -> FutFunArgs
-                                             -> FutFunArgs -> (FutExpr, [Name])
-  sem generateHigherOrderProbabilityFunctions initArgs outArgs =
-  | transArgs ->
+  sem generateHigherOrderProbabilityFunctions : () -> (FutExpr, [Name])
+  sem generateHigherOrderProbabilityFunctions =
+  | _ ->
     let initId = nameSym "initp" in
     let outId = nameSym "outp" in
     let transId = nameSym "transp" in
     let probFunIds = [initId, outId, transId] in
-    match initArgs with initTableArgs ++ [(x, _)] in
     let initExpr =
       generateHigherOrderProbabilityFunction
-        initId initialProbabilityId initTableArgs [x]
+        initId initialProbabilityId [nameNoSym "x"]
     in
-    match outArgs with outTableArgs ++ [(x, _), (o, _)] in
     let outExpr =
       generateHigherOrderProbabilityFunction
-        outId outputProbabilityId outTableArgs [x, o]
+        outId outputProbabilityId [nameNoSym "x", nameNoSym "o"]
     in
-    match transArgs with transTableArgs ++ [(x, _), (y, _)] in
     let transExpr =
       generateHigherOrderProbabilityFunction
-        transId transitionProbabilityId transTableArgs [x, y]
+        transId transitionProbabilityId [nameNoSym "x", nameNoSym "y"]
     in
     let probFunDeclExpr = futBindall_ [initExpr, outExpr, transExpr] in
     (probFunDeclExpr, probFunIds)
 
-  sem generateHigherOrderProbabilityFunction : Name -> Name -> FutFunArgs -> [Name] -> FutExpr
-  sem generateHigherOrderProbabilityFunction id mainDefId tableArgs =
+  sem generateHigherOrderProbabilityFunction : Name -> Name -> [Name] -> FutExpr
+  sem generateHigherOrderProbabilityFunction id mainDefId =
   | mainArgIds ->
-    let argIds = concat (map (lam a. a.0) tableArgs) mainArgIds in
+    let argIds = cons modelId mainArgIds in
     let body = futAppSeq_ (nFutVar_ mainDefId) (map nFutVar_ argIds) in
     nuFutLet_ id (foldr nFutLam_ body mainArgIds)
 
@@ -79,19 +75,16 @@ lang TrellisGenerateEntry = TrellisCompileModel + FutharkAst
 end
 
 lang TrellisGenerateViterbiEntry = TrellisGenerateEntry
-  sem generateViterbiEntryPoints : TrellisCompileEnv -> FutFunArgs
-                                -> FutFunArgs -> FutFunArgs -> [FutDecl]
-  sem generateViterbiEntryPoints env initArgs outArgs =
-  | transArgs ->
+  sem generateViterbiEntryPoints : TrellisCompileEnv -> [FutDecl]
+  sem generateViterbiEntryPoints =
+  | env ->
     let params =
-      concat
-        (mapBindings env.tables)
-        [ (predecessorsId, arrayTy stateTyId [None (), Some (NamedDim nstatesId)])
-        , (inputsId, arrayTy obsTyId [Some (NamedDim m), Some (NamedDim n)]) ]
+      [ (modelId, FTyIdent {ident = modelTyId, info = i})
+      , (predecessorsId, arrayTy stateTyId [None (), Some (NamedDim nstatesId)])
+      , (inputsId, arrayTy obsTyId [Some (NamedDim m), Some (NamedDim n)]) ]
     in
     let retTy = arrayTy stateTyId [None (), Some (NamedDim n)] in
-    match generateHigherOrderProbabilityFunctions initArgs outArgs transArgs
-    with (expr, probFunIds) in
+    match generateHigherOrderProbabilityFunctions () with (expr, probFunIds) in
     let body = futBind_ expr (generateViterbiBatchingMap env probFunIds) in
     [FDeclFun {
       ident = viterbiEntryId, entry = true,
@@ -148,12 +141,10 @@ lang TrellisGenerateViterbiEntry = TrellisGenerateEntry
 end
 
 lang TrellisGenerateForwardEntry = TrellisGenerateEntry
-  sem generateForwardEntryPoints : TrellisCompileEnv -> FutFunArgs
-                                -> FutFunArgs -> FutFunArgs -> [FutDecl]
-  sem generateForwardEntryPoints env initArgs outArgs =
-  | transArgs ->
-    match generateHigherOrderProbabilityFunctions initArgs outArgs transArgs
-    with (expr, probFunIds) in
+  sem generateForwardEntryPoints : TrellisCompileEnv -> [FutDecl]
+  sem generateForwardEntryPoints =
+  | env ->
+    match generateHigherOrderProbabilityFunctions () with (expr, probFunIds) in
     let gpuTarget =
       match env.options.futharkTarget with "cuda" | "opencl" then true
       else false
@@ -174,11 +165,10 @@ lang TrellisGenerateForwardEntry = TrellisGenerateEntry
       elem = FTyInt {sz = I64 (), info = i}, dim = Some (NamedDim n), info = i
     } in
     let params =
-      concat
-        tables
-        [ (predecessorsId, arrayTy stateTyId [None (), Some (NamedDim nstatesId)])
-        , (inputsId, arrayTy obsTyId [None (), Some (NamedDim n)])
-        , (inputLengthsId, inputLengthsType ) ]
+      [ (modelId, nFutIdentTy_ modelTyId)
+      , (predecessorsId, arrayTy stateTyId [None (), Some (NamedDim nstatesId)])
+      , (inputsId, arrayTy obsTyId [None (), Some (NamedDim n)])
+      , (inputLengthsId, inputLengthsType ) ]
     in
     let retTy = arrayTy probTyId [Some (NamedDim n)] in
     let body = futBind_
@@ -197,10 +187,9 @@ lang TrellisGenerateForwardEntry = TrellisGenerateEntry
   sem generateForwardEntryGpu tables probDeclExpr =
   | forwardArgs ->
     let params =
-      concat
-        tables
-        [ (predecessorsId, arrayTy stateTyId [None (), Some (NamedDim nstatesId)])
-        , (inputsId, arrayTy obsTyId [None (), Some (NamedDim n)]) ]
+      [ (modelId, nFutIdentTy_ modelTyId)
+      , (predecessorsId, arrayTy stateTyId [None (), Some (NamedDim nstatesId)])
+      , (inputsId, arrayTy obsTyId [None (), Some (NamedDim n)]) ]
     in
     let retTy = arrayTy probTyId [Some (NamedDim nstatesId), None (), Some (NamedDim n)] in
     let body = futBind_
@@ -250,13 +239,13 @@ lang TrellisGenerateHMMProgram =
 
   sem generateHMMProgram : TrellisCompileOutput -> String
   sem generateHMMProgram =
-  | {env = env, initializer = init, initial = i, output = o, transition = t} ->
-    let viterbi = generateViterbiEntryPoints env i.args o.args t.args in
-    let forward = generateForwardEntryPoints env i.args o.args t.args in
+  | {env = env, initializer = init} ->
+    let viterbi = generateViterbiEntryPoints env in
+    let forward = generateForwardEntryPoints env in
     let logSumExp = generateLogSumExpEntryPoint () in
     let pregenCode = readFile (concat trellisSrcLoc "skeleton/hmm.fut") in
     let trailingCode = FProg {
-      decls = join [[i.decl, o.decl, t.decl], viterbi, forward, [logSumExp]]
+      decls = join [viterbi, forward, [logSumExp]]
     } in
     strJoin "\n" [printFutProg init, pregenCode, printFutProg trailingCode]
 end

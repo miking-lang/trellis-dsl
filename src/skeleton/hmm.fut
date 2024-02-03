@@ -2,10 +2,6 @@
 -- NATIVE VITERBI IMPLEMENTATION --
 -----------------------------------
 
-type state_t = state.t
-type obs_t = obs.t
-type prob_t = prob.t
-
 type forw_res [n][m] = {chi : [n]prob_t, zeta : [m][n]state_t}
 
 let max_state (f : state_t -> prob_t) (s : []state_t) : state_t =
@@ -104,3 +100,7 @@ let forward_helper_gpu [m]
               predecessors[i])
         in
         sum + outp (state.i64 i) signal[t+1])
+
+--------------------
+-- GENERATED CODE --
+--------------------

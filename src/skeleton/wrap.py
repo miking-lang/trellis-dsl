@@ -73,10 +73,19 @@ def unpad_outputs(output, signals):
     return out
 
 class HMM:
-    def __init__(self, args):
-        preds = read_predecessors()
-        self.vpreds = pad_predecessors_viterbi(preds)
-        self.fwpreds = pad_predecessors_forward(preds)
-        self.args = args
-        self.hmm = Futhark(_generated)
+    def viterbi(self, signals):
+        padded_signals = pad_signals(signals, self.boutsz, self.boverlap)
+        res = self.hmm.viterbi(self.model, self.vpreds, padded_signals)
+        output = self.hmm.from_futhark(res)
+        return unpad_outputs(output, signals)
+
+    def forward(self, signals):
+        lens = np.array([len(x) for x in signals])
+        padded_signals = pad_signals(signals, 0, 0)
+        if self.gpuTarget:
+            fut = self.hmm.forward_gpu(self.model, self.fwpreds, padded_signals)
+            out = self.hmm.log_sum_exp_entry(fut, lens)
+        else:
+            out = self.hmm.forward_cpu(self.model, self.fwpreds, padded_signals, lens)
+        return self.hmm.from_futhark(out)
 

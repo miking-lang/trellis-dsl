@@ -6,10 +6,10 @@ include "model/ast.mc"
 include "model/compile.mc"
 include "model/convert.mc"
 include "model/encode.mc"
-include "model/entry.mc"
 include "model/pprint.mc"
 include "model/predecessors.mc"
 include "build.mc"
+include "entry-points.mc"
 include "trellis-arg.mc"
 
 lang Trellis =

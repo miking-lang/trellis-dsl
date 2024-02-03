@@ -1,4 +1,5 @@
 include "seq.mc"
+include "set.mc"
 include "sys.mc"
 
 include "src-loc.mc"
@@ -71,50 +72,24 @@ lang TrellisBuild = TrellisCompileBase
     let batchSize = env.options.batchSize in
     let batchOverlap = env.options.batchOverlap in
     let batchOutputSize = subi batchSize batchOverlap in
-    let signalsId = "signals" in
     let tableIds = mapKeys env.tables in
     let tableArgs =
-      join (map (lam x. join ["self.args['", nameGetStr x, "'], "]) tableIds)
+      strJoin ", " (map (lam x. join ["args['", nameGetStr x, "']"]) tableIds)
     in
     let pythonGlueCode = strJoin "\n" [
-      join [indent 1, "def viterbi(self, ", signalsId, "):"],
-      join [
-        indent 2, "padded_signals = pad_signals(", signalsId, ", ",
-        int2string batchOutputSize, ", ", int2string batchOverlap, ")"],
-      join [indent 2, "res = self.hmm.viterbi(", tableArgs, "self.vpreds, padded_signals)"],
-      join [indent 2, "output = self.hmm.from_futhark(res)"],
-      join [indent 2, "return unpad_outputs(output, ", signalsId, ")"],
+      join [indent 1, "def __init__(self, args):"],
+      join [indent 2, "preds = read_predecessors()"],
+      join [indent 2, "self.vpreds = pad_predecessors_viterbi(preds)"],
+      join [indent 2, "self.fwpreds = pad_predecessors_forward(preds)"],
+      join [indent 2, "self.hmm = Futhark(_generated)"],
+      join [indent 2, "self.model = self.hmm.init_model(", tableArgs, ")"],
+      join [indent 2, "self.boutsz = ", int2string batchOutputSize],
+      join [indent 2, "self.boverlap = ", int2string batchOverlap],
+      join [indent 2, "self.gpuTarget = ", if gpuTarget then "True" else "False"],
       "",
-      if gpuTarget then generateForwardGpuWrapper signalsId tableArgs
-      else generateForwardCpuWrapper signalsId tableArgs
+      join [indent 1, "def __del__(self):"],
+      join [indent 2, "self.model = None"]
     ] in
     let pythonInitCode = readFile (concat trellisSrcLoc "skeleton/wrap.py") in
     concat pythonInitCode pythonGlueCode
-
-  -- Generates Python wrapper code for the Forward algorithm when using a CPU
-  -- target (C or multicore C).
-  sem generateForwardCpuWrapper : String -> String -> String
-  sem generateForwardCpuWrapper signalsId =
-  | tableArgs ->
-    strJoin "\n" [
-      join [indent 1, "def forward(self, ", signalsId, "):"],
-      join [indent 2, "lens = np.array([len(x) for x in ", signalsId, "])"],
-      join [indent 2, "padded_signals = pad_signals(", signalsId, ", 0, 0)"],
-      join [indent 2, "res = self.hmm.forward_cpu(", tableArgs, "self.fwpreds, padded_signals, lens)"],
-      join [indent 2, "return self.hmm.from_futhark(res)"]
-    ]
-
-  -- Generates Python wrapper code for the Forward algorithm when using a GPU
-  -- target (CUDA or OpenCL).
-  sem generateForwardGpuWrapper : String -> String -> String
-  sem generateForwardGpuWrapper signalsId =
-  | tableArgs ->
-    strJoin "\n" [
-      join [indent 1, "def forward(self, ", signalsId, "):"],
-      join [indent 2, "lens = np.array([len(x) for x in ", signalsId, "])"],
-      join [indent 2, "padded_signals = pad_signals(", signalsId, ", 0, 0)"],
-      join [indent 2, "res = self.hmm.forward_gpu(", tableArgs, "self.fwpreds, padded_signals)"],
-      join [indent 2, "out = self.hmm.log_sum_exp_entry(res, lens)"],
-      join [indent 2, "return self.hmm.from_futhark(out)"]
-    ]
 end

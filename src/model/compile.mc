@@ -9,13 +9,16 @@ include "encode.mc"
 include "../trellis-arg.mc"
 include "../trellis-common.mc"
 
-let initialProbabilityId = nameSym "initialProbability"
-let outputProbabilityId = nameSym "outputProbability"
-let transitionProbabilityId = nameSym "transitionProbability"
+let initialProbabilityId = nameSym "initial_probability"
+let outputProbabilityId = nameSym "output_probability"
+let transitionProbabilityId = nameSym "transition_probability"
+let constructModelEntryId = nameSym "init_model"
+let modelId = nameSym "model"
 
 let stateTyId = nameSym "state_t"
 let probTyId = nameSym "prob_t"
 let obsTyId = nameSym "obs_t"
+let modelTyId = nameSym "model_t"
 let stateModuleId = nameSym "state"
 let probModuleId = nameSym "prob"
 let obsModuleId = nameSym "obs"
@@ -65,11 +68,6 @@ lang TrellisCompileBase = TrellisModelAst + FutharkAst
       lhs = probModuleProjection info "neg",
       rhs = probModuleProjection info "inf",
       ty = FTyUnknown {info = info}, info = info}
-end
-
-lang TrellisCompileInitializer =
-  TrellisCompileBase + TrellisTypeBitwidth + TrellisTypeCardinality +
-  FutharkPrettyPrint
 
   sem chooseIntegerType : Int -> FutType
   sem chooseIntegerType =
@@ -82,35 +80,10 @@ lang TrellisCompileInitializer =
       else error "Trellis does not support states requiring more than 63 bits to encode"
     in
     FTyInt {sz = sz, info = NoInfo ()}
-
-  sem generateInitializer : TrellisCompileEnv -> FutProg
-  sem generateInitializer =
-  | env ->
-    let pprintType = lam ty.
-      match pprintType 0 pprintEnvEmpty ty with (_, str) in
-      str
-    in
-    let stateBitwidth = bitwidthType env.stateType in
-    let stateTyStr = pprintType (chooseIntegerType stateBitwidth) in
-    let outTyStr = pprintType (chooseIntegerType (bitwidthType env.outputType)) in
-    let probTy = FTyFloat {
-      sz = if env.options.useDoublePrecisionFloats then F64 () else F32 (),
-      info = NoInfo ()
-    } in
-    let probTyStr = pprintType probTy in
-    let nstates = cardinalityType env.stateType in
-    FProg {decls = [
-      FDeclModuleAlias {ident = stateModuleId, moduleId = stateTyStr, info = NoInfo ()},
-      FDeclModuleAlias {ident = obsModuleId, moduleId = outTyStr, info = NoInfo ()},
-      FDeclModuleAlias {ident = probModuleId, moduleId = probTyStr, info = NoInfo ()},
-      FDeclFun {ident = nstatesId, entry = false, typeParams = [], params = [],
-                ret = FTyInt {info = NoInfo (), sz = I64 ()}, body = futInt_ nstates,
-                info = NoInfo ()}
-    ]}
 end
 
 lang TrellisCompileType =
-  TrellisCompileInitializer + TrellisTypeCardinality + TrellisTypeBitwidth
+  TrellisCompileBase + TrellisTypeCardinality + TrellisTypeBitwidth
 
   sem compileTrellisType : TrellisCompileEnv -> TType -> FutType
   sem compileTrellisType env =
@@ -132,7 +105,7 @@ lang TrellisCompileType =
 end
 
 lang TrellisCompileExpr =
-  TrellisCompileBase + TrellisCompileType + TrellisEncode
+  TrellisCompileBase + TrellisCompileType + TrellisEncode + FutharkPrettyPrint
 
   sem compileTrellisExpr : TrellisCompileEnv -> TExpr -> FutExpr
   sem compileTrellisExpr env =
@@ -164,9 +137,15 @@ lang TrellisCompileExpr =
         ty = FTyUnknown {info = info}, info = info
       }
     in
-    let tableVar = FEVar {ident = table, ty = FTyUnknown {info = info}, info = info} in
+    let tableExpr = FEProj {
+      target = FEVar {
+        ident = modelId, ty = FTyUnknown {info = info}, info = info
+      },
+      label = stringToSid (nameGetStr table), ty = FTyUnknown {info = info},
+      info = info
+    } in
     let resultTy = compileTrellisType env ty in 
-    withTypeFutTm resultTy (foldl compileTableArg tableVar args)
+    withTypeFutTm resultTy (foldl compileTableArg tableExpr args)
   | EIf {cond = cond, thn = thn, els = els, ty = ty, info = info} ->
     let cond = compileTrellisExpr env cond in
     let thn = compileTrellisExpr env thn in
@@ -336,7 +315,7 @@ lang TrellisCompileProbabilityFunction =
     let defaultBody = negInfExpr info in
     match foldr compileCase (mapEmpty nameCmp, defaultBody) cases
     with (tables, body) in
-    let args = concat (mapBindings tables) args in
+    let args = cons (modelId, nFutIdentTy_ modelTyId) args in
     let funDecl = FDeclFun {
         ident = id, entry = false, typeParams = [],
         params = args, ret = FTyIdent {ident = probTyId, info = info},
@@ -353,6 +332,68 @@ lang TrellisCompileProbabilityFunction =
   | e -> sfoldTExprTExpr (collectUsedTables tables) acc e
 end
 
+lang TrellisCompileInitializer =
+  TrellisCompileBase + TrellisTypeBitwidth + TrellisTypeCardinality +
+  TrellisCompileProbabilityFunction + FutharkPrettyPrint
+
+  sem constructModelEntry : [(Name, FutType)] -> FutDecl
+  sem constructModelEntry =
+  | params ->
+    let modelFields =
+      map (lam p. (nameGetStr p.0, nFutVar_ p.0)) params
+    in
+    let modelBody = futRecord_ modelFields in
+    FDeclFun {
+      ident = constructModelEntryId, entry = true, typeParams = [],
+      params = params, ret = nFutIdentTy_ modelTyId, body = modelBody,
+      info = NoInfo ()
+    }
+
+  sem generateInitializer : TrellisCompileEnv -> TModel -> FutProg
+  sem generateInitializer env =
+  | model ->
+    let pprintType = lam ty.
+      match pprintType 0 pprintEnvEmpty ty with (_, str) in
+      str
+    in
+    match generateProbabilityFunctions env model with (initp, outp, transp) in
+    let stateBitwidth = bitwidthType env.stateType in
+    let stateTyStr = pprintType (chooseIntegerType stateBitwidth) in
+    let outTyStr = pprintType (chooseIntegerType (bitwidthType env.outputType)) in
+    let probTy = FTyFloat {
+      sz = if env.options.useDoublePrecisionFloats then F64 () else F32 (),
+      info = NoInfo ()
+    } in
+    let probTyStr = pprintType probTy in
+    let nstates = cardinalityType env.stateType in
+    let tableArgs = mapBindings env.tables in
+    let tableArgTypes = map (lam a. (nameGetStr a.0, a.1)) tableArgs in
+    FProg {decls = [
+      FDeclModuleAlias {ident = stateModuleId, moduleId = stateTyStr, info = NoInfo ()},
+      FDeclModuleAlias {ident = obsModuleId, moduleId = outTyStr, info = NoInfo ()},
+      FDeclModuleAlias {ident = probModuleId, moduleId = probTyStr, info = NoInfo ()},
+      FDeclType {
+        ident = stateTyId, typeParams = [],
+        ty = futProjTy_ (nFutIdentTy_ stateModuleId) "t", info = NoInfo ()},
+      FDeclType {
+        ident = obsTyId, typeParams = [],
+        ty = futProjTy_ (nFutIdentTy_ obsModuleId) "t", info = NoInfo ()},
+      FDeclType {
+        ident = probTyId, typeParams = [],
+        ty = futProjTy_ (nFutIdentTy_ probModuleId) "t", info = NoInfo ()},
+      FDeclFun {ident = nstatesId, entry = false, typeParams = [], params = [],
+                ret = FTyInt {info = NoInfo (), sz = I64 ()}, body = futInt_ nstates,
+                info = NoInfo ()},
+      FDeclType {
+        ident = modelTyId, typeParams = [], ty = futRecordTy_ tableArgTypes,
+        info = NoInfo ()},
+      constructModelEntry tableArgs,
+      initp.decl,
+      outp.decl,
+      transp.decl
+    ]}
+end
+
 lang TrellisCompileModel =
   TrellisCompileInitializer + TrellisCompileProbabilityFunction
 
@@ -365,13 +406,7 @@ lang TrellisCompileModel =
 
     -- The generated initializer code, which we put at the top of the final
     -- Futhark program.
-    initializer : FutProg,
-
-    -- The generated code for the initial, output, and transition
-    -- probabilities.
-    initial : ProbFunRepr,
-    output : ProbFunRepr,
-    transition : ProbFunRepr
+    initializer : FutProg
   }
 
   sem initCompileEnv : TrellisOptions -> TModel -> TrellisCompileEnv
@@ -388,10 +423,7 @@ lang TrellisCompileModel =
   sem compileTrellisModel options =
   | model ->
     let env = initCompileEnv options model in
-    match generateProbabilityFunctions env model
-    with (initial, output, transition) in
-    { env = env, initializer = generateInitializer env, initial = initial
-    , output = output, transition = transition }
+    { env = env, initializer = generateInitializer env model }
 end
 
 lang TestLang = TrellisCompileModel + FutharkPrettyPrint
