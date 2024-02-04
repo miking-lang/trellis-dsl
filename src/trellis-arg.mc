@@ -11,6 +11,7 @@ type TrellisOptions = {
   useDoublePrecisionFloats : Bool,
   useBitsetEncoding : Bool,
   computePredecessors : Bool,
+  forcePrecomputeTables : Bool,
   printParse : Bool,
   printModel : Bool,
   outputDir : String,
@@ -23,6 +24,7 @@ let trellisDefaultOptions = {
   useDoublePrecisionFloats = false,
   useBitsetEncoding = false,
   computePredecessors = false,
+  forcePrecomputeTables = false,
   printParse = false,
   printModel = false,
   outputDir = "build",
@@ -44,45 +46,50 @@ let validateFutharkTarget = lam target.
 let config = [
   ([("--batch-size", " ", "<n>")],
     defaultStr (int2string trellisDefaultOptions.batchSize)
-      "Manually sets the size of each batch of input values processed in Viterbi",
+      "Manually sets the size of each batch of input values processed in Viterbi.",
     lam p.
       let o = p.options in {o with batchSize = argToIntMin p 1}),
   ([("--batch-overlap", " ", "<n>")],
     defaultStr (int2string trellisDefaultOptions.batchOverlap)
-      "Manually sets the overlap to use between consecutive batches",
+      "Manually sets the overlap to use between consecutive batches in Viterbi.",
     lam p.
       let o = p.options in {o with batchOverlap = argToIntMin p 1}),
   ([("--use-double-precision", "", "")],
     defaultStr (bool2string trellisDefaultOptions.useDoublePrecisionFloats)
-      "Use double-precision floating point numbers",
+      "Use double-precision floating point numbers.",
     lam p.
       let o = p.options in {o with useDoublePrecisionFloats = true}),
   ([("--use-bitset-encoding", "", "")],
     defaultStr (bool2string trellisDefaultOptions.useBitsetEncoding)
-      "Enables encoding of states using a bitset approach",
+      "Enables encoding of states using a bitset approach.",
     lam p.
       let o = p.options in {o with useBitsetEncoding = true}),
   ([("--compute-predecessors", "", "")],
     defaultStr (bool2string trellisDefaultOptions.computePredecessors)
-      "Compute the predecessors of all states, which can take a long time",
+      "Compute the predecessors of all states, which can take a long time.",
     lam p.
       let o = p.options in {o with computePredecessors = true}),
+  ([("--force-precompute-tables", "", "")],
+    defaultStr (bool2string trellisDefaultOptions.forcePrecomputeTables)
+      "Forces pre-computation of all tables when constructing the model. This improves execution time but increases memory usage.",
+    lam p.
+      let o = p.options in {o with forcePrecomputeTables = true}),
   ([("--print-parse", "", "")],
-    "Pretty-prints the initial AST after parsing",
+    "Pretty-prints the initial AST after parsing.",
     lam p.
       let o = p.options in {o with printParse = true}),
   ([("--print-model", "", "")],
-    "Pretty-prints the model AST after pre-processing the parsed AST",
+    "Pretty-prints the model AST after pre-processing the parsed AST.",
     lam p.
       let o = p.options in {o with printModel = true}),
   ([("--output-dir", " ", "<dir>")],
     defaultStr trellisDefaultOptions.outputDir
-      "Specifies the name of a directory in which files should be placed",
+      "Specifies the name of a directory in which files should be placed.",
     lam p.
       let o = p.options in {o with outputDir = argToString p}),
   ([("--futhark-target", " ", "<target>")],
     defaultStr trellisDefaultOptions.futharkTarget
-      "Specifies the target backend to use when compiling Futhark",
+      "Specifies the target backend to use when compiling Futhark.",
     lam p.
       let o = p.options in {o with futharkTarget = validateFutharkTarget (argToString p)})
 ]

@@ -13,16 +13,19 @@ let initialProbabilityId = nameSym "initial_probability"
 let outputProbabilityId = nameSym "output_probability"
 let transitionProbabilityId = nameSym "transition_probability"
 let constructModelEntryId = nameSym "init_model"
+let tablesId = nameSym "tables"
 let modelId = nameSym "model"
 
 let stateTyId = nameSym "state_t"
 let probTyId = nameSym "prob_t"
 let obsTyId = nameSym "obs_t"
 let modelTyId = nameSym "model_t"
+let tablesTyId = nameSym "tables_t"
 let stateModuleId = nameSym "state"
 let probModuleId = nameSym "prob"
 let obsModuleId = nameSym "obs"
 let nstatesId = nameSym "nstates"
+let nobsId = nameSym "nobs"
 
 lang TrellisCompileBase = TrellisModelAst + FutharkAst
   -- The environment used throughout compilation of the Trellis model AST.
@@ -35,7 +38,15 @@ lang TrellisCompileBase = TrellisModelAst + FutharkAst
 
     -- The declared types of the state and the output
     stateType : TType,
-    outputType : TType
+    outputType : TType,
+
+    -- Determines whether we pre-compute the tables when constructing the
+    -- model, or if we directly use the functions to compute the initial,
+    -- output, and transition probabilities. This is a trade-off between
+    -- execution time and memory usage -- for models with few states, it is
+    -- very likely to be worth precomputing the tables due to the performance
+    -- gains.
+    precomputeTables : Bool
   }
 
   sem probModuleProjection : Info -> String -> FutExpr
@@ -139,7 +150,7 @@ lang TrellisCompileExpr =
     in
     let tableExpr = FEProj {
       target = FEVar {
-        ident = modelId, ty = FTyUnknown {info = info}, info = info
+        ident = tablesId, ty = FTyUnknown {info = info}, info = info
       },
       label = stringToSid (nameGetStr table), ty = FTyUnknown {info = info},
       info = info
@@ -315,7 +326,7 @@ lang TrellisCompileProbabilityFunction =
     let defaultBody = negInfExpr info in
     match foldr compileCase (mapEmpty nameCmp, defaultBody) cases
     with (tables, body) in
-    let args = cons (modelId, nFutIdentTy_ modelTyId) args in
+    let args = cons (tablesId, nFutIdentTy_ tablesTyId) args in
     let funDecl = FDeclFun {
         ident = id, entry = false, typeParams = [],
         params = args, ret = FTyIdent {ident = probTyId, info = info},
@@ -336,13 +347,70 @@ lang TrellisCompileInitializer =
   TrellisCompileBase + TrellisTypeBitwidth + TrellisTypeCardinality +
   TrellisCompileProbabilityFunction + FutharkPrettyPrint
 
-  sem constructModelEntry : [(Name, FutType)] -> FutDecl
-  sem constructModelEntry =
-  | params ->
-    let modelFields =
-      map (lam p. (nameGetStr p.0, nFutVar_ p.0)) params
+  sem constructTablesType : TrellisCompileEnv -> FutDecl
+  sem constructTablesType =
+  | env ->
+    let tables = map (lam t. (nameGetStr t.0, t.1)) (mapBindings env.tables) in
+    FDeclType {
+      ident = tablesTyId, typeParams = [],
+      ty = futRecordTy_ tables, info = NoInfo ()
+    }
+
+  sem constructModelType : TrellisCompileEnv -> FutDecl
+  sem constructModelType =
+  | env ->
+    let modelTy =
+      if env.precomputeTables then
+        let probTy = nFutIdentTy_ probTyId in
+        futRecordTy_ ([
+          ("init", futSizedArrayTy_ probTy nstatesId),
+          ("out", futSizedArrayTy_ (futSizedArrayTy_ probTy nobsId) nstatesId),
+          ("trans", futSizedArrayTy_ (futSizedArrayTy_ probTy nstatesId) nstatesId)
+        ])
+      else
+        FTyIdent {ident = tablesTyId, info = NoInfo ()}
     in
-    let modelBody = futRecord_ modelFields in
+    FDeclType {ident = modelTyId, typeParams = [], ty = modelTy, info = NoInfo ()}
+
+  sem constructModelEntry : TrellisCompileEnv -> FutDecl
+  sem constructModelEntry =
+  | env ->
+    let localTablesId = nameSym "tables" in
+    let addTabulate = lam d. lam acc.
+      futTabulate_ (nFutVar_ d.0) (futLam_ d.2 acc)
+    in
+    let probBody = lam funId. lam dims.
+      let probArgs =
+        map
+          (lam d. futApp_ (futProj_ (nFutVar_ d.1) "i64") (futVar_ d.2))
+          dims
+      in
+      let probApp =
+        futAppSeq_ (nFutVar_ funId) (cons (nFutVar_ localTablesId) probArgs)
+      in
+      foldr addTabulate probApp dims
+    in
+    let params = mapBindings env.tables in
+    let tableBody =
+      futRecord_ (map (lam p. (nameGetStr p.0, nFutVar_ p.0)) params)
+    in
+    let modelBody =
+      if env.precomputeTables then
+        futBind_
+          (nuFutLet_ localTablesId tableBody)
+          (futRecord_ [
+            ("init",
+              probBody initialProbabilityId [(nstatesId, stateModuleId, "x")]),
+            ("out",
+              probBody outputProbabilityId [
+                (nstatesId, stateModuleId, "x"), (nobsId, obsModuleId, "o")]),
+            ("trans",
+              probBody transitionProbabilityId [
+                (nstatesId, stateModuleId, "x"), (nstatesId, stateModuleId, "y")])
+          ])
+      else
+        tableBody
+    in
     FDeclFun {
       ident = constructModelEntryId, entry = true, typeParams = [],
       params = params, ret = nFutIdentTy_ modelTyId, body = modelBody,
@@ -365,9 +433,6 @@ lang TrellisCompileInitializer =
       info = NoInfo ()
     } in
     let probTyStr = pprintType probTy in
-    let nstates = cardinalityType env.stateType in
-    let tableArgs = mapBindings env.tables in
-    let tableArgTypes = map (lam a. (nameGetStr a.0, a.1)) tableArgs in
     FProg {decls = [
       FDeclModuleAlias {ident = stateModuleId, moduleId = stateTyStr, info = NoInfo ()},
       FDeclModuleAlias {ident = obsModuleId, moduleId = outTyStr, info = NoInfo ()},
@@ -381,16 +446,18 @@ lang TrellisCompileInitializer =
       FDeclType {
         ident = probTyId, typeParams = [],
         ty = futProjTy_ (nFutIdentTy_ probModuleId) "t", info = NoInfo ()},
-      FDeclFun {ident = nstatesId, entry = false, typeParams = [], params = [],
-                ret = FTyInt {info = NoInfo (), sz = I64 ()}, body = futInt_ nstates,
-                info = NoInfo ()},
-      FDeclType {
-        ident = modelTyId, typeParams = [], ty = futRecordTy_ tableArgTypes,
-        info = NoInfo ()},
-      constructModelEntry tableArgs,
+      FDeclConst {
+        ident = nstatesId, ty = FTyInt {info = NoInfo (), sz = I64 ()},
+        val = futInt_ (cardinalityType env.stateType), info = NoInfo ()},
+      FDeclConst {
+        ident = nobsId, ty = FTyInt {info = NoInfo (), sz = I64 ()},
+        val = futInt_ (cardinalityType env.outputType), info = NoInfo ()},
+      constructTablesType env,
       initp.decl,
       outp.decl,
-      transp.decl
+      transp.decl,
+      constructModelType env,
+      constructModelEntry env
     ]}
 end
 
@@ -412,9 +479,12 @@ lang TrellisCompileModel =
   sem initCompileEnv : TrellisOptions -> TModel -> TrellisCompileEnv
   sem initCompileEnv options =
   | model ->
+    -- TODO(larshum, 2024-02-04): Add heuristic to determine whether to
+    -- pre-compute the probability tables or not.
     let env =
       { options = options, tables = mapEmpty nameCmp
-      , stateType = model.stateType, outputType = model.outType }
+      , stateType = model.stateType, outputType = model.outType
+      , precomputeTables = options.forcePrecomputeTables }
     in
     let tables = mapMapWithKey (lam. lam ty. compileTrellisType env ty) model.tables in
     {env with tables = tables}
@@ -440,7 +510,7 @@ let pprintExpr = lam e.
   match pprintExpr 0 pprintEnvEmpty e with (_, s) in s
 in
 let compEnv = lam opts. lam tables. lam sty. lam oty.
-  {options = opts, tables = tables, stateType = sty, outputType = oty}
+  {options = opts, tables = tables, stateType = sty, outputType = oty, precomputeTables = false}
 in
 let eqStringIgnoreWhitespace = lam l. lam r.
   eqString

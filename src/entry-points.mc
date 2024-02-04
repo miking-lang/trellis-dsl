@@ -35,27 +35,53 @@ lang TrellisGenerateEntry = TrellisCompileModel + FutharkAst
   | e ->
     futApp_ (futProj_ (nFutVar_ stateModuleId) "i64") e
 
-  sem generateHigherOrderProbabilityFunctions : () -> (FutExpr, [Name])
+  sem generateHigherOrderProbabilityFunctions : TrellisCompileEnv -> (FutExpr, [Name])
   sem generateHigherOrderProbabilityFunctions =
-  | _ ->
+  | env ->
     let initId = nameSym "initp" in
     let outId = nameSym "outp" in
     let transId = nameSym "transp" in
     let probFunIds = [initId, outId, transId] in
-    let initExpr =
-      generateHigherOrderProbabilityFunction
-        initId initialProbabilityId [nameNoSym "x"]
+    let probFunDeclExpr =
+      if env.precomputeTables then
+        let initExpr =
+          generateTableAccess initId "init" [("x", stateModuleId)]
+        in
+        let outExpr =
+          generateTableAccess outId "out" [("x", stateModuleId), ("o", obsModuleId)]
+        in
+        let transExpr =
+          generateTableAccess transId "trans" [("x", stateModuleId), ("y", stateModuleId)]
+        in
+        futBindall_ [initExpr, outExpr, transExpr]
+      else
+        let initExpr =
+          generateHigherOrderProbabilityFunction
+            initId initialProbabilityId [nameNoSym "x"]
+        in
+        let outExpr =
+          generateHigherOrderProbabilityFunction
+            outId outputProbabilityId [nameNoSym "x", nameNoSym "o"]
+        in
+        let transExpr =
+          generateHigherOrderProbabilityFunction
+            transId transitionProbabilityId [nameNoSym "x", nameNoSym "y"]
+        in
+        futBindall_ [initExpr, outExpr, transExpr]
     in
-    let outExpr =
-      generateHigherOrderProbabilityFunction
-        outId outputProbabilityId [nameNoSym "x", nameNoSym "o"]
-    in
-    let transExpr =
-      generateHigherOrderProbabilityFunction
-        transId transitionProbabilityId [nameNoSym "x", nameNoSym "y"]
-    in
-    let probFunDeclExpr = futBindall_ [initExpr, outExpr, transExpr] in
     (probFunDeclExpr, probFunIds)
+
+  sem generateTableAccess : Name -> String -> [(String, Name)] -> FutExpr
+  sem generateTableAccess id field =
+  | args ->
+    let arrayAccess = lam acc. lam arg.
+      futArrayAccess_ acc
+        (futApp_ (futProj_ (nFutVar_ arg.1) "to_i64") (futVar_ arg.0))
+    in
+    let access =
+      foldl arrayAccess (futProj_ (nFutVar_ modelId) field) args
+    in
+    nuFutLet_ id (foldr futLam_ access (map (lam a. a.0) args))
 
   sem generateHigherOrderProbabilityFunction : Name -> Name -> [Name] -> FutExpr
   sem generateHigherOrderProbabilityFunction id mainDefId =
@@ -84,7 +110,7 @@ lang TrellisGenerateViterbiEntry = TrellisGenerateEntry
       , (inputsId, arrayTy obsTyId [Some (NamedDim m), Some (NamedDim n)]) ]
     in
     let retTy = arrayTy stateTyId [None (), Some (NamedDim n)] in
-    match generateHigherOrderProbabilityFunctions () with (expr, probFunIds) in
+    match generateHigherOrderProbabilityFunctions env with (expr, probFunIds) in
     let body = futBind_ expr (generateViterbiBatchingMap env probFunIds) in
     [FDeclFun {
       ident = viterbiEntryId, entry = true,
@@ -144,7 +170,7 @@ lang TrellisGenerateForwardEntry = TrellisGenerateEntry
   sem generateForwardEntryPoints : TrellisCompileEnv -> [FutDecl]
   sem generateForwardEntryPoints =
   | env ->
-    match generateHigherOrderProbabilityFunctions () with (expr, probFunIds) in
+    match generateHigherOrderProbabilityFunctions env with (expr, probFunIds) in
     let gpuTarget =
       match env.options.futharkTarget with "cuda" | "opencl" then true
       else false
