@@ -1,3 +1,4 @@
+include "error.mc"
 include "name.mc"
 include "map.mc"
 include "mexpr/info.mc"
@@ -65,6 +66,7 @@ lang TrellisModelTypeAst
         Some (TTable {args = args, ret = ret, info = mergeInfo i1 (infoTTy ret)})
       else None ()
     else None ()
+  | (lty, rty) -> errorSingle [infoTTy lty, infoTTy rty] "Type mismatch"
 end
 
 lang TrellisModelExprAst = TrellisModelTypeAst
