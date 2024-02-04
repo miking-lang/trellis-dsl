@@ -15,7 +15,7 @@ model {
   # Declaration of tables containing data provided at runtime
   table initialProb(Kmer, Duration) : Probability
   table outputProb(Kmer, ObsType) : Probability
-  table trans1(Kmer, Kmer) : Probability
+  table trans1(Nucleotide, Kmer) : Probability
   table trans2(Duration) : Probability
   table gamma() : Probability
 
@@ -24,7 +24,7 @@ model {
   P(output o | x) = outputProb(x[0], o)
   P(transition x y) = {
     | { ([a, as...], 1) -> ([bs..., b], k) | as == bs } =>
-      trans1(x[0], y[0]) * trans2(y[1])
+      trans1(y[0][2], x[0]) * trans2(y[1])
 
     | { (x1, n1) -> (x2, n2) | x1 == x2, n1 == maxduration, n2 == maxduration } =>
       gamma()

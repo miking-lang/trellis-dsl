@@ -6,35 +6,23 @@ import numpy as np
 from trellis import HMM
 import time
 
-# Expands the transition probabilities from a 4 x 64 matrix to a 64 x 64
-# matrix.
-def expand_trans_probs(trans):
-    exp_trans = np.zeros((64, 64), dtype=np.float32)
-    for i in range(4):
-        for j in range(4):
-            for k in range(4):
-                for l in range(4):
-                    for m in range(4):
-                        for n in range(4):
-                            src_idx = 16 * i + 4 * j + k
-                            dst_idx = 16 * l + 4 * m + n
-                            exp_trans[src_idx][dst_idx] = trans[n][src_idx]
-    return exp_trans
-
 # Generates uniformly distributed initial positions among the states at layer
 # zero. All other states have probability zero initially.
-def generate_init_probs():
-    init_probs = np.zeros((64, 16), dtype=np.float32)
-    for kmer in range(0, 64):
-        init_probs[kmer][0] = log(1.0 / 64.0)
+def generate_init_probs(k):
+    init_probs = np.zeros((4**k, 16), dtype=np.float32)
+    for kmer in range(0, 4**k):
+        init_probs[kmer][0] = log(1.0 / float(4**k))
         for layer in range(1, 16):
             init_probs[kmer][layer] = -inf
     return init_probs
 
-def transform_output_probs(obs):
-    output_probs = np.zeros((64, 101), dtype=np.float32)
-    for i in range(64):
-        idx = (i % 4) * 16 + ((i // 4) % 4) * 4 + (i // 16)
+def reverse_index(i, k):
+    return sum([(i // 4**x) % 4 * (4**(k-x-1)) for x in range(k)])
+
+def transform_output_probs(obs, k):
+    output_probs = np.zeros((4**k, 101), dtype=np.float32)
+    for i in range(4**k):
+        idx = reverse_index(i, k)
         for j in range(101):
             output_probs[i][j] = obs[j][idx]
     return output_probs
@@ -44,12 +32,12 @@ signals_path = sys.argv[2]
 with h5py.File(model_path, "r") as f:
     with np.errstate(divide="ignore"):
         obs = np.log(f['Tables']['ObservationProbabilities'][:])
-    trans = np.log(f['Tables']['TransitionProbabilities'][:])
+    trans1 = np.log(f['Tables']['TransitionProbabilities'][:])
     duration = np.log(f['Tables']['DurationProbabilities'][:])
     tail_factor = np.log(f['Tables']['DurationProbabilities'].attrs['TailFactor'])
-    trans1 = expand_trans_probs(trans)
-    init_probs = generate_init_probs()
-    output_probs = transform_output_probs(obs)
+    kmer_length = f['Parameters'].attrs['KMerLength']
+    init_probs = generate_init_probs(kmer_length)
+    output_probs = transform_output_probs(obs, kmer_length)
 with h5py.File(signals_path, "r") as f:
     keys = list(f.keys())
     signals = [f[k]['Raw']['Signal'][:].tolist() for k in keys]
@@ -63,22 +51,13 @@ tables = {
 }
 hmm = HMM(tables)
 
-times = []
-for i in range(1):
-    t0 = time.time()
-    p = hmm.forward(signals)
-    t1 = time.time()
-    times.append(t1-t0)
+outputs = hmm.viterbi(signals)
+probs = hmm.forward(signals)
 
-print(np.average(times), np.std(times))
-
-#with open("measurements.txt", "w+") as f:
-#    f.write(f"{' '.join([str(x) for x in times])}")
-
-#outc = ['A','C','G','T']
-#for i, signal in enumerate(outputs):
-#    print(f"Signal #{i+1} ({probs[i]})")
-#    for s in signal:
-#        if s % 16 == 0:
-#            print(outc[(s // 16) % 4], end="")
-#    print("")
+outc = ['A','C','G','T']
+for i, signal in enumerate(outputs):
+    print(f"Signal #{i+1} ({probs[i]})")
+    for s in signal:
+        if s % 16 == 0:
+            print(outc[(s // 16) % 4], end="")
+    print("")
