@@ -4,17 +4,18 @@
 
 type forw_res [n][m] = {chi : [n]prob_t, zeta : [m][n]state_t}
 
-let max_state (f : state_t -> prob_t) (s : []state_t) : state_t =
-  let cmp = \acc x -> if f acc > f x then acc else x in
-  foldl cmp s[0] s[1:]
-
 let max_index_by_state (s : []prob_t) : i64 =
   let cmp = \a b -> if a.1 > b.1 then a else b in
   let is = map (\i -> (i, s[i])) (indices s) in
   (reduce cmp is[0] is[1:]).0
 
+let max_pred (f : state_t -> prob_t) (s : []state_t) : (state_t, prob_t) =
+  let max_cmp = \x y -> if x.1 > y.1 then x else y in
+  let preds = map (\x -> (x, f x)) s in
+  reduce max_cmp preds[0] preds[1:]
+
 let viterbi_forward [m]
-  (predecessors : [nstates][]state_t)
+  (predecessors : [nstates][npreds]state_t)
   (transp : state_t -> state_t -> prob_t)
   (outp : state_t -> obs_t -> prob_t)
   (signal : [m]obs_t)
@@ -23,10 +24,10 @@ let viterbi_forward [m]
   let zeta = tabulate m (\_ -> tabulate nstates (\_ -> state.i32 0)) in
   loop {chi, zeta} = {chi = chi1, zeta = zeta} for i < m do
     let x = signal[i] in
-    let log_prob_from (s : state_t) (pre : state_t) : prob_t = chi[state.to_i64 pre] + transp pre s in
-    let new_zeta = tabulate nstates (\s -> max_state (\p -> log_prob_from (state.i64 s) p) predecessors[s]) in
-    let new_chi : [nstates]prob_t =
-      map2 (\s pre -> log_prob_from (state.i64 s) pre + outp (state.i64 s) x) (indices new_zeta) new_zeta
+    let f = \dst src -> chi[state.to_i64 src] + transp src dst + outp dst x in
+    let (new_zeta, new_chi) =
+      unzip
+        (tabulate nstates (\dst -> max_pred (f (state.i64 dst)) predecessors[dst]))
     in
     {chi = new_chi, zeta = zeta with [i] = new_zeta}
 
@@ -36,7 +37,7 @@ let viterbi_backward [m] (s_last : state_t) (zeta : [m][nstates]state_t) : [1+m]
     acc with [i+1] = zeta[i][state.to_i64 acc[i]]
 
 let viterbi_helper [m]
-  (predecessors : [nstates][]state_t)
+  (predecessors : [nstates][npreds]state_t)
   (initp : state_t -> prob_t)
   (outp : state_t -> obs_t -> prob_t)
   (transp : state_t -> state_t -> prob_t)
@@ -57,7 +58,7 @@ let log_sum_exp (s : []prob_t) : prob_t =
   else x + prob.log (prob.sum (map (\y -> prob.exp(y - x)) s))
 
 let forward_helper_cpu
-  (predecessors : [nstates][]state_t)
+  (predecessors : [nstates][npreds]state_t)
   (initp : state_t -> prob_t)
   (outp : state_t -> obs_t -> prob_t)
   (transp : state_t -> state_t -> prob_t)
@@ -79,7 +80,7 @@ let forward_helper_cpu
   log_sum_exp alphaTminus1
 
 let forward_helper_gpu [m]
-  (predecessors : [nstates][]state_t)
+  (predecessors : [nstates][npreds]state_t)
   (initp : state_t -> prob_t)
   (outp : state_t -> obs_t -> prob_t)
   (transp : state_t -> state_t -> prob_t)

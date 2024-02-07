@@ -192,7 +192,7 @@ lang TrellisGenerateForwardEntry = TrellisGenerateEntry
     } in
     let params =
       [ (modelId, nFutIdentTy_ modelTyId)
-      , (predecessorsId, arrayTy stateTyId [None (), Some (NamedDim nstatesId)])
+      , (predecessorsId, arrayTy stateTyId [Some (NamedDim npredsId), Some (NamedDim nstatesId)])
       , (inputsId, arrayTy obsTyId [None (), Some (NamedDim n)])
       , (inputLengthsId, inputLengthsType ) ]
     in
@@ -214,7 +214,7 @@ lang TrellisGenerateForwardEntry = TrellisGenerateEntry
   | forwardArgs ->
     let params =
       [ (modelId, nFutIdentTy_ modelTyId)
-      , (predecessorsId, arrayTy stateTyId [None (), Some (NamedDim nstatesId)])
+      , (predecessorsId, arrayTy stateTyId [Some (NamedDim npredsId), Some (NamedDim nstatesId)])
       , (inputsId, arrayTy obsTyId [None (), Some (NamedDim n)]) ]
     in
     let retTy = arrayTy probTyId [Some (NamedDim nstatesId), None (), Some (NamedDim n)] in

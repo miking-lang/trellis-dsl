@@ -51,22 +51,14 @@ match result with ParseOK r then
     -- Encodes state types as integers when in table accesses.
     let modelAst = encodeStateOperations options modelAst in
 
+    -- Compute the predecessors of each state and write them to a file.
+    let preds = computePredecessors modelAst in
+    writePredecessors options.outputDir preds;
+
     -- Compile the Trellis model to Futhark, resulting in initializer code,
     -- definitions of the initial, output, and transition probabilities, as
     -- well and the compilation environment (to use later).
-    let fut = compileTrellisModel options modelAst in
-
-    -- If enabled, compute the predecessors of each state and write this to a
-    -- file to be used at runtime. As this takes a long time to complete,
-    -- because of an unoptimized implementation, this is currently disabled by
-    -- default.
-    -- OPT(larshum, 2024-01-30): Implement a more sophisticated approach which
-    -- excludes "impossible" predecessors based on the conditions, to vastly
-    -- improve the performance for most models (sparse models, in particular).
-    (if options.computePredecessors then
-      let preds = computePredecessors modelAst in
-      writePredecessors options.outputDir preds
-    else ());
+    let fut = compileTrellisModel options preds modelAst in
 
     -- Generate a complete Futhark program by gluing together parts from the
     -- compilation results with pre-defined implemenentations of the core HMM
