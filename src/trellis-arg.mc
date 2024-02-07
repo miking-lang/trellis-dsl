@@ -10,7 +10,6 @@ type TrellisOptions = {
   batchOverlap : Int,
   useDoublePrecisionFloats : Bool,
   useBitsetEncoding : Bool,
-  computePredecessors : Bool,
   forcePrecomputeTables : Bool,
   printParse : Bool,
   printModel : Bool,
@@ -23,11 +22,10 @@ let trellisDefaultOptions = {
   batchOverlap = 128,
   useDoublePrecisionFloats = false,
   useBitsetEncoding = false,
-  computePredecessors = false,
   forcePrecomputeTables = false,
   printParse = false,
   printModel = false,
-  outputDir = "build",
+  outputDir = ".",
   futharkTarget = "multicore"
 }
 
@@ -64,11 +62,6 @@ let config = [
       "Enables encoding of states using a bitset approach.",
     lam p.
       let o = p.options in {o with useBitsetEncoding = true}),
-  ([("--compute-predecessors", "", "")],
-    defaultStr (bool2string trellisDefaultOptions.computePredecessors)
-      "Compute the predecessors of all states, which can take a long time.",
-    lam p.
-      let o = p.options in {o with computePredecessors = true}),
   ([("--force-precompute-tables", "", "")],
     defaultStr (bool2string trellisDefaultOptions.forcePrecomputeTables)
       "Forces pre-computation of all tables when constructing the model. This improves execution time but increases memory usage.",
