@@ -409,13 +409,15 @@ lang TrellisModelConvert =
     let allSet = SAll {info = info} in
     let boundBody = mapUnion tables args in
     let body = convertTrellisExpr boundBody e in
-    [{cond = allSet, body = body}]
+    match tyTExpr body with TProb _ then [{cond = allSet, body = body}]
+    else errorSingle [infoTExpr body] "Expression must have probability type"
   | CasesProbDecl {cases = cases, info = info} ->
     let boundBody = mapUnion tables args in
     let extractCase = lam acc. lam c.
       let cond = convertTrellisSet tables stateType c.s in
       let body = convertTrellisExpr boundBody c.e in
-      snoc acc {cond = cond, body = body}
+      match tyTExpr body with TProb _ then snoc acc {cond = cond, body = body}
+      else errorSingle [infoTExpr body] "Expression must have probability type"
     in
     foldl extractCase [] cases
 end
