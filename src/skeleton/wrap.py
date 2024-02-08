@@ -13,19 +13,6 @@ def read_predecessors():
             preds.append([int(x) for x in line.split(" ")])
     return preds
 
-def pad_predecessors(src, f):
-    nstates = len(src)
-    maxpreds = max([len(p) for p in src])
-    preds = np.zeros((nstates, maxpreds), dtype=int)
-    for i, p in enumerate(preds):
-        pad_value = f(src[i])
-        for j in range(maxpreds):
-            if j < len(src[i]):
-                p[j] = src[i][j]
-            else:
-                p[j] = pad_value
-    return preds
-
 def pick_non_pred(preds, n):
     if len(preds) == n:
         return None
@@ -36,23 +23,20 @@ def pick_non_pred(preds, n):
         i += 1
     return i
 
-# NOTE(larshum, 2024-01-31): Futhark requires arrays to be regular, i.e., if
-# some states have more predecessors than others, we need to pad the 2d array
-# to ensure all of them have the same inner size. As adding a branch in the GPU
-# code results in a significant slowdown, we instead pad with a value we know
-# won't impact the result:
-# * For the Viterbi algorithm, repeating the last predecessor over and over
-#   does not impact the final result, as we're only interested in the max
-#   probability. However, this assumes all tasks have a predecessor.
-# * For the Forward algorithm, we repeat a state which we know is not a
-#   predecessor, as this won't impact our sum (the transition probability is
-#   zero).
-def pad_predecessors_viterbi(data):
-    return pad_predecessors(data, lambda row: row[-1])
-
-def pad_predecessors_forward(data):
-    nstates = len(data)
-    return pad_predecessors(data, lambda row: pick_non_pred(row, nstates))
+# Futhark requires the predecessors (a 2d array) to be regular, i.e., each
+# inner array must have the same size. For both the Forward and the Viterbi
+# algorithms, we pad with a state that is not actually a predecessor, as this
+# does not impact the final result.
+def pad_predecessors(src):
+    nstates = len(src)
+    maxpreds = max([len(p) for p in src])
+    preds = np.zeros((nstates, maxpreds), dtype=int)
+    for i, p in enumerate(preds):
+        n = len(src[i])
+        pad_value = pick_non_pred(src[i], n)
+        p[:n] = src[i]
+        p[n:] = [pad_value for j in range(n, maxpreds)]
+    return preds
 
 def pad_signals(signals, bos, boverlap):
     lens = [len(s) for s in signals]
@@ -75,7 +59,7 @@ def unpad_outputs(output, signals):
 class HMM:
     def viterbi(self, signals):
         padded_signals = pad_signals(signals, self.boutsz, self.boverlap)
-        res = self.hmm.viterbi(self.model, self.vpreds, padded_signals)
+        res = self.hmm.viterbi(self.model, self.preds, padded_signals)
         output = self.hmm.from_futhark(res)
         return unpad_outputs(output, signals)
 
@@ -83,9 +67,9 @@ class HMM:
         lens = np.array([len(x) for x in signals])
         padded_signals = pad_signals(signals, 0, 0)
         if self.gpuTarget:
-            fut = self.hmm.forward_gpu(self.model, self.fwpreds, padded_signals)
+            fut = self.hmm.forward_gpu(self.model, self.preds, padded_signals)
             out = self.hmm.log_sum_exp_entry(fut, lens)
         else:
-            out = self.hmm.forward_cpu(self.model, self.fwpreds, padded_signals, lens)
+            out = self.hmm.forward_cpu(self.model, self.preds, padded_signals, lens)
         return self.hmm.from_futhark(out)
 

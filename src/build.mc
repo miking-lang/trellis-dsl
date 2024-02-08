@@ -79,8 +79,7 @@ lang TrellisBuild = TrellisCompileBase
     let pythonGlueCode = strJoin "\n" [
       join [indent 1, "def __init__(self, args):"],
       join [indent 2, "preds = read_predecessors()"],
-      join [indent 2, "self.vpreds = pad_predecessors_viterbi(preds)"],
-      join [indent 2, "self.fwpreds = pad_predecessors_forward(preds)"],
+      join [indent 2, "self.preds = pad_predecessors(preds)"],
       join [indent 2, "self.hmm = Futhark(_generated)"],
       join [indent 2, "self.model = self.hmm.init_model(", tableArgs, ")"],
       join [indent 2, "self.boutsz = ", int2string batchOutputSize],
