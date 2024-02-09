@@ -53,6 +53,19 @@ lang TrellisCompileBase = TrellisModelAst + FutharkAst
     maxpreds : Int
   }
 
+  sem initCompileEnv : TrellisOptions -> TModel -> TrellisCompileEnv
+  sem initCompileEnv options =
+  | model ->
+    let maxpreds =
+      if and options.skipPredecessors (eqi options.maxpreds (negi 1)) then
+        error "When skipping predecessors, the --maxpreds argument must be used"
+      else options.maxpreds
+    in
+    { options = options, tables = mapEmpty nameCmp
+    , stateType = model.stateType, outputType = model.outType
+    , precomputeTables = options.forcePrecomputeTables
+    , maxpreds = maxpreds }
+
   sem probModuleProjection : Info -> String -> FutExpr
   sem probModuleProjection info =
   | id ->
@@ -432,11 +445,9 @@ lang TrellisCompileInitializer =
     let stateBitwidth = bitwidthType env.stateType in
     let stateTyStr = pprintType (chooseIntegerType stateBitwidth) in
     let outTyStr = pprintType (chooseIntegerType (bitwidthType env.outputType)) in
-    let probTy = FTyFloat {
-      sz = if env.options.useDoublePrecisionFloats then F64 () else F32 (),
-      info = NoInfo ()
-    } in
-    let probTyStr = pprintType probTy in
+    let probTyStr =
+      if env.options.useDoublePrecisionFloats then "f64" else "f32"
+    in
     FProg {decls = [
       FDeclModuleAlias {ident = stateModuleId, moduleId = stateTyStr, info = NoInfo ()},
       FDeclModuleAlias {ident = obsModuleId, moduleId = outTyStr, info = NoInfo ()},
@@ -483,25 +494,12 @@ lang TrellisCompileModel =
     initializer : FutProg
   }
 
-  sem initCompileEnv : TrellisOptions -> Int -> TModel -> TrellisCompileEnv
-  sem initCompileEnv options maxpreds =
+  sem compileTrellisModel : TrellisCompileEnv -> TModel -> TrellisCompileOutput
+  sem compileTrellisModel env =
   | model ->
-    -- TODO(larshum, 2024-02-04): Add heuristic to determine whether to
-    -- pre-compute the probability tables or not.
     let env =
-      { options = options, tables = mapEmpty nameCmp
-      , stateType = model.stateType, outputType = model.outType
-      , precomputeTables = options.forcePrecomputeTables
-      , maxpreds = maxpreds }
+      {env with tables = mapMapWithKey (lam. compileTrellisType env) model.tables}
     in
-    let tables = mapMapWithKey (lam. lam ty. compileTrellisType env ty) model.tables in
-    {env with tables = tables}
-
-  sem compileTrellisModel : TrellisOptions -> [[Int]] -> TModel -> TrellisCompileOutput
-  sem compileTrellisModel options predecessors =
-  | model ->
-    let maxpreds = foldl maxi 0 (map length predecessors) in
-    let env = initCompileEnv options maxpreds model in
     { env = env, initializer = generateInitializer env model }
 end
 

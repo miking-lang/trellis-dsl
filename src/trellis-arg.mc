@@ -11,6 +11,8 @@ type TrellisOptions = {
   useDoublePrecisionFloats : Bool,
   useBitsetEncoding : Bool,
   forcePrecomputeTables : Bool,
+  skipPredecessors : Bool,
+  maxpreds : Int,
   printParse : Bool,
   printModel : Bool,
   outputDir : String,
@@ -23,6 +25,8 @@ let trellisDefaultOptions = {
   useDoublePrecisionFloats = false,
   useBitsetEncoding = false,
   forcePrecomputeTables = false,
+  skipPredecessors = false,
+  maxpreds = negi 1,
   printParse = false,
   printModel = false,
   outputDir = ".",
@@ -62,11 +66,21 @@ let config = [
       "Enables encoding of states using a bitset approach.",
     lam p.
       let o = p.options in {o with useBitsetEncoding = true}),
-  ([("--force-precompute-tables", "", "")],
+  ([("--precompute-tables", "", "")],
     defaultStr (bool2string trellisDefaultOptions.forcePrecomputeTables)
-      "Forces pre-computation of all tables when constructing the model. This improves execution time but increases memory usage.",
+      "Pre-computes all probability tables when constructing the model. This improves execution time but increases memory usage.",
     lam p.
       let o = p.options in {o with forcePrecomputeTables = true}),
+  ([("--skip-predecessors", "", "")],
+    defaultStr (bool2string trellisDefaultOptions.skipPredecessors)
+      "Makes the compiler skip the predecessor computation part, to speed up compilation. Requires using the maxpreds argument to specify the maximum number of predecessors manually.",
+    lam p.
+      let o = p.options in {o with skipPredecessors = true}),
+  ([("--maxpreds", " ", "<n>")],
+    defaultStr (int2string trellisDefaultOptions.maxpreds)
+      "Specifies the maximum number of predecessors of any node. Should be used with the --skip-predecessors flag.",
+    lam p.
+      let o = p.options in {o with maxpreds = argToInt p}),
   ([("--print-parse", "", "")],
     "Pretty-prints the initial AST after parsing.",
     lam p.
