@@ -23,6 +23,7 @@ let i = infoVal "trellis-generated" 0 0 0 0
 
 let n = nameSym "n"
 let m = nameSym "m"
+let k = nameSym "k"
 let predecessorsId = nameSym "predecessors"
 let inputsId = nameSym "inputSignals"
 let inputLengthsId = nameSym "inputLengths"
@@ -107,14 +108,14 @@ lang TrellisGenerateViterbiEntry = TrellisGenerateEntry
     let params =
       [ (modelId, FTyIdent {ident = modelTyId, info = i})
       , (predecessorsId, arrayTy stateTyId [None (), Some (NamedDim nstatesId)])
-      , (inputsId, arrayTy obsTyId [Some (NamedDim m), Some (NamedDim n)]) ]
+      , (inputsId, arrayTy obsTyId [None (), Some (NamedDim k)]) ]
     in
-    let retTy = arrayTy stateTyId [None (), Some (NamedDim n)] in
+    let retTy = arrayTy stateTyId [None (), Some (NamedDim k)] in
     match generateHigherOrderProbabilityFunctions env with (expr, probFunIds) in
     let body = futBind_ expr (generateViterbiBatchingMap env probFunIds) in
     [FDeclFun {
       ident = viterbiEntryId, entry = true,
-      typeParams = [FPSize {val = n}, FPSize {val = m}], params = params,
+      typeParams = [FPSize {val = k}], params = params,
       ret = retTy, body = body, info = i}]
 
   sem generateViterbiBatchingMap : TrellisCompileEnv -> [Name] -> FutExpr
@@ -133,37 +134,9 @@ lang TrellisGenerateViterbiEntry = TrellisGenerateEntry
     let loopParam = (nFutPvar_ baccId, futVar_ "batchAcc") in
     let idxId = nameSym "i" in
     let viterbiArgs =
-      cons
-        (nFutVar_ predecessorsId)
-        (snoc (map nFutVar_ probFunIds) (futVar_ "batch"))
+      cons (nFutVar_ predecessorsId) (map nFutVar_ probFunIds)
     in
-    let mapFunExpr = nFutLam_ signalId (futBindall_ [
-      uFutLet_ "batchAcc" (
-        futTabulate_ nbatches (futLam_ "" (
-          futTabulate_ bosExpr (futLam_ "" (stateI64 (futInt_ 0)))))),
-      uFutLet_ "batchAcc" (
-        futForEach_ loopParam idxId (futIndices_ (futVar_ "batchAcc")) (
-          futBindall_ [
-            uFutLet_ "ofs" (futMul_ (nFutVar_ idxId) bosExpr),
-            uFutLet_ "batch" (
-              futArraySlice_ (nFutVar_ signalId) (futVar_ "ofs")
-                (futAdd_ (futVar_ "ofs") (futInt_ env.options.batchSize))),
-            uFutLet_ "out" (
-              futAppSeq_ (nFutVar_ viterbiHelperId) viterbiArgs),
-            futArrayUpdate_ (nFutVar_ baccId) (nFutVar_ idxId)
-              (futArraySlice_ (futVar_ "out") (futInt_ 0) bosExpr)
-          ]
-        )
-      ),
-      futSizeCoercion_
-        (futFlatten_ (futVar_ "batchAcc"))
-        (futSizedArrayTy_ (nFutIdentTy_ stateTyId) outputSize)
-    ]) in
-    futBindall_ [
-      nuFutLet_ nbatchesId nbatchesExpr,
-      nuFutLet_ outputSize (futMul_ nbatches bosExpr),
-      futMap_ mapFunExpr (nFutVar_ inputsId)
-    ]
+    futMap_ (futAppSeq_ (nFutVar_ viterbiHelperId) viterbiArgs) (nFutVar_ inputsId)
 end
 
 lang TrellisGenerateForwardEntry = TrellisGenerateEntry

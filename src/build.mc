@@ -71,7 +71,6 @@ lang TrellisBuild = TrellisCompileBase
     in
     let batchSize = env.options.batchSize in
     let batchOverlap = env.options.batchOverlap in
-    let batchOutputSize = subi batchSize batchOverlap in
     let tableIds = mapKeys env.tables in
     let tableArgs =
       strJoin ", " (map (lam x. join ["args['", nameGetStr x, "']"]) tableIds)
@@ -82,8 +81,8 @@ lang TrellisBuild = TrellisCompileBase
       join [indent 2, "self.preds = pad_predecessors(preds)"],
       join [indent 2, "self.hmm = Futhark(_generated)"],
       join [indent 2, "self.model = self.hmm.init_model(", tableArgs, ")"],
-      join [indent 2, "self.boutsz = ", int2string batchOutputSize],
-      join [indent 2, "self.boverlap = ", int2string batchOverlap],
+      join [indent 2, "self.batch_size = ", int2string batchSize],
+      join [indent 2, "self.batch_overlap = ", int2string batchOverlap],
       join [indent 2, "self.gpuTarget = ", if gpuTarget then "True" else "False"],
       "",
       join [indent 1, "def __del__(self):"],

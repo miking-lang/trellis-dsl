@@ -38,34 +38,55 @@ def pad_predecessors(src):
         p[n:] = [pad_value for j in range(n, maxpreds)]
     return preds
 
-def pad_signals(signals, bos, boverlap):
-    lens = [len(s) for s in signals]
-    if bos == 0:
-        padded_len = max(lens)
-    else:
-        padded_len = ((max(lens) + bos + 1) // bos) * bos + boverlap
-    padded_signals = np.zeros((len(signals), padded_len), dtype=np.float32)
+def pad_signals(signals, n):
+    padded_signals = np.zeros((len(signals), n), dtype=int)
     for i, s in enumerate(signals):
-        padded_signals[i][0:len(s)] = s
+        padded_signals[i][:len(s)] = s
     return padded_signals
 
-def unpad_outputs(output, signals):
-    lens = [len(s) for s in signals]
-    out = []
-    for i, o in enumerate(output):
-        out.append(o[0:lens[i]])
-    return out
+def unpad_outputs(res, batch_indices, lens, batch_overlap):
+    res_idx = [(i, list(r)) for i, r in zip(batch_indices, res)]
+    outputs = len(lens) * [[]]
+    for i, r in res_idx:
+        # We skip the batch overlap for the first batch of each signal
+        if len(outputs[i]) == 0:
+            outputs[i] = r
+        else:
+            outputs[i] += r[batch_overlap:]
+    for i, n in enumerate(lens):
+        outputs[i] = outputs[i][:n]
+    return outputs
+
+def extract_batches(signal, batch_size, batch_overlap):
+    batches = []
+    ofs = 0
+    while ofs < len(signal):
+        batches.append(signal[ofs:ofs+batch_size])
+        ofs += batch_size - batch_overlap
+    return batches
 
 class HMM:
     def viterbi(self, signals):
-        padded_signals = pad_signals(signals, self.boutsz, self.boverlap)
-        res = self.hmm.viterbi(self.model, self.preds, padded_signals)
-        output = self.hmm.from_futhark(res)
-        return unpad_outputs(output, signals)
+        lens = [len(s) for s in signals]
+        if self.batch_size == 0:
+            maxlen = max(lens)
+            padded_signals = pad_signals(signals, maxlen)
+            res = self.hmm.viterbi(self.model, self.preds, padded_signals)
+            output = self.hmm.from_futhark(res)
+            return [o[:lens[i]] for i, o in enumerate(output)]
+        else:
+            batches = [(i, b) for i, s in enumerate(signals) for b in extract_batches(s, self.batch_size, self.batch_overlap)]
+            batch_indices, data = zip(*batches)
+            pbatches = np.zeros((len(batches), self.batch_size), dtype=int)
+            for i in range(len(batches)):
+                pbatches[i][:len(data[i])] = data[i]
+            res = self.hmm.viterbi(self.model, self.preds, pbatches)
+            output = self.hmm.from_futhark(res)
+            return unpad_outputs(output, batch_indices, lens, self.batch_overlap)
 
     def forward(self, signals):
         lens = np.array([len(x) for x in signals])
-        padded_signals = pad_signals(signals, 0, 0)
+        padded_signals = pad_signals(signals, max(lens))
         if self.gpuTarget:
             fut = self.hmm.forward_gpu(self.model, self.preds, padded_signals)
             out = self.hmm.log_sum_exp_entry(fut, lens)
