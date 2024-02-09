@@ -7,10 +7,15 @@ __location__ = os.path.realpath(
     os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
 def read_predecessors():
-    with open(os.path.join(__location__, "predecessors.txt"), "r") as f:
-        preds = []
-        for i, line in enumerate(f.readlines()):
-            preds.append([int(x) for x in line.split(" ")])
+    preds_path = os.path.join(__location__, "predecessors.txt")
+    if os.path.isfile(preds_path):
+        with open(preds_path, "r") as f:
+            preds = []
+            for i, line in enumerate(f.readlines()):
+                preds.append([int(x) for x in line.split(" ")])
+    else:
+        print("Could not find predecessor file")
+        exit(1)
     return preds
 
 def pick_non_pred(preds, n):
