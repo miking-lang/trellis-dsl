@@ -1,9 +1,8 @@
 include "parser/lexer.mc"
 
--- Eat line comments of the form #
 lang TrellisLineCommentParser = WSACParser
   sem eatWSAC (p : Pos)  =
-  | "#" ++ xs ->
+  | "--" ++ xs ->
     recursive
     let remove = lam p. lam str.
       match str with "\n" ++ xs then eatWSAC (advanceRow p 1) xs else

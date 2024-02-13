@@ -8,18 +8,18 @@ alias Duration = 1 .. maxduration
 alias ObsType = 0 .. 100
 
 model {
-  # Declaration of the state and output types
+  -- Declaration of the state and output types
   state = (Kmer, Duration)
   output = ObsType
 
-  # Declaration of tables containing data provided at runtime
+  -- Declaration of tables containing data provided at runtime
   table initialProb(Kmer, Duration) : Probability
   table outputProb(Kmer, ObsType) : Probability
   table trans1(Nucleotide, Kmer) : Probability
   table trans2(Duration) : Probability
   table gamma() : Probability
 
-  # Definitions of the initial, output, and transition probability functions
+  -- Definitions of the initial, output, and transition probability functions
   P(initial x) = initialProb(x[0], x[1])
   P(output o | x) = outputProb(x[0], o)
   P(transition x y) = {

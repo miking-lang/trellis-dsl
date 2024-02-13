@@ -1,4 +1,4 @@
-# Example taken from the Viterbi algorithm Wikipedia page
+-- Example taken from the Viterbi algorithm Wikipedia page
 
 type HealthState = {
   Healthy, Fever

@@ -1,4 +1,4 @@
-# Hallway problem from https://www.cs.mcgill.ca/~dprecup/courses/ML/Lectures/ml-lecture-hmm.pdf
+-- Hallway problem from https://www.cs.mcgill.ca/~dprecup/courses/ML/Lectures/ml-lecture-hmm.pdf
 
 alias HallwayState = 1 .. 5
 alias Obs = 2 .. 3
@@ -9,15 +9,15 @@ model {
 
   table outp(HallwayState, Obs) : Probability
 
-  # We always start in state 3
+  -- We always start in state 3
   P(initial x) = {
     | @{ 3 } => 1.0
   }
   P(output o | x) = outp(x, o)
 
-  # We stay at the current state with probability 0.5 and move left or right
-  # each with probability 0.25. If moving would lead to hitting a wall, the
-  # state is unchanged (in these cases, the probability of staying is 0.75).
+  -- We stay at the current state with probability 0.5 and move left or right
+  -- each with probability 0.25. If moving would lead to hitting a wall, the
+  -- state is unchanged (in these cases, the probability of staying is 0.75).
   P(transition x y) = {
     | { a -> b | a == b, a == 1 || a == 5 } => 0.75
     | { a -> b | a == b } => 0.5
