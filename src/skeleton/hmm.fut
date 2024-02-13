@@ -38,19 +38,37 @@ let viterbi_backward [m] (s_last : state_t) (zeta : [m][nstates]state_t) : [1+m]
 
 let viterbi_helper [m]
   (predecessors : [nstates][npreds]state_t)
-  (initp : state_t -> prob_t)
   (outp : state_t -> obs_t -> prob_t)
   (transp : state_t -> state_t -> prob_t)
+  (chi0 : [nstates]prob_t)
   (signal : [m]obs_t) : [m]state_t =
-
-  let x = signal[0] in
-  let rest = signal[1:m] in
-  let chi1 = tabulate nstates (\s -> initp (state.i64 s) + outp (state.i64 s) x) in
-  let r = viterbi_forward predecessors transp outp rest chi1 in
+  let r = viterbi_forward predecessors transp outp signal[1:m] chi0 in
   match r
   case {chi = chi, zeta = zeta} ->
     let sLast = max_index_by_state chi in
     reverse (viterbi_backward (state.i64 sLast) (reverse zeta)) :> [m]state_t
+
+let viterbi_first_batch [m]
+  (predecessors : [nstates][npreds]state_t)
+  (initp : state_t -> prob_t)
+  (outp : state_t -> obs_t -> prob_t)
+  (transp : state_t -> state_t -> prob_t)
+  (signal : [m]obs_t) : [m]state_t =
+  let x = signal[0] in
+  let chi0 = tabulate nstates (\s -> initp (state.i64 s) + outp (state.i64 s) x) in
+  viterbi_helper predecessors outp transp chi0 signal
+
+let viterbi_subseq_batch [m]
+  (predecessors : [nstates][npreds]state_t)
+  (outp : state_t -> obs_t -> prob_t)
+  (transp : state_t -> state_t -> prob_t)
+  (last_state : state_t)
+  (signal : [m]obs_t) : [m]state_t =
+  let chi0 =
+    tabulate nstates (\s ->
+      if state.i64 s == last_state then 0.0 else -prob.inf)
+  in
+  viterbi_helper predecessors outp transp chi0 signal
 
 let log_sum_exp (s : []prob_t) : prob_t =
   let x = prob.maximum s in
