@@ -40,7 +40,8 @@ def pad_predecessors(src):
         n = len(src[i])
         pad_value = pick_non_pred(src[i], n)
         p[:n] = src[i]
-        p[n:] = [pad_value for j in range(n, maxpreds)]
+        if pad_value:
+            p[n:] = [pad_value for j in range(n, maxpreds)]
     return preds
 
 def pad_signals(signals, n):
