@@ -24,13 +24,12 @@ let viterbi_forward [m]
   let zeta = tabulate m (\_ -> tabulate nstates (\_ -> state.i32 0)) in
   loop {chi, zeta} = {chi = chi1, zeta = zeta} for i < m do
     let x = signal[i] in
-    let f = \dst src ->
-      if x == obs.i64 (-1) then chi[state.to_i64 dst]
-      else chi[state.to_i64 src] + transp src dst + outp dst x
-    in
+    let f = \dst src -> chi[state.to_i64 src] + transp src dst + outp dst x in
     let (new_zeta, new_chi) =
       unzip
-        (tabulate nstates (\dst -> max_pred (f (state.i64 dst)) predecessors[dst]))
+        (tabulate nstates (\dst ->
+          if x == obs.i64 (-1) then (state.i64 dst, chi[dst])
+          else max_pred (f (state.i64 dst)) predecessors[dst]))
     in
     {chi = new_chi, zeta = zeta with [i] = new_zeta}
 
@@ -45,8 +44,12 @@ let viterbi_helper [m]
   (transp : state_t -> state_t -> prob_t)
   (chi0 : [nstates]prob_t)
   (signal : [m]obs_t) : [m]state_t =
-  let r = viterbi_forward predecessors transp outp signal[1:m] chi0 in
-  match r
+  let x = signal[0] in
+  let chi1 = tabulate nstates (\s ->
+    if x == obs.i64 (-1) then chi0[s]
+    else chi0[s] + outp (state.i64 s) x)
+  in
+  match viterbi_forward predecessors transp outp signal[1:m] chi1
   case {chi = chi, zeta = zeta} ->
     let sLast = max_index_by_state chi in
     reverse (viterbi_backward (state.i64 sLast) (reverse zeta)) :> [m]state_t
@@ -57,8 +60,7 @@ let viterbi_first_batch [m]
   (outp : state_t -> obs_t -> prob_t)
   (transp : state_t -> state_t -> prob_t)
   (signal : [m]obs_t) : [m]state_t =
-  let x = signal[0] in
-  let chi0 = tabulate nstates (\s -> initp (state.i64 s) + outp (state.i64 s) x) in
+  let chi0 = tabulate nstates (\s -> initp (state.i64 s)) in
   viterbi_helper predecessors outp transp chi0 signal
 
 let viterbi_subseq_batch [m]
