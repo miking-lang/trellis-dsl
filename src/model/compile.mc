@@ -28,7 +28,7 @@ let nstatesId = nameSym "nstates"
 let nobsId = nameSym "nobs"
 let npredsId = nameSym "npreds"
 
-lang TrellisCompileBase = TrellisModelAst + FutharkAst
+lang TrellisCompileBase = TrellisModelAst + FutharkAst + TrellisTypeBitwidth
   -- The environment used throughout compilation of the Trellis model AST.
   type TrellisCompileEnv = {
     -- The command-line options provided by the user
@@ -97,17 +97,43 @@ lang TrellisCompileBase = TrellisModelAst + FutharkAst
       rhs = probModuleProjection info "inf",
       ty = FTyUnknown {info = info}, info = info}
 
+  sem chooseIntegerSize : Int -> FutIntSize
+  sem chooseIntegerSize =
+  | bits ->
+    if leqi bits 8 then U8 ()
+    else if leqi bits 16 then U16 ()
+    else if leqi bits 32 then U32 ()
+    else if leqi bits 64 then U64 ()
+    else
+      let msg = join [
+        "Trellis does not support states or observations requiring ",
+        "more than 64 bits to encode"
+      ] in
+      error msg
+
   sem chooseIntegerType : Int -> FutType
   sem chooseIntegerType =
-  | bits ->
-    let sz =
-      if leqi bits 8 then U8 ()
-      else if leqi bits 16 then U16 ()
-      else if leqi bits 32 then U32 ()
-      else if leqi bits 64 then U64 ()
-      else error "Trellis does not support states requiring more than 63 bits to encode"
-    in
-    FTyInt {sz = sz, info = NoInfo ()}
+  | bits -> FTyInt {sz = chooseIntegerSize bits, info = NoInfo ()}
+
+  sem stateIntegerSize : TType -> FutIntSize
+  sem stateIntegerSize =
+  | ty -> chooseIntegerSize (bitwidthType ty)
+
+  sem stateFutharkType : TrellisCompileEnv -> FutType
+  sem stateFutharkType =
+  | env -> FTyInt {sz = stateIntegerSize env.stateType, info = NoInfo ()}
+
+  sem outputIntegerSize : TType -> FutIntSize
+  sem outputIntegerSize =
+  | ty ->
+    -- NOTE(larshum, 2024-02-14): We reserve one bit for representing an
+    -- "empty" observation. We use this when padding the sequence in the
+    -- Viterbi algorithm.
+    chooseIntegerSize (addi (bitwidthType ty) 1)
+
+  sem outputFutharkType : TrellisCompileEnv -> FutType
+  sem outputFutharkType =
+  | env -> FTyInt {sz = outputIntegerSize env.outputType, info = NoInfo ()}
 end
 
 lang TrellisCompileType =
@@ -442,9 +468,8 @@ lang TrellisCompileInitializer =
       str
     in
     match generateProbabilityFunctions env model with (initp, outp, transp) in
-    let stateBitwidth = bitwidthType env.stateType in
-    let stateTyStr = pprintType (chooseIntegerType stateBitwidth) in
-    let outTyStr = pprintType (chooseIntegerType (bitwidthType env.outputType)) in
+    let stateTyStr = pprintType (stateFutharkType env) in
+    let outTyStr = pprintType (outputFutharkType env) in
     let probTyStr =
       if env.options.useDoublePrecisionFloats then "f64" else "f32"
     in

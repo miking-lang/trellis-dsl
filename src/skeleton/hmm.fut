@@ -24,7 +24,10 @@ let viterbi_forward [m]
   let zeta = tabulate m (\_ -> tabulate nstates (\_ -> state.i32 0)) in
   loop {chi, zeta} = {chi = chi1, zeta = zeta} for i < m do
     let x = signal[i] in
-    let f = \dst src -> chi[state.to_i64 src] + transp src dst + outp dst x in
+    let f = \dst src ->
+      if x == obs.i64 (-1) then chi[state.to_i64 dst]
+      else chi[state.to_i64 src] + transp src dst + outp dst x
+    in
     let (new_zeta, new_chi) =
       unzip
         (tabulate nstates (\dst -> max_pred (f (state.i64 dst)) predecessors[dst]))

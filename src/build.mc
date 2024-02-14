@@ -6,8 +6,9 @@ include "src-loc.mc"
 include "trellis-arg.mc"
 include "trellis-common.mc"
 include "model/compile.mc"
+include "model/encode.mc"
 
-lang TrellisBuild = TrellisCompileBase
+lang TrellisBuild = TrellisCompileBase + TrellisTypeBitwidth
   -- Builds the resulting compiler output by producing a wrapper we can use via
   -- Python.
   sem buildPythonWrapper : TrellisCompileEnv -> String -> ()
@@ -63,6 +64,17 @@ lang TrellisBuild = TrellisCompileBase
   sem indent =
   | n -> create (muli n 4) (lam. ' ')
 
+  sem numpyTypeSize : FutIntSize -> String
+  sem numpyTypeSize =
+  | U8 _ -> "np.uint8"
+  | U16 _ -> "np.uint16"
+  | U32 _ -> "np.uint32"
+  | U64 _ -> "np.uint64"
+  | I8 _ -> "np.int8"
+  | I16 _ -> "np.int16"
+  | I32 _ -> "np.int32"
+  | I64 _ -> "np.int64"
+
   sem generatePythonWrapper : TrellisCompileEnv -> String -> String
   sem generatePythonWrapper env =
   | futFileName ->
@@ -73,13 +85,17 @@ lang TrellisBuild = TrellisCompileBase
     let batchSize = env.options.batchSize in
     let batchOverlap = env.options.batchOverlap in
     let tableIds = mapKeys env.tables in
+    let stateNpType = numpyTypeSize (stateIntegerSize env.stateType) in
+    let outputNpType = numpyTypeSize (outputIntegerSize env.outputType) in
     let tableArgs =
       strJoin ", " (map (lam x. join ["args['", nameGetStr x, "']"]) tableIds)
     in
     let pythonGlueCode = strJoin "\n" [
       join [indent 1, "def __init__(self, args):"],
       join [indent 2, "preds = read_predecessors()"],
-      join [indent 2, "self.preds = pad_predecessors(preds)"],
+      join [indent 2, "self.state_type = ", stateNpType],
+      join [indent 2, "self.out_type = ", outputNpType],
+      join [indent 2, "self.preds = self.pad_predecessors(preds)"],
       join [indent 2, "self.hmm = Futhark(_generated)"],
       join [indent 2, "self.model = self.hmm.init_model(", tableArgs, ")"],
       join [indent 2, "self.batch_size = ", int2string batchSize],

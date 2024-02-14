@@ -28,46 +28,46 @@ def pick_non_pred(preds, n):
         i += 1
     return i
 
-# Futhark requires the predecessors (a 2d array) to be regular, i.e., each
-# inner array must have the same size. For both the Forward and the Viterbi
-# algorithms, we pad with a state that is not actually a predecessor, as this
-# does not impact the final result.
-def pad_predecessors(src):
-    nstates = len(src)
-    maxpreds = max([len(p) for p in src])
-    preds = np.zeros((nstates, maxpreds), dtype=int)
-    for i, p in enumerate(preds):
-        n = len(src[i])
-        pad_value = pick_non_pred(src[i], n)
-        p[:n] = src[i]
-        if pad_value:
-            p[n:] = [pad_value for j in range(n, maxpreds)]
-    return preds
-
-def pad_signals(signals, n):
-    padded_signals = np.zeros((len(signals), n), dtype=int)
-    for i, s in enumerate(signals):
-        padded_signals[i][:len(s)] = s
-    return padded_signals
-
-def pad_signals_viterbi(signals, lens, batch_size, batch_overlap):
-    bos = batch_size - batch_overlap
-    n = ((max(lens) + bos + 1) // bos) * bos + batch_overlap
-    padded_signals = np.zeros((len(signals), n), dtype=int)
-    for i, s in enumerate(signals):
-        padded_signals[i][:lens[i]] = s
-    return padded_signals
-
 class HMM:
+    # Futhark requires the predecessors (a 2d array) to be regular, i.e., each
+    # inner array must have the same size. For both the Forward and the Viterbi
+    # algorithms, we pad with a state that is not actually a predecessor, as this
+    # does not impact the final result.
+    def pad_predecessors(self, src):
+        nstates = len(src)
+        maxpreds = max([len(p) for p in src])
+        preds = np.zeros((nstates, maxpreds), dtype=self.state_type)
+        for i, p in enumerate(preds):
+            n = len(src[i])
+            pad_value = pick_non_pred(src[i], n)
+            p[:n] = src[i]
+            if pad_value:
+                p[n:] = [pad_value for j in range(n, maxpreds)]
+        return preds
+
+    def pad_signals_viterbi(self, signals, lens):
+        bos = self.batch_size - self.batch_overlap
+        n = ((max(lens) + bos + 1) // bos) * bos + self.batch_overlap
+        padded_signals = np.full((len(signals), n), -1, dtype=self.out_type)
+        for i, s in enumerate(signals):
+            padded_signals[i][:lens[i]] = s
+        return padded_signals
+
     def viterbi(self, signals):
         lens = [len(s) for s in signals]
-        padded_signals = pad_signals_viterbi(signals, lens, self.batch_size, self.batch_overlap)
+        padded_signals = self.pad_signals_viterbi(signals, lens)
         res = self.hmm.viterbi(self.model, self.preds, padded_signals)
         return [o[:lens[i]] for i, o in enumerate(self.hmm.from_futhark(res))]
 
+    def pad_signals_forward(self, signals, n):
+        padded_signals = np.zeros((len(signals), n), dtype=self.out_type)
+        for i, s in enumerate(signals):
+            padded_signals[i][:len(s)] = s
+        return padded_signals
+
     def forward(self, signals):
         lens = np.array([len(x) for x in signals])
-        padded_signals = pad_signals(signals, max(lens))
+        padded_signals = self.pad_signals_forward(signals, max(lens))
         if self.gpuTarget:
             fut = self.hmm.forward_gpu(self.model, self.preds, padded_signals)
             out = self.hmm.log_sum_exp_entry(fut, lens)
