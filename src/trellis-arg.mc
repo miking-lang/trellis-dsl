@@ -50,12 +50,12 @@ let config = [
     defaultStr (int2string trellisDefaultOptions.batchSize)
       "Manually sets the size of each batch of input values processed in Viterbi.",
     lam p.
-      let o = p.options in {o with batchSize = argToIntMin p 1}),
+      let o = p.options in {o with batchSize = argToIntMin p 0}),
   ([("--batch-overlap", " ", "<n>")],
     defaultStr (int2string trellisDefaultOptions.batchOverlap)
       "Manually sets the overlap to use between consecutive batches in Viterbi.",
     lam p.
-      let o = p.options in {o with batchOverlap = argToIntMin p 1}),
+      let o = p.options in {o with batchOverlap = argToIntMin p 0}),
   ([("--use-double-precision", "", "")],
     defaultStr (bool2string trellisDefaultOptions.useDoublePrecisionFloats)
       "Use double-precision floating point numbers.",
