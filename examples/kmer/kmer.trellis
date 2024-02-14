@@ -29,9 +29,6 @@ model {
     | { (x1, n1) -> (x2, n2) | x1 == x2, n1 == maxduration, n2 == maxduration } =>
       gamma()
 
-    | { (x1, n1) -> (x2, n2) | x1 == x2, n1 == maxduration, n2 == maxduration - 1 } =>
-      1.0 - gamma()
-
     | { (x1, n1) -> (x2, n2) | x1 == x2, n2 == n1 - 1 } =>
       1.0
   }
