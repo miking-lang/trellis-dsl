@@ -80,50 +80,29 @@ let log_sum_exp (s : []prob_t) : prob_t =
   if x == -prob.inf then x
   else x + prob.log (prob.sum (map (\y -> prob.exp(y - x)) s))
 
-let forward_helper_cpu
+let forward_helper [m]
   (predecessors : [nstates][npreds]state_t)
   (initp : state_t -> prob_t)
   (outp : state_t -> obs_t -> prob_t)
   (transp : state_t -> state_t -> prob_t)
-  (signal : []obs_t)
-  (signal_len : i64) : prob_t =
+  (signal : [m]obs_t) : prob_t =
 
   let x = signal[0] in
   let alpha0 = tabulate nstates (\s -> initp (state.i64 s) + outp (state.i64 s) x) in
-  let alphaTminus1 = loop alpha = alpha0 for t < signal_len-1 do
+  let alphaTminus1 = loop alpha = alpha0 for t < m-1 do
     tabulate nstates (\i ->
-      let sum =
-        log_sum_exp
-          (map
-            (\pre -> alpha[state.to_i64 pre] + transp pre (state.i64 i))
-            predecessors[i])
-      in
-      sum + outp (state.i64 i) signal[t+1])
-  in
-  log_sum_exp alphaTminus1
-
-let forward_helper_gpu [m]
-  (predecessors : [nstates][npreds]state_t)
-  (initp : state_t -> prob_t)
-  (outp : state_t -> obs_t -> prob_t)
-  (transp : state_t -> state_t -> prob_t)
-  (signal : [m]obs_t) : [m][nstates]prob_t =
-
-  let x = signal[0] in
-  let alpha = replicate m (replicate nstates prob.inf) in
-  let alpha0 = tabulate nstates (\s -> initp (state.i64 s) + outp (state.i64 s) x) in
-  let alpha = alpha with [0] = alpha0 in
-  loop alpha = alpha for t < m-1 do
-    let alphaPrev = alpha[t] in
-    alpha with [t+1] =
-      tabulate nstates (\i ->
+      if signal[t+1] == obs.i64 (-1) then
+        alpha[i]
+      else
         let sum =
           log_sum_exp
             (map
-              (\pre -> alphaPrev[state.to_i64 pre] + transp pre (state.i64 i))
+              (\pre -> alpha[state.to_i64 pre] + transp pre (state.i64 i))
               predecessors[i])
         in
         sum + outp (state.i64 i) signal[t+1])
+  in
+  log_sum_exp alphaTminus1
 
 --------------------
 -- GENERATED CODE --

@@ -67,11 +67,7 @@ class HMM:
 
     def forward(self, signals):
         lens = np.array([len(x) for x in signals])
-        padded_signals = self.pad_signals_forward(signals, max(lens))
-        if self.gpuTarget:
-            fut = self.hmm.forward_gpu(self.model, self.preds, padded_signals)
-            out = self.hmm.log_sum_exp_entry(fut, lens)
-        else:
-            out = self.hmm.forward_cpu(self.model, self.preds, padded_signals, lens)
+        padded_signals = self.pad_signals_viterbi(signals, lens)
+        out = self.hmm.forward(self.model, self.preds, padded_signals)
         return self.hmm.from_futhark(out)
 
