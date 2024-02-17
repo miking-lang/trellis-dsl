@@ -2,7 +2,7 @@
 
 case $1 in
   build)
-    trellis casino.trellis
+    trellis weather.trellis
     ;;
   run)
     python3 runner.py
