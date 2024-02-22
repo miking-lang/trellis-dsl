@@ -30,7 +30,8 @@ lang TrellisBuild = TrellisCompileBase + TrellisTypeBitwidth
     if neqi r.returncode 0 then
       printLn (join ["Error when compiling Futhark code"]);
       printLn r.stdout;
-      printLn r.stderr
+      printLn r.stderr;
+      exit r.returncode
     else
 
     -- 3. Prepare the Python FFI using the Futhark FFI build command
@@ -42,7 +43,8 @@ lang TrellisBuild = TrellisCompileBase + TrellisTypeBitwidth
     if neqi r.returncode 0 then
       printLn (join ["Error when generating the Python FFI helper code"]);
       printLn r.stdout;
-      printLn r.stderr
+      printLn r.stderr;
+      exit r.returncode
     else
 
     -- 4. Write our generated Python wrapper code, which handles the Futhark
