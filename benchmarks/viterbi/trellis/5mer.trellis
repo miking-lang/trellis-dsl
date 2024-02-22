@@ -1,0 +1,38 @@
+let merlength = 5
+let maxduration = 16
+
+type Nucleotide = {A, C, G, T}
+
+alias Kmer = Nucleotide[merlength]
+alias Duration = 1 .. maxduration
+alias ObsType = 0 .. 100
+
+model {
+  -- Declaration of the state and output types
+  state = (Kmer, Duration)
+  output = ObsType
+
+  -- Declaration of tables containing data provided at runtime
+  table initialProb(Kmer, Duration) : Probability
+  table outputProb(Kmer, ObsType) : Probability
+  table trans1(Nucleotide, Kmer) : Probability
+  table trans2(Duration) : Probability
+  table gamma() : Probability
+
+  -- Definitions of the initial, output, and transition probability functions
+  P(initial x) = initialProb(x[0], x[1])
+  P(output o | x) = outputProb(x[0], o)
+  P(transition x y) = {
+    | { ([a, as...], 1) -> ([bs..., b], k) | as == bs } =>
+      trans1(y[0][4], x[0]) * trans2(y[1])
+
+    | { (x1, n1) -> (x2, n2) | x1 == x2, n1 == maxduration, n2 == maxduration } =>
+      gamma()
+
+    | { (x1, n1) -> (x2, n2) | x1 == x2, n1 == maxduration, n2 == maxduration - 1 } =>
+      1.0 - gamma()
+
+    | { (x1, n1) -> (x2, n2) | x1 == x2, n2 == n1 - 1 } =>
+      1.0
+  }
+}
