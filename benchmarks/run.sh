@@ -60,7 +60,7 @@ bench_compile_trellis_forward() {
 
 bench_stochhmm() {
   CMD="stochhmm -model $1.hmm -seq $SIGNALS_PATH -viterbi"
-  OUT_PATH="$(pwd)/out/sc-$1-viterbi.json"
+  OUT_PATH="$(pwd)/out/sc-$1-nobatch-viterbi.json"
   cd viterbi/stoch-hmm
   bench_program "$CMD" "$OUT_PATH"
   cd -
@@ -101,7 +101,7 @@ bench_trellis_viterbi() {
     fi
   fi
   CMD="python3 viterbi/trellis/run.py $3 $4 >> out/$TARGET_ID-$TEST_ID-viterbi.txt"
-  OUT_PATH="$(pwd)/out/ng-$TEST_ID-viterbi.json"
+  OUT_PATH="$(pwd)/out/$TARGET_ID-$TEST_ID-viterbi.json"
   bench_program "$CMD" "$OUT_PATH"
 }
 
