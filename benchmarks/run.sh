@@ -231,6 +231,19 @@ do
   bench_trellis_viterbi 1 "${K}mer" $K $BATCH_SIZE
 done
 
+echo "####################"
+echo "# PLOTTING RESULTS #"
+echo "####################"
+
+# Plot compilation results
+python3 scripts/plot-compile.py
+
+# Plot results for the weather model
+python3 scripts/plot-weather.py
+
+# Plot results for the kmer model (with and without batching)
+python3 scripts/plot-kmer.py
+
 echo "###########"
 echo "# CLEANUP #"
 echo "###########"
