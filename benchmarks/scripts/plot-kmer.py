@@ -27,7 +27,7 @@ labels = [ "zc", "pc", "pg", "tc", "tg" ]
 x = np.arange(len(labels))
 
 fig, axs = plt.subplots(layout="constrained")
-width = 0.4
+width = 0.45
 
 avgs, errs = zip(*[load_full_time_label(label, "forward", 3) for label in labels])
 bars = axs.bar(x, avgs, width, yerr=errs, label="Full")
@@ -38,6 +38,7 @@ bars = axs.bar(x + width, avgs, width, yerr=errs, label="Forward")
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x+0.5*width, [l.upper() for l in labels])
+axs.set_yscale("log")
 axs.set_ylabel("Execution time (s)")
 axs.legend(loc="upper right", ncols=2)
 
@@ -58,10 +59,11 @@ bars = axs.bar(x + width, avgs, width, yerr=errs, label="Viterbi")
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x + 0.5*width, [l.upper() for l in labels])
+axs.set_yscale("log")
 axs.set_ylabel("Execution time (s)")
 axs.legend(loc="upper right", ncols=2)
 
-fig.savefig("3mer-batch-viterbi.pdf", bbox_inches="tight")
+fig.savefig("3mer-nobatch-viterbi.pdf", bbox_inches="tight")
 
 # Plot Viterbi algorithm results for kmer models (with batching)
 labels = [ "ng", "tg" ]
@@ -95,7 +97,8 @@ bars = axs.bar(x + 5*width, avgs, width, yerr=errs, label="Viterbi (k = 7)")
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x + 2.5*width, [l.upper() for l in labels])
+axs.set_yscale("log")
 axs.set_ylabel("Execution time (s)")
 axs.legend(loc="upper right", ncols=2)
 
-fig.savefig("kmer-nobatch-viterbi.pdf", bbox_inches="tight")
+fig.savefig("kmer-batch-viterbi.pdf", bbox_inches="tight")

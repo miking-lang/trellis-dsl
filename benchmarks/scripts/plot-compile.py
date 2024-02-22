@@ -25,6 +25,7 @@ avgs, errs = zip(*[load_data(label) for label in labels])
 fig, axs = plt.subplots(layout="constrained")
 bars = axs.bar(labels, avgs, yerr = errs)
 axs.bar_label(bars, fmt="%.2f")
+axs.set_yscale("log")
 axs.set_ylabel("Compilation time (s)")
 
 fig.savefig("compilation.pdf", bbox_inches="tight")

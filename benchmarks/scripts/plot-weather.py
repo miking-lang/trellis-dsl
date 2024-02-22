@@ -38,6 +38,7 @@ bars = axs.bar(x + width, avgs, width, yerr=errs, label="Forward")
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x+0.5*width, [l.upper() for l in labels])
+axs.set_yscale("log")
 axs.set_ylabel("Execution time (s)")
 axs.legend(loc="upper right", ncols=2)
 
@@ -58,6 +59,7 @@ bars = axs.bar(x + width, avgs, width, yerr=errs, label="Viterbi")
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x + 0.5*width, [l.upper() for l in labels])
+axs.set_yscale("log")
 axs.set_ylabel("Execution time (s)")
 axs.legend(loc="upper right", ncols=2)
 
