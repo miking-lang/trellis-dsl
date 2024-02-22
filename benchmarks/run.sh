@@ -7,7 +7,7 @@ KMER_MODELS=("$(pwd)/models/3mer.hdf5" "$(pwd)/models/5mer.hdf5" "$(pwd)/models/
 KMER_LENGTH=(3 5 7)
 
 bench_program() {
-  hyperfine --warmup 1 --runs $NITERS -u second --export-json $2 "$1"
+  hyperfine -i --warmup 1 --runs $NITERS -u second --export-json $2 "$1"
 }
 
 bench_ziphmm() {
@@ -55,7 +55,7 @@ bench_compile_trellis_forward() {
   OUT_PATH="$(pwd)/out/${TARGET_ID}-forward-compile-$3.json"
   cd forward/trellis
   bench_program "$CMD" "$OUT_PATH"
-  cd -
+  cd ../..
 }
 
 bench_stochhmm() {
@@ -63,7 +63,7 @@ bench_stochhmm() {
   OUT_PATH="$(pwd)/out/sc-$1-nobatch-viterbi.json"
   cd viterbi/stoch-hmm
   bench_program "$CMD" "$OUT_PATH"
-  cd -
+  cd ../..
 }
 
 bench_cuda() {
@@ -78,7 +78,7 @@ bench_cuda() {
   OUT_PATH="$(pwd)/out/ng-$TEST_ID-viterbi.json"
   cd viterbi/native-cuda
   bench_program "$CMD" "$OUT_PATH"
-  cd -
+  cd ../..
 }
 
 bench_trellis_viterbi() {
@@ -118,7 +118,7 @@ bench_compile_trellis_viterbi() {
   OUT_PATH="$(pwd)/out/${TARGET_ID}-viterbi-compile-$3.json"
   cd viterbi/trellis
   bench_program "$CMD" "$OUT_PATH"
-  cd -
+  cd ../..
 }
 
 if [ ! -e "signals/weather.fasta" -o ! -e "signals/weather.hdf5" -o ! -e "signals/kmer.fasta" ]
