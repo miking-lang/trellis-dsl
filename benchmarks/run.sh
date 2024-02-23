@@ -59,8 +59,16 @@ bench_compile_trellis_forward() {
 }
 
 bench_stochhmm() {
+  # To make it use consistent naming with other 3mer tests running without
+  # batching enabled
+  if [ "$1" == "3mer" ]
+  then
+    OUT_ID="$1-nobatch"
+  else
+    OUT_ID="$1"
+  fi
   CMD="stochhmm -model $1.hmm -seq $SIGNALS_PATH -viterbi"
-  OUT_PATH="$(pwd)/out/sc-$1-nobatch-viterbi.json"
+  OUT_PATH="$(pwd)/out/sc-$OUT_ID-viterbi.json"
   cd viterbi/stoch-hmm
   bench_program "$CMD" "$OUT_PATH"
   cd ../..
