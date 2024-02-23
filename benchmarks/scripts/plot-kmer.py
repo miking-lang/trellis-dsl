@@ -99,6 +99,6 @@ axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 axs.set_xticks(x + 2.5*width, [l.upper() for l in labels])
 axs.set_yscale("log")
 axs.set_ylabel("Execution time (s)")
-axs.legend(loc="upper right", ncols=2)
+axs.legend(loc="upper left", ncols=2)
 
 fig.savefig("kmer-batch-viterbi.pdf", bbox_inches="tight")
