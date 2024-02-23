@@ -42,22 +42,6 @@ bench_trellis_forward() {
   bench_program "$CMD" "$OUT_PATH"
 }
 
-bench_compile_trellis_forward() {
-  if [ $1 -eq 0 ]
-  then
-    TARGET="multicore"
-    TARGET_ID="tc"
-  else
-    TARGET="cuda"
-    TARGET_ID="tg"
-  fi
-  CMD="trellis $2 --futhark-target $TARGET $3.trellis"
-  OUT_PATH="$(pwd)/out/${TARGET_ID}-forward-compile-$3.json"
-  cd forward/trellis
-  bench_program "$CMD" "$OUT_PATH"
-  cd ../..
-}
-
 bench_stochhmm() {
   # To make it use consistent naming with other 3mer tests running without
   # batching enabled
@@ -113,19 +97,29 @@ bench_trellis_viterbi() {
   bench_program "$CMD" "$OUT_PATH"
 }
 
-bench_compile_trellis_viterbi() {
-  if [ $1 -eq 0 ]
+bench_compile_trellis() {
+  if [ $1 == "multicore" ]
   then
-    TARGET="multicore"
     TARGET_ID="tc"
   else
-    TARGET="cuda"
     TARGET_ID="tg"
   fi
   CMD="trellis $2 --futhark-target $TARGET $3.trellis"
-  OUT_PATH="$(pwd)/out/${TARGET_ID}-viterbi-compile-$3.json"
+  OUT_PATH="$(pwd)/out/${TARGET_ID}-compile-$4-$3.json"
   cd viterbi/trellis
   bench_program "$CMD" "$OUT_PATH"
+  cd ../..
+}
+
+compile_trellis() {
+  if [ $1 -eq 0 ]
+  then
+    TARGET="multicore"
+  else
+    TARGET="cuda"
+  fi
+  cd $2/trellis
+  trellis "$3" "$4.trellis"
   cd ../..
 }
 
@@ -160,9 +154,9 @@ export SIGNALS_PATH="$(pwd)/signals/weather.hdf5"
 bench_ziphmm "weather"
 bench_pomegranate 0 "weather"
 bench_pomegranate 1 "weather"
-bench_compile_trellis_forward 0 "--precompute-tables" "weather"
+compile_trellis 0 "forward" "--precompute-tables" "weather"
 bench_trellis_forward 0 "weather"
-bench_compile_trellis_forward 1 "--precompute-tables" "weather"
+compile_trellis 1 "forward" "--precompute-tables" "weather"
 bench_trellis_forward 1 "weather"
 
 echo "##############"
@@ -176,9 +170,9 @@ export SIGNALS_PATH="$(pwd)/signals/kmer.hdf5"
 bench_ziphmm "3mer"
 bench_pomegranate 0 "3mer"
 bench_pomegranate 1 "3mer"
-bench_compile_trellis_forward 0 "--precompute-tables" "3mer"
+compile_trellis 0 "forward" "--precompute-tables" "3mer"
 bench_trellis_forward 0 "3mer"
-bench_compile_trellis_forward 1 "--precompute-tables" "3mer"
+compile_trellis 1 "forward" "--precompute-tables" "3mer"
 bench_trellis_forward 1 "3mer"
 
 echo "#####################"
@@ -192,9 +186,9 @@ unset MODEL_PATH
 export SIGNALS_PATH="$(pwd)/signals/weather.fasta"
 bench_stochhmm "weather"
 export SIGNALS_PATH="$(pwd)/signals/weather.hdf5"
-bench_compile_trellis_viterbi 0 "--precompute-tables" "weather"
+compile_trellis 0 "viterbi" "--precompute-tables" "weather"
 bench_trellis_viterbi 0 "weather"
-bench_compile_trellis_viterbi 1 "--precompute-tables" "weather"
+compile_trellis 1 "viterbi" "--precompute-tables" "weather"
 bench_trellis_viterbi 1 "weather"
 
 echo "############################"
@@ -211,9 +205,9 @@ export SIGNALS_PATH="$(pwd)/signals/kmer.fasta"
 bench_stochhmm "3mer"
 export SIGNALS_PATH="$(pwd)/signals/kmer.hdf5"
 bench_cuda 3 $BATCH_SIZE
-bench_compile_trellis_viterbi 0 "--precompute-tables $TRELLIS_BATCH" "3mer"
+compile_trellis 0 "viterbi" "--precompute-tables $TRELLIS_BATCH" "weather"
 bench_trellis_viterbi 0 "3mer" 3 $BATCH_SIZE
-bench_compile_trellis_viterbi 1 "--precompute-tables $TRELLIS_BATCH" "3mer"
+compile_trellis 1 "viterbi" "--precompute-tables $TRELLIS_BATCH" "weather"
 bench_trellis_viterbi 1 "3mer" 3 $BATCH_SIZE
 
 echo "#########################"
@@ -235,8 +229,36 @@ do
     TRELLIS_EXTRA_ARGS=""
   fi
   bench_cuda $K $BATCH_SIZE
-  bench_compile_trellis_viterbi 1 "$TRELLIS_EXTRA_ARGS $TRELLIS_BATCH" "${K}mer"
+  compile_trellis 1 "viterbi" "$TRELLIS_EXTRA_ARGS $TRELLIS_BATCH" "${K}mer"
   bench_trellis_viterbi 1 "${K}mer" $K $BATCH_SIZE
+done
+
+echo "##########################"
+echo "# COMPILATION BENCHMARKS #"
+echo "##########################"
+# Benchmarks specifically for the Trellis compilation performance. For these
+# benchmarks, we inform the compiler about the maximum number of predecessors
+# to skip that computation entirely.
+
+TRELLIS_COMPILE_ARGS=("$TRELLIS_BATCH" "$TRELLIS_BATCH --skip-predecessors --maxpreds 5")
+# Measure with and without predecessor computations and using either CPU or GPU
+# as the target.
+for i in 0 1
+do
+  ARGS=${TRELLIS_COMPILE_ARGS[i]}
+  for TARGET in "multicore" "cuda"
+  do
+    if [ $i -eq 0 ]
+    then
+      TEST_ID="preds"
+    else
+      TEST_ID="nopreds"
+    fi
+    bench_compile_trellis "$TARGET" "$ARGS" "weather" "$TEST_ID"
+    bench_compile_trellis "$TARGET" "$ARGS" "3mer" "$TEST_ID"
+    bench_compile_trellis "$TARGET" "$ARGS" "5mer" "$TEST_ID"
+    bench_compile_trellis "$TARGET" "$ARGS" "7mer" "$TEST_ID"
+  done
 done
 
 echo "####################"
