@@ -92,7 +92,7 @@ bench_trellis_viterbi() {
       TEST_ID="$2-nobatch"
     fi
   fi
-  CMD="python3 viterbi/trellis/run.py $3 $4 >> out/$TARGET_ID-$TEST_ID-viterbi.txt"
+  CMD="python3 viterbi/trellis/run.py $1 $3 >> out/$TARGET_ID-$TEST_ID-viterbi.txt"
   OUT_PATH="$(pwd)/out/$TARGET_ID-$TEST_ID-viterbi.json"
   bench_program "$CMD" "$OUT_PATH"
 }
@@ -229,6 +229,8 @@ do
     TRELLIS_EXTRA_ARGS=""
   fi
   bench_cuda $K $BATCH_SIZE
+  compile_trellis 0 "viterbi" "$TRELLIS_EXTRA_ARGS $TRELLIS_BATCH" "${K}mer"
+  bench_trellis_viterbi 0 "${K}mer" $K $BATCH_SIZE
   compile_trellis 1 "viterbi" "$TRELLIS_EXTRA_ARGS $TRELLIS_BATCH" "${K}mer"
   bench_trellis_viterbi 1 "${K}mer" $K $BATCH_SIZE
 done

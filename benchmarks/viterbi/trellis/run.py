@@ -13,18 +13,19 @@ else:
     tables, signals = c.get_weather_inputs_trellis(signals_path)
 hmm = HMM(tables)
 
+use_gpu = int(sys.argv[1])
 if len(sys.argv) == 3:
-    k = int(sys.argv[1])
-    batch_size = int(sys.argv[2])
+    k = int(sys.argv[2])
 else:
     k = 0
-    batch_size = 0
 
-# Adapt the below choices to fit the target machine...
 if k == 3 or k == 5:
     bsz = 100
 elif k == 7:
-    bsz = 3
+    if use_gpu == 1:
+        bsz = 3
+    else:
+        bsz = 15
 else:
     bsz = 100
 
