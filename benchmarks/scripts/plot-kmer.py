@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import json
 
+from colors import colors
+
 def load_full_time_label(label, conf, k):
     try:
         with open(f"out/{label}-{k}mer-{conf}.json", "r") as f:
@@ -30,11 +32,11 @@ fig, axs = plt.subplots(layout="constrained")
 width = 0.45
 
 avgs, errs = zip(*[load_full_time_label(label, "forward", 3) for label in labels])
-bars = axs.bar(x, avgs, width, yerr=errs, label="Full")
+bars = axs.bar(x, avgs, width, yerr=errs, label="Full", color=colors[0])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_alg_exec_time_label(label, "forward", 3) for label in labels])
-bars = axs.bar(x + width, avgs, width, yerr=errs, label="Forward")
+bars = axs.bar(x + width, avgs, width, yerr=errs, label="Forward", color=colors[1])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x+0.5*width, [l.upper() for l in labels])
@@ -51,11 +53,11 @@ x = np.arange(len(labels))
 fig, axs = plt.subplots(layout="constrained")
 
 avgs, errs = zip(*[load_full_time_label(label, "nobatch-viterbi", 3) for label in labels])
-bars = axs.bar(x, avgs, width, yerr=errs, label="Full")
+bars = axs.bar(x, avgs, width, yerr=errs, label="Full", color=colors[0])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_alg_exec_time_label(label, "nobatch-viterbi", 3) for label in labels])
-bars = axs.bar(x + width, avgs, width, yerr=errs, label="Viterbi")
+bars = axs.bar(x + width, avgs, width, yerr=errs, label="Viterbi", color=colors[1])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x + 0.5*width, [l.upper() for l in labels])
@@ -73,27 +75,27 @@ width = 0.15
 fig, axs = plt.subplots(layout="constrained")
 
 avgs, errs = zip(*[load_full_time_label(label, "batch-viterbi", 3) for label in labels])
-bars = axs.bar(x, avgs, width, yerr=errs, label="Full (k = 3)")
+bars = axs.bar(x, avgs, width, yerr=errs, label="Full (k = 3)", color=colors[0])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_alg_exec_time_label(label, "batch-viterbi", 3) for label in labels])
-bars = axs.bar(x + width, avgs, width, yerr=errs, label="Viterbi (k = 3)")
+bars = axs.bar(x + width, avgs, width, yerr=errs, label="Viterbi (k = 3)", color=colors[1])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_full_time_label(label, "batch-viterbi", 5) for label in labels])
-bars = axs.bar(x + 2*width, avgs, width, yerr=errs, label="Full (k = 5)")
+bars = axs.bar(x + 2*width, avgs, width, yerr=errs, label="Full (k = 5)", color=colors[2])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_alg_exec_time_label(label, "batch-viterbi", 5) for label in labels])
-bars = axs.bar(x + 3*width, avgs, width, yerr=errs, label="Viterbi (k = 5)")
+bars = axs.bar(x + 3*width, avgs, width, yerr=errs, label="Viterbi (k = 5)", color=colors[3])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_full_time_label(label, "batch-viterbi", 7) for label in labels])
-bars = axs.bar(x + 4*width, avgs, width, yerr=errs, label="Full (k = 7)")
+bars = axs.bar(x + 4*width, avgs, width, yerr=errs, label="Full (k = 7)", color=colors[4])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_alg_exec_time_label(label, "batch-viterbi", 7) for label in labels])
-bars = axs.bar(x + 5*width, avgs, width, yerr=errs, label="Viterbi (k = 7)")
+bars = axs.bar(x + 5*width, avgs, width, yerr=errs, label="Viterbi (k = 7)", color=colors[5])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x + 2.5*width, [l.upper() for l in labels])

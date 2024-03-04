@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import json
 
+from colors import colors
+
 def label_file(label, target, preds):
     return f"out/{target}-compile-{preds}-{label}.json"
 
@@ -21,15 +23,15 @@ fig, axs = plt.subplots(layout="constrained")
 width = 0.3
 
 avgs, errs = zip(*[load_data(label, "tc", "preds") for label in labels])
-bars = axs.bar(x, avgs, width, yerr=errs, label="TC")
+bars = axs.bar(x, avgs, width, yerr=errs, label="TC", color=colors[0])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_data(label, "tg", "preds") for label in labels])
-bars = axs.bar(x + width, avgs, width, yerr=errs, label="TG")
+bars = axs.bar(x + width, avgs, width, yerr=errs, label="TG", color=colors[1])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_data(label, "tg", "nopreds") for label in labels])
-bars = axs.bar(x + 2*width, avgs, width, yerr=errs, label="TG-NP")
+bars = axs.bar(x + 2*width, avgs, width, yerr=errs, label="TG-NP", color=colors[2])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x + width, labels)

@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import json
 
+from colors import colors
+
 def load_full_time_label(label, alg):
     try:
         with open(f"out/{label}-weather-{alg}.json", "r") as f:
@@ -30,11 +32,11 @@ fig, axs = plt.subplots(layout="constrained")
 width = 0.4
 
 avgs, errs = zip(*[load_full_time_label(label, "forward") for label in labels])
-bars = axs.bar(x, avgs, width, yerr=errs, label="Full")
+bars = axs.bar(x, avgs, width, yerr=errs, label="Full", color=colors[0])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_alg_exec_time_label(label, "forward") for label in labels])
-bars = axs.bar(x + width, avgs, width, yerr=errs, label="Forward")
+bars = axs.bar(x + width, avgs, width, yerr=errs, label="Forward", color=colors[1])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x+0.5*width, [l.upper() for l in labels])
@@ -51,11 +53,11 @@ x = np.arange(len(labels))
 fig, axs = plt.subplots(layout="constrained")
 
 avgs, errs = zip(*[load_full_time_label(label, "viterbi") for label in labels])
-bars = axs.bar(x, avgs, width, yerr=errs, label="Full")
+bars = axs.bar(x, avgs, width, yerr=errs, label="Full", color=colors[0])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_alg_exec_time_label(label, "viterbi") for label in labels])
-bars = axs.bar(x + width, avgs, width, yerr=errs, label="Viterbi")
+bars = axs.bar(x + width, avgs, width, yerr=errs, label="Viterbi", color=colors[1])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x + 0.5*width, [l.upper() for l in labels])
