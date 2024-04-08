@@ -9,6 +9,7 @@
 -- prevention of out-of-bounds accesses or other sanity checks.
 
 include "ast.mc"
+include "pprint.mc"
 include "../parser/ast.mc"
 include "../parser/resolve.mc"
 
@@ -31,7 +32,9 @@ lang TrellisModelConvertType = TrellisModelAst + TrellisAst
     TTuple {tys = map convertTrellisType t, info = info}
 end
 
-lang TrellisModelConvertExpr = TrellisModelConvertType
+lang TrellisModelConvertExpr =
+  TrellisModelConvertType + TrellisModelTypePrettyPrint
+
   sem convertTrellisExpr : Map Name TType -> TrellisExpr -> TExpr
   sem convertTrellisExpr tyEnv =
   | TrueTrellisExpr {info = info} ->
@@ -87,9 +90,9 @@ lang TrellisModelConvertExpr = TrellisModelConvertType
   | DivTrellisExpr {left = left, right = right, info = info} ->
     buildOverloadedBinOp tyEnv left right info (ODiv ())
   | EqTrellisExpr {left = left, right = right, info = info} ->
-    buildOverloadedCompBinOp tyEnv left right info (OEq ())
+    buildOverloadedEqBinOp tyEnv left right info (OEq ())
   | NeqTrellisExpr {left = left, right = right, info = info} ->
-    buildOverloadedCompBinOp tyEnv left right info (ONeq ())
+    buildOverloadedEqBinOp tyEnv left right info (ONeq ())
   | LtTrellisExpr {left = left, right = right, info = info} ->
     buildOverloadedCompBinOp tyEnv left right info (OLt ())
   | GtTrellisExpr {left = left, right = right, info = info} ->
@@ -103,6 +106,15 @@ lang TrellisModelConvertExpr = TrellisModelConvertType
   | OrTrellisExpr {left = left, right = right, info = info} ->
     buildBoolBinOp tyEnv left right info (OOr ())
 
+  sem binOpTypeError : all a. TType -> TType -> Info -> String -> a
+  sem binOpTypeError lhs rhs info =
+  | msg ->
+    errorSingle [info] (join [
+      msg, "\n",
+      "  LHS: ", pprintTrellisType lhs, "\n",
+      "  RHS: ", pprintTrellisType rhs
+    ])
+
   sem buildOverloadedBinOp : Map Name TType -> TrellisExpr -> TrellisExpr -> Info -> BOp -> TExpr
   sem buildOverloadedBinOp tyEnv left right info =
   | op ->
@@ -111,31 +123,51 @@ lang TrellisModelConvertExpr = TrellisModelConvertType
     let ty =
       let lty = tyTExpr lhs in
       let rty = tyTExpr rhs in
-      match (lty, rty) with (TInt _ | TProb _, TInt _ | TProb _) then
+      match (lty, rty) with (TInt _, TInt _) | (TProb _, TProb _) then
         match checkTType lty rty with Some ty then ty
-        else errorSingle [info] "Operator is applied to incompatible arithmetic types"
-      else errorSingle [info] "Operand types mismatch"
+        else binOpTypeError lty rty info "Operator is applied to incompatible arithmetic types"
+      else binOpTypeError lty rty info "Operand types mismatch"
     in
     EBinOp {op = op, lhs = lhs, rhs = rhs, ty = ty, info = info}
+
+  sem buildOverloadedEqBinOp : Map Name TType -> TrellisExpr -> TrellisExpr -> Info -> BOp -> TExpr
+  sem buildOverloadedEqBinOp tyEnv left right info =
+  | op ->
+    let lhs = convertTrellisExpr tyEnv left in
+    let rhs = convertTrellisExpr tyEnv right in
+    let lty = tyTExpr lhs in
+    let rty = tyTExpr rhs in
+    match checkTType lty rty with Some ty then
+      let resTy = TBool {info = info} in
+      EBinOp {op = op, lhs = lhs, rhs = rhs, ty = resTy, info = info}
+    else binOpTypeError lty rty info "Equality comparison operands have incompatible types"
 
   sem buildOverloadedCompBinOp : Map Name TType -> TrellisExpr -> TrellisExpr -> Info -> BOp -> TExpr
   sem buildOverloadedCompBinOp tyEnv left right info =
   | op ->
     let lhs = convertTrellisExpr tyEnv left in
     let rhs = convertTrellisExpr tyEnv right in
-    match checkTType (tyTExpr lhs) (tyTExpr rhs) with Some ty then
-      let resTy = TBool {info = info} in
-      EBinOp {op = op, lhs = lhs, rhs = rhs, ty = resTy, info = info}
-    else errorSingle [info] "Comparison operands have different type"
+    let lty = tyTExpr lhs in
+    let rty = tyTExpr rhs in
+    printLn (join [pprintTrellisType lty, " compared with ", pprintTrellisType rty]);
+    let ty =
+      match (lty, rty) with (TInt _, TInt _) | (TProb _, TProb _) then
+        match checkTType lty rty with Some ty then ty
+        else binOpTypeError lty rty info "Comparison operands must have compatible arithmetic types"
+      else binOpTypeError lty rty info "Comparison operands must have arithmetic types"
+    in
+    EBinOp {op = op, lhs = lhs, rhs = rhs, ty = ty, info = info}
 
   sem buildBoolBinOp : Map Name TType -> TrellisExpr -> TrellisExpr -> Info -> BOp -> TExpr
   sem buildBoolBinOp tyEnv left right info =
   | op ->
     let lhs = convertTrellisExpr tyEnv left in
     let rhs = convertTrellisExpr tyEnv right in
+    let lty = tyTExpr lhs in
+    let rty = tyTExpr rhs in
     match checkTType (tyTExpr lhs) (tyTExpr rhs) with Some (TBool _) then
       EBinOp {op = op, lhs = lhs, rhs = rhs, ty = TBool {info = info}, info = info}
-    else errorSingle [info] "Invalid operand types of boolean operation"
+    else binOpTypeError lty rty info "Invalid operand types of boolean operation"
 end
 
 lang TrellisModelConvertSet = TrellisModelConvertExpr
