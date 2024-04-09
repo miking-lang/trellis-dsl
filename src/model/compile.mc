@@ -238,8 +238,6 @@ lang TrellisCompileExpr =
   | OGeq _ -> FCGeq ()
   | OAnd _ -> FCAnd ()
   | OOr _ -> FCOr ()
-  | OBitAnd _ -> FCBitAnd ()
-  | OSrl _ -> FCSrl ()
   | OMod _ -> FCRem ()
 
   sem compileArithmeticOperation : TrellisCompileEnv -> BinOpStruct -> FutExpr

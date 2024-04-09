@@ -46,42 +46,6 @@ lang TrellisEncodeBase = TrellisModelExprPrettyPrint + TrellisModelAst
   sem pprintBinOp =
 end
 
-lang TrellisEncodeBitwise = TrellisEncodeBase + TrellisTypeBitwidth
-  syn BOp =
-  | OBitAnd ()
-  | OSrl ()
-
-  sem pprintBinOp =
-  | OBitAnd _ -> "&"
-  | OSrl _ -> ">>"
-
-  sem generateBitwiseOperations : Info -> [TType] -> Int -> Int -> TExpr -> TExpr
-  sem generateBitwiseOperations info tys lo hi =
-  | target ->
-    let bitwidths = map bitwidthType tys in
-    let shift = foldl addi 0 (subsequence bitwidths (addi hi 1) (length tys)) in
-    let sliceBitwidths = subsequence bitwidths lo (addi (subi hi lo) 1) in
-    let mask = subi (slli 1 (foldl addi 0 sliceBitwidths)) 1 in
-    let totBitwidth = foldl1 addi bitwidths in
-    let resultTy = TInt {bounds = Some (0, totBitwidth), info = info} in
-    applyBitmask info resultTy mask
-      (applyRightShift info resultTy shift target)
-
-  sem applyBitmask : Info -> TType -> Int -> TExpr -> TExpr
-  sem applyBitmask info ty bitmask =
-  | e ->
-    let rhs = EInt {i = bitmask, ty = ty, info = info} in
-    EBinOp {op = OBitAnd (), lhs = e, rhs = rhs, ty = ty, info = info}
-
-  sem applyRightShift : Info -> TType -> Int -> TExpr -> TExpr
-  sem applyRightShift info ty shiftAmount =
-  | e ->
-    if eqi shiftAmount 0 then e else
-    let e = withTyTExpr ty e in
-    let rhs = EInt {i = shiftAmount, ty = ty, info = info} in
-    EBinOp {op = OSrl (), lhs = e, rhs = rhs, ty = ty, info = info}
-end
-
 lang TrellisEncodeMixedRadix = TrellisEncodeBase + TrellisTypeCardinality
   syn BOp =
   | OMod ()
@@ -115,50 +79,23 @@ lang TrellisEncodeMixedRadix = TrellisEncodeBase + TrellisTypeCardinality
     EBinOp {op = ODiv (), lhs = e, rhs = rhs, ty = ty, info = info}
 end
 
-lang TrellisEncodeExpr = TrellisEncodeBitwise + TrellisEncodeMixedRadix
-  sem encodeStateOperationsExpr : Bool -> TExpr -> TExpr
-  sem encodeStateOperationsExpr useBitset =
+lang TrellisEncodeExpr = TrellisEncodeMixedRadix
+  sem encodeStateOperationsExpr : TExpr -> TExpr
+  sem encodeStateOperationsExpr =
   | EVar t ->
     match t.ty with TTable _ then EVar t
     else
-      let maxsz =
-        if useBitset then slli 1 (bitwidthType t.ty)
-        else cardinalityType t.ty
-      in
+      let maxsz = cardinalityType t.ty in
       let ty = TInt {bounds = Some (0, maxsz), info = t.info} in
       EVar {t with ty = ty}
   | ESlice {target = target, lo = lo, hi = hi, ty = ty, info = info} ->
     if lti hi lo then errorSingle [info] "Invalid slice node" else
     let targetTy = tyTExpr target in
-    let target = encodeStateOperationsExpr useBitset target in
+    let target = encodeStateOperationsExpr target in
     match targetTy with TTuple {tys = tys} then
-      if useBitset then generateBitwiseOperations info tys lo hi target
-      else generateMixedRadixOperations info tys lo hi target
+      generateMixedRadixOperations info tys lo hi target
     else errorSingle [info] "Projection has invalid type"
-  | EBinOp (t & {op = OEq _ | ONeq _ | OLt _ | OGt _ | OLeq _ | OGeq _}) ->
-    -- NOTE(larshum, 2024-01-25): When we compare a bit-encoded value with an
-    -- integer literal, we add an offset based on the lower-bound of the
-    -- encoded integer value. We have to do this because integers in a range
-    -- a..b are encoded as values in the range 0..(b-a).
-    let addOffset = lam ofs. lam e.
-      if eqi ofs 0 then e else
-      let intTy = tyTExpr e in
-      let ofs = EInt {i = ofs, ty = intTy, info = t.info} in
-      EBinOp {op = OAdd (), lhs = e, rhs = ofs, ty = intTy, info = t.info}
-    in
-    let lty = tyTExpr t.lhs in
-    let rty = tyTExpr t.rhs in
-    let lhs = encodeStateOperationsExpr useBitset t.lhs in
-    let rhs = encodeStateOperationsExpr useBitset t.rhs in
-    switch (lty, rty)
-    case (TInt {bounds = Some (ofs, _)}, TInt {bounds = None _}) then
-      EBinOp {t with lhs = addOffset ofs lhs, rhs = rhs, ty = lty}
-    case (TInt {bounds = None _}, TInt {bounds = Some (ofs, _)}) then
-      EBinOp {t with lhs = lhs, rhs = addOffset ofs rhs, ty = rty}
-    case _ then
-      EBinOp {t with lhs = lhs, rhs = rhs}
-    end
-  | e -> smapTExprTExpr (encodeStateOperationsExpr useBitset) e
+  | e -> smapTExprTExpr encodeStateOperationsExpr e
 end
 
 lang TrellisEncode = TrellisEncodeExpr
@@ -173,12 +110,12 @@ lang TrellisEncode = TrellisEncodeExpr
   sem encodeStateOperationsCase : TrellisOptions -> Case -> Case
   sem encodeStateOperationsCase options =
   | {cond = cond, body = body} ->
-    let encExpr = encodeStateOperationsExpr options.useBitsetEncoding in
+    let encExpr = encodeStateOperationsExpr in
     { cond = smapTSetTExpr encExpr cond
     , body = encExpr body }
 end
 
-lang TestLang = TrellisEncode + TrellisModelPrettyPrint
+lang TestLang = TrellisEncode + TrellisModelPrettyPrint + TrellisTypeBitwidth
 end
 
 mexpr
@@ -216,26 +153,17 @@ let ty = TTuple {tys = [ty2, ty2, ty1], info = i} in
 let x = EVar {id = nameNoSym "x", ty = ty, info = i} in
 let proj = lam idx. ESlice {target = x, lo = idx, hi = idx, ty = ty2, info = i} in
 
-utest pprintExpr (encodeStateOperationsExpr false (proj 0))
+utest pprintExpr (encodeStateOperationsExpr (proj 0))
 with "((x / 12) % 6)" using eqString else ppStrings in
-utest pprintExpr (encodeStateOperationsExpr false (proj 1))
+utest pprintExpr (encodeStateOperationsExpr (proj 1))
 with "((x / 2) % 6)" using eqString else ppStrings in
-utest pprintExpr (encodeStateOperationsExpr false (proj 2))
+utest pprintExpr (encodeStateOperationsExpr (proj 2))
 with "(x % 2)" using eqString else ppStrings in
-
-utest pprintExpr (encodeStateOperationsExpr true (proj 0))
-with "((x >> 4) & 7)" using eqString else ppStrings in
-utest pprintExpr (encodeStateOperationsExpr true (proj 1))
-with "((x >> 1) & 7)" using eqString else ppStrings in
-utest pprintExpr (encodeStateOperationsExpr true (proj 2))
-with "(x & 1)" using eqString else ppStrings in
 
 let slice = ESlice {
   target = x, lo = 0, hi = 1, ty = TTuple {tys = [ty2, ty2], info = i}, info = i
 } in
-utest pprintExpr (encodeStateOperationsExpr false slice)
+utest pprintExpr (encodeStateOperationsExpr slice)
 with "((x / 2) % 36)" using eqString else ppStrings in
-utest pprintExpr (encodeStateOperationsExpr true slice)
-with "((x >> 1) & 63)" using eqString else ppStrings in
 
 ()

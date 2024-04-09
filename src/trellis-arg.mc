@@ -9,7 +9,6 @@ type TrellisOptions = {
   batchSize : Int,
   batchOverlap : Int,
   useDoublePrecisionFloats : Bool,
-  useBitsetEncoding : Bool,
   forcePrecomputeTables : Bool,
   skipPredecessors : Bool,
   maxpreds : Int,
@@ -23,7 +22,6 @@ let trellisDefaultOptions = {
   batchSize = 1024,
   batchOverlap = 128,
   useDoublePrecisionFloats = false,
-  useBitsetEncoding = false,
   forcePrecomputeTables = false,
   skipPredecessors = false,
   maxpreds = negi 1,
@@ -61,11 +59,6 @@ let config = [
       "Use double-precision floating point numbers.",
     lam p.
       let o = p.options in {o with useDoublePrecisionFloats = true}),
-  ([("--use-bitset-encoding", "", "")],
-    defaultStr (bool2string trellisDefaultOptions.useBitsetEncoding)
-      "Enables encoding of states using a bitset approach.",
-    lam p.
-      let o = p.options in {o with useBitsetEncoding = true}),
   ([("--precompute-tables", "", "")],
     defaultStr (bool2string trellisDefaultOptions.forcePrecomputeTables)
       "Pre-computes all probability tables when constructing the model. This improves execution time but increases memory usage.",
