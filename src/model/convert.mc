@@ -66,10 +66,12 @@ lang TrellisModelConvertExpr =
         match tableTy with TTable {args = args, ret = ret} then
           let argExprs = map (convertTrellisExpr tyEnv) e in
           let argTypes = map tyTExpr argExprs in
-          match optionMapM checkTTypeH (zip args argTypes) with Some tys then
-            let args = map (lam t. withTyTExpr t.0 t.1) (zip tys argExprs) in
-            ETableAccess {table = tableId, args = args, ty = ret, info = info}
-          else errorSingle [info] "Table argument has wrong type"
+          if eqi (length args) (length argTypes) then
+            match optionMapM checkTTypeH (zip args argTypes) with Some tys then
+              let args = map (lam t. withTyTExpr t.0 t.1) (zip tys argExprs) in
+              ETableAccess {table = tableId, args = args, ty = ret, info = info}
+            else errorSingle [info] "Table argument has wrong type"
+          else errorSingle [info] "Wrong number of arguments in table use"
         else errorSingle [info] "Table has invalid type"
       else errorSingle [info] "Could not find type of table"
     else errorSingle [info] "Table access must use a valid table name"
@@ -406,9 +408,11 @@ lang TrellisModelFlatten = TrellisModelAst
     -- Construct the flattened slice operation.
     match innerTargetTy with TTuple {tys = tys} then
       let target = withTyTExpr innerTargetTy target in
-      let sliceTy = TTuple {
-        tys = subsequence tys lo (addi (subi hi lo) 1), info = t.info
-      } in
+      let sliceTy =
+        if eqi lo hi then get tys lo
+        else
+          TTuple { tys = subsequence tys lo (addi (subi hi lo) 1), info = t.info }
+      in
       ESlice {target = target, lo = lo, hi = hi, ty = sliceTy, info = t.info}
     else errorSingle [t.info] "Invalid type of slice operation"
   | e ->
@@ -519,10 +523,87 @@ lang TrellisModelEliminateSlices = TrellisModelAst
   | TTable t -> errorSingle [t.info] "Cannot have nested table types"
 end
 
+-- Adjust the integer ranges of all values so that they have a lower bound of
+-- zero.
+lang TrellisModelAdjustRanges = TrellisModelAst
+  sem adjustIntRangesModel : TModel -> TModel
+  sem adjustIntRangesModel =
+  | {initial = i, output = o, transition = t} & model ->
+    let initial = {i with cases = map (adjustIntRangesCase model.tables) i.cases} in
+    let output = {o with cases = map (adjustIntRangesCase model.tables) o.cases} in
+    let transition = {t with cases = map (adjustIntRangesCase model.tables) t.cases} in
+    {model with stateType = adjustIntRangesType model.stateType,
+                outType = adjustIntRangesType model.outType,
+                tables = mapMapWithKey (lam. lam ty. adjustIntRangesType ty) model.tables,
+                initial = initial, output = output, transition = transition}
+
+  sem adjustIntRangesCase : Map Name TType -> Case -> Case
+  sem adjustIntRangesCase tableEnv =
+  | c ->
+    {c with cond = adjustIntRangesSet tableEnv c.cond,
+            body = adjustIntRangesExpr tableEnv c.body}
+
+  sem adjustIntRangesSet : Map Name TType -> TSet -> TSet
+  sem adjustIntRangesSet tableEnv =
+  | s -> smapTSetTExpr (adjustIntRangesExpr tableEnv) s
+
+  sem adjustIntRangesExpr : Map Name TType -> TExpr -> TExpr
+  sem adjustIntRangesExpr tableEnv =
+  | e & ( EVar {ty = TInt (ti & {bounds = Some (lo, hi)})}
+        | ESlice {ty = TInt (ti & {bounds = Some (lo, hi)})}) ->
+    if eqi lo 0 then e
+    else
+      -- NOTE(larshum, 2024-04-09): If the type of a variable is stated to be
+      -- non-zero, we adjust its value as the default representation uses lower
+      -- bound zero.
+      let ofs = EInt {
+        i = lo, ty = TInt {bounds = None (), info = infoTExpr e},
+        info = infoTExpr e
+      } in
+      let target =
+        match e with EVar t then
+          EVar {t with ty = TInt {ti with bounds = Some (0, subi hi lo)}}
+        else match e with ESlice t then
+          ESlice {t with ty = TInt {ti with bounds = Some (0, subi hi lo)}}
+        else never
+      in
+      EBinOp {
+        op = OAdd (), lhs = target,
+        rhs = ofs, ty = TInt {ti with bounds = Some (lo, hi)},
+        info = infoTExpr e }
+  | ETableAccess t ->
+    let adjustIntRangesArg = lam arg.
+      let arg = adjustIntRangesExpr tableEnv arg in
+      match tyTExpr arg with TInt (ti & {bounds = Some (lo, hi)}) then
+        -- NOTE(larshum, 2024-04-09): If we access a table using a value of a
+        -- type with non-zero lower bound, we adjust it accordingly.
+        if neqi lo 0 then
+          let ofs = EInt {
+            i = lo, ty = TInt {bounds = None (), info = t.info},
+            info = t.info
+          } in
+          EBinOp {
+            op = OSub (),
+            lhs = arg, rhs = ofs,
+            ty = TInt {ti with bounds = Some (0, subi hi lo)}, info = t.info
+          }
+        else arg
+      else arg
+    in
+    ETableAccess {t with args = map adjustIntRangesArg t.args}
+  | e -> smapTExprTExpr (adjustIntRangesExpr tableEnv) e
+
+  sem adjustIntRangesType : TType -> TType
+  sem adjustIntRangesType =
+  | TInt (t & {bounds = Some (lo, hi)}) ->
+    TInt {t with bounds = Some (0, subi hi lo)}
+  | ty -> smapTTypeTType adjustIntRangesType ty
+end
+
 lang TrellisModelConvert =
   TrellisModelConvertType + TrellisModelConvertExpr + TrellisModelConvertSet +
   TrellisResolveDeclarations + TrellisModelFlatten +
-  TrellisModelEliminateSlices
+  TrellisModelEliminateSlices + TrellisModelAdjustRanges
 
   sem constructTrellisModelRepresentation : TrellisProgram -> TModel
   sem constructTrellisModelRepresentation =
@@ -531,7 +612,8 @@ lang TrellisModelConvert =
     let info = get_TrellisProgram_info p in
     let m = convertToModelRepresentation info inModelDecls in
     let m = flattenTrellisModelSlices m in
-    eliminateModelSlices m
+    let m = eliminateModelSlices m in
+    adjustIntRangesModel m
 
   sem convertToModelRepresentation : Info -> [InModelDecl] -> TModel
   sem convertToModelRepresentation info =
@@ -674,6 +756,17 @@ utest flattenType nestedTupleTy with flattenedNestedTy in
 
 let x = nameNoSym "x" in
 
+-- x[0] -> x[0]
+let e = ESlice {
+  target = EVar {id = x, ty = tupleTy, info = i},
+  lo = 0, hi = 0, ty = elemTy, info = i
+} in
+let flattened = ESlice {
+  target = EVar {id = x, ty = flattenedTy, info = i},
+  lo = 0, hi = 0, ty = elemTy, info = i
+} in
+utest flattenExpr e with flattened using trellisEqExpr else printTrellisExpr in
+
 -- x[2][1][1:2] -> x[5:6]
 let e = ESlice {
   target = ESlice {
@@ -753,15 +846,13 @@ let y = nameNoSym "y" in
 let tableAccess = ETableAccess {
   table = y,
   args = [slice 7 8],
-  ty = TTable {
-    args = [TTuple {tys = [elemTy, elemTy], info = i}], ret = TProb {info = i},
-    info = i},
+  ty = TProb {info = i},
   info = i
 } in
 let expected = ETableAccess {
   table = y,
   args = [slice 7 7, slice 8 8],
-  ty = TTable {args = [elemTy, elemTy], ret = TProb {info = i}, info = i},
+  ty = TProb {info = i},
   info = i
 } in
 utest eliminateSlicesExpr tableAccess with expected using trellisEqExpr
@@ -779,7 +870,5 @@ let expected = [
 ] in
 utest extractComponentsExpr [] sliceEq with expected
 using eqSeq trellisEqExpr in
-
-
 
 ()
