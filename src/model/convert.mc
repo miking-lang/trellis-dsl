@@ -348,6 +348,12 @@ lang TrellisModelConvertSet = TrellisModelConvertExpr
   | e -> smapTExprTExpr (substituteBoundPatterns bound) e
 end
 
+-- Flattens nested uses of indexing and slicing and tuple types to a flat
+-- structure. This makes it easier to reason about the individual components of
+-- them. Concretely, after this transformation:
+--   1. All tuples of tuples will be converted to a tuple without nesting.
+--   2. All indexing operations are translated to work on the flat structure of
+--      the target tuple.
 lang TrellisModelFlatten = TrellisModelAst
   sem flattenTrellisModelSlices : TModel -> TModel
   sem flattenTrellisModelSlices =
@@ -358,8 +364,7 @@ lang TrellisModelFlatten = TrellisModelAst
     { model with stateType = flattenType model.stateType,
                  outType = flattenType model.outType,
                  tables = mapMapWithKey (lam. lam v. flattenType v) model.tables,
-                 initial = initial,
-                 output = output, transition = transition }
+                 initial = initial, output = output, transition = transition }
 
   sem flattenSlicesCase : Case -> Case
   sem flattenSlicesCase =
@@ -436,9 +441,88 @@ lang TrellisModelFlatten = TrellisModelAst
   | _ -> 1
 end
 
+-- Eliminates all uses of slice operations. This assumes slices have been
+-- flattened. Concretely, after this pass
+--   1. Tuple arguments to tables are passed in a decomposed way, where each
+--      component of the tuple is a separate argument.
+--   2. Slice operations on tuples are replaced by indexing operations that
+--      each produce a non-nested component of a tuple.
+lang TrellisModelEliminateSlices = TrellisModelAst
+  sem eliminateModelSlices : TModel -> TModel
+  sem eliminateModelSlices =
+  | {initial = i, output = o, transition = t} & model ->
+    let initial = {i with cases = map eliminateSlicesCase i.cases} in
+    let output = {o with cases = map eliminateSlicesCase o.cases} in
+    let transition = {t with cases = map eliminateSlicesCase t.cases} in
+    { model with tables = mapMapWithKey (lam. lam v. eliminateSlicesType v) model.tables,
+                 initial = initial, output = output, transition = transition }
+
+  sem eliminateSlicesCase : Case -> Case
+  sem eliminateSlicesCase =
+  | c -> {c with cond = eliminateSlicesSet c.cond,
+                 body = eliminateSlicesExpr c.body}
+
+  sem eliminateSlicesSet : TSet -> TSet
+  sem eliminateSlicesSet =
+  | SAll t -> SAll t
+  | SValueBuilder t ->
+    SValueBuilder {t with conds = foldl extractComponentsExpr [] t.conds}
+  | STransitionBuilder t ->
+    STransitionBuilder {t with conds = foldl extractComponentsExpr [] t.conds}
+
+  sem eliminateSlicesExpr : TExpr -> TExpr
+  sem eliminateSlicesExpr =
+  | ETableAccess t ->
+    ETableAccess {t with args = foldl extractComponentsExpr [] t.args,
+                         ty = eliminateSlicesType t.ty}
+  | e -> smapTExprTExpr eliminateSlicesExpr e
+
+  sem eliminateSlicesType : TType -> TType
+  sem eliminateSlicesType =
+  | TTable t -> TTable {t with args = foldl extractComponentsType [] t.args}
+  | ty -> smapTTypeTType eliminateSlicesType ty
+
+  sem extractComponentsExpr : [TExpr] -> TExpr -> [TExpr]
+  sem extractComponentsExpr acc =
+  | ESlice (t & {ty = TTuple {tys = tys}}) ->
+    -- NOTE(larshum, 2024-04-09): Convert each slice used as an argument to
+    -- multiple arguments, one for each component within it.
+    let components = create (length tys) (lam i.
+      let idx = addi t.lo i in
+      let ty = get tys i in
+      ESlice {t with lo = idx, hi = idx, ty = ty}
+    ) in
+    concat acc components
+  | EBinOp (t & {op = op & (OEq _ | ONeq _), lhs = ESlice l, rhs = ESlice r}) ->
+    -- NOTE(larshum, 2024-04-09): Convert each equality/inequality on slices to
+    -- multiple versions of the same operation on each component the original
+    -- slice refers to.
+    match (l.ty, r.ty) with (TTuple {tys = ltys}, TTuple {tys = rtys}) then
+      if eqi (length ltys) (length rtys) then
+        let components = create (length ltys) (lam i.
+          let lidx = addi l.lo i in
+          let lty = get ltys i in
+          let ridx = addi r.lo i in
+          let rty = get rtys i in
+          EBinOp {t with lhs = ESlice {l with lo = lidx, hi = lidx, ty = lty},
+                         rhs = ESlice {r with lo = ridx, hi = ridx, ty = rty}}
+        ) in
+        concat acc components
+      else errorSingle [t.info] "Equality of slices of different lengths"
+    else snoc acc (EBinOp t)
+  | e -> snoc acc e
+
+  sem extractComponentsType : [TType] -> TType -> [TType]
+  sem extractComponentsType acc =
+  | (TBool _ | TInt _ | TProb _) & ty -> snoc acc ty
+  | TTuple t -> foldl extractComponentsType acc t.tys
+  | TTable t -> errorSingle [t.info] "Cannot have nested table types"
+end
+
 lang TrellisModelConvert =
   TrellisModelConvertType + TrellisModelConvertExpr + TrellisModelConvertSet +
-  TrellisResolveDeclarations + TrellisModelFlatten
+  TrellisResolveDeclarations + TrellisModelFlatten +
+  TrellisModelEliminateSlices
 
   sem constructTrellisModelRepresentation : TrellisProgram -> TModel
   sem constructTrellisModelRepresentation =
@@ -446,7 +530,8 @@ lang TrellisModelConvert =
     let inModelDecls = resolveDeclarations p in
     let info = get_TrellisProgram_info p in
     let m = convertToModelRepresentation info inModelDecls in
-    flattenTrellisModelSlices m
+    let m = flattenTrellisModelSlices m in
+    eliminateModelSlices m
 
   sem convertToModelRepresentation : Info -> [InModelDecl] -> TModel
   sem convertToModelRepresentation info =
@@ -567,6 +652,8 @@ let printTrellisExpr = lam l. lam r.
   utestDefaultToString pp pp l r
 in
 
+-- Slice flattening tests
+
 -- (x0, (x1, x2), [x3, (x4, x5, x6)], x7, x8)
 let i = trellisInfo "trellis-convert" in
 let elemTy = TBool {info = i} in
@@ -648,5 +735,51 @@ let flattened = ESlice {
   lo = 7, hi = 8, ty = TTuple {tys = [elemTy, elemTy], info = i}, info = i
 } in
 utest flattenExpr e with flattened using trellisEqExpr else printTrellisExpr in
+
+-- Slice elimination tests
+
+let slice = lam lo. lam hi.
+  let n = addi (subi hi lo) 1 in
+  let ty =
+    if eqi lo hi then elemTy
+    else TTuple {tys = create n (lam. elemTy), info = i}
+  in
+  ESlice {
+    target = EVar {id = x, ty = flattenedTy, info = i},
+    lo = lo, hi = hi, ty = ty, info = i}
+in
+
+let y = nameNoSym "y" in
+let tableAccess = ETableAccess {
+  table = y,
+  args = [slice 7 8],
+  ty = TTable {
+    args = [TTuple {tys = [elemTy, elemTy], info = i}], ret = TProb {info = i},
+    info = i},
+  info = i
+} in
+let expected = ETableAccess {
+  table = y,
+  args = [slice 7 7, slice 8 8],
+  ty = TTable {args = [elemTy, elemTy], ret = TProb {info = i}, info = i},
+  info = i
+} in
+utest eliminateSlicesExpr tableAccess with expected using trellisEqExpr
+else printTrellisExpr in
+
+let eqty = TBool {info = i} in
+let sliceEq = EBinOp {
+  op = OEq (), lhs = slice 2 5, rhs = slice 5 8, ty = eqty, info = i
+} in
+let expected = [
+  EBinOp {op = OEq (), lhs = slice 2 2, rhs = slice 5 5, ty = eqty, info = i},
+  EBinOp {op = OEq (), lhs = slice 3 3, rhs = slice 6 6, ty = eqty, info = i},
+  EBinOp {op = OEq (), lhs = slice 4 4, rhs = slice 7 7, ty = eqty, info = i},
+  EBinOp {op = OEq (), lhs = slice 5 5, rhs = slice 8 8, ty = eqty, info = i}
+] in
+utest extractComponentsExpr [] sliceEq with expected
+using eqSeq trellisEqExpr in
+
+
 
 ()
