@@ -8,7 +8,10 @@
 -- This ensures that, in the end, all integers have bounds. This enables
 -- prevention of out-of-bounds accesses or other sanity checks.
 
+include "utest.mc"
+
 include "ast.mc"
+include "eq.mc"
 include "pprint.mc"
 include "../parser/ast.mc"
 include "../parser/resolve.mc"
@@ -149,7 +152,6 @@ lang TrellisModelConvertExpr =
     let rhs = convertTrellisExpr tyEnv right in
     let lty = tyTExpr lhs in
     let rty = tyTExpr rhs in
-    printLn (join [pprintTrellisType lty, " compared with ", pprintTrellisType rty]);
     let ty =
       match (lty, rty) with (TInt _, TInt _) | (TProb _, TProb _) then
         match checkTType lty rty with Some ty then ty
@@ -346,16 +348,105 @@ lang TrellisModelConvertSet = TrellisModelConvertExpr
   | e -> smapTExprTExpr (substituteBoundPatterns bound) e
 end
 
+lang TrellisModelFlatten = TrellisModelAst
+  sem flattenTrellisModelSlices : TModel -> TModel
+  sem flattenTrellisModelSlices =
+  | {initial = i, output = o, transition = t} & model ->
+    let initial = {i with cases = map flattenSlicesCase i.cases} in
+    let output = {o with cases = map flattenSlicesCase o.cases} in
+    let transition = {t with cases = map flattenSlicesCase t.cases} in
+    { model with stateType = flattenType model.stateType,
+                 outType = flattenType model.outType,
+                 tables = mapMapWithKey (lam. lam v. flattenType v) model.tables,
+                 initial = initial,
+                 output = output, transition = transition }
+
+  sem flattenSlicesCase : Case -> Case
+  sem flattenSlicesCase =
+  | c -> {c with body = flattenExpr c.body, cond = flattenSlicesSet c.cond}
+
+  sem flattenSlicesSet : TSet -> TSet
+  sem flattenSlicesSet =
+  | s -> smapTSetTExpr flattenExpr s
+
+  sem flattenType : TType -> TType
+  sem flattenType =
+  | TTuple t ->
+    let flattenTupleArgTypes = lam tys. lam ty.
+      match ty with TTuple t then concat tys t.tys
+      else snoc tys ty
+    in
+    let tys = map flattenType t.tys in
+    TTuple {t with tys = foldl flattenTupleArgTypes [] tys}
+  | t -> smapTTypeTType flattenType t
+
+  sem flattenExpr : TExpr -> TExpr
+  sem flattenExpr =
+  | ESlice t ->
+    -- Flatten the target expression of the slice, producing the expression and
+    -- type of the innermost target and the accumulated offset.
+    match flattenSliceExpr (ESlice t) with (target, innerTargetTy, lo, hi) in
+
+    -- If the operation refers to a particular index (a slice with the same
+    -- lower and upper bound) and results in a tuple type, we need to make it a
+    -- slice operation after flattening.
+    match
+      if eqi lo hi then
+        match t.ty with TTuple {tys = tys} then
+          (lo, addi hi (subi (countComponents t.ty) 1))
+        else (lo, hi)
+      else (lo, hi)
+    with (lo, hi) in
+
+    -- Construct the flattened slice operation.
+    match innerTargetTy with TTuple {tys = tys} then
+      let target = withTyTExpr innerTargetTy target in
+      let sliceTy = TTuple {
+        tys = subsequence tys lo (addi (subi hi lo) 1), info = t.info
+      } in
+      ESlice {target = target, lo = lo, hi = hi, ty = sliceTy, info = t.info}
+    else errorSingle [t.info] "Invalid type of slice operation"
+  | e ->
+    let e = withTyTExpr (flattenType (tyTExpr e)) e in
+    smapTExprTExpr flattenExpr e
+
+  sem flattenSliceExpr : TExpr -> (TExpr, TType, Int, Int)
+  sem flattenSliceExpr =
+  | ESlice t ->
+    match flattenSliceExpr t.target with (target, ty, lo, hi) in
+    match tyTExpr t.target with TTuple {tys = tys} then
+      match mapAccumL computeComponentOffsets 0 tys with (_, offsets) in
+      let target = withTyTExpr t.ty target in
+      (target, ty, addi lo (get offsets t.lo), addi hi (get offsets t.hi))
+    else errorSingle [t.info] "Invalid type of slice operation"
+  | EVar t ->
+    let ty = flattenType t.ty in
+    (EVar {t with ty = ty}, ty, 0, 0)
+  | e -> errorSingle [infoTExpr e] "Invalid slice target"
+
+  sem computeComponentOffsets : Int -> TType -> (Int, Int)
+  sem computeComponentOffsets ofs =
+  | ty ->
+    let c = countComponents ty in
+    (addi ofs c, ofs)
+
+  sem countComponents : TType -> Int
+  sem countComponents =
+  | TTuple t -> foldl (lam acc. lam ty. addi acc (countComponents ty)) 0 t.tys
+  | _ -> 1
+end
+
 lang TrellisModelConvert =
   TrellisModelConvertType + TrellisModelConvertExpr + TrellisModelConvertSet +
-  TrellisResolveDeclarations
+  TrellisResolveDeclarations + TrellisModelFlatten
 
   sem constructTrellisModelRepresentation : TrellisProgram -> TModel
   sem constructTrellisModelRepresentation =
   | p ->
     let inModelDecls = resolveDeclarations p in
     let info = get_TrellisProgram_info p in
-    convertToModelRepresentation info inModelDecls
+    let m = convertToModelRepresentation info inModelDecls in
+    flattenTrellisModelSlices m
 
   sem convertToModelRepresentation : Info -> [InModelDecl] -> TModel
   sem convertToModelRepresentation info =
@@ -453,3 +544,109 @@ lang TrellisModelConvert =
     in
     foldl extractCase [] cases
 end
+
+lang TestLang = TrellisModelConvert + TrellisModelPrettyPrint + TrellisModelEq
+end
+
+mexpr
+
+use TestLang in
+
+let trellisEqExpr = eqExpr {defaultTrellisEqOptions () with types = true} in
+
+let printTrellisType = lam l. lam r.
+  let pp = lam ty. pprintTrellisType ty in
+  utestDefaultToString pp pp l r
+in
+let printTrellisExpr = lam l. lam r.
+  let pp = lam e.
+    match pprintTrellisExpr pprintEnvEmpty e with (_, exprStr) in
+    let tyStr = pprintTrellisType (tyTExpr e) in
+    join [exprStr, " : ", tyStr]
+  in
+  utestDefaultToString pp pp l r
+in
+
+-- (x0, (x1, x2), [x3, (x4, x5, x6)], x7, x8)
+let i = trellisInfo "trellis-convert" in
+let elemTy = TBool {info = i} in
+let doublyNestedTupleTy =
+  TTuple {info = i, tys = [elemTy, elemTy, elemTy]}
+in
+let nestedTupleTy = TTuple {info = i, tys = [ elemTy, doublyNestedTupleTy ]} in
+let tupleTy = TTuple {
+  info = i, tys = [
+    elemTy, TTuple {info = i, tys = [elemTy, elemTy]}, nestedTupleTy, elemTy, elemTy
+  ]
+} in
+let flattenedTy = TTuple { tys = create 9 (lam. elemTy), info = i } in
+utest flattenType tupleTy with flattenedTy in
+
+let flattenedNestedTy = TTuple {tys = create 4 (lam. elemTy), info = i } in
+utest flattenType nestedTupleTy with flattenedNestedTy in
+
+let x = nameNoSym "x" in
+
+-- x[2][1][1:2] -> x[5:6]
+let e = ESlice {
+  target = ESlice {
+    target = ESlice {
+      target = EVar {id = x, ty = tupleTy, info = i},
+      lo = 2, hi = 2, ty = nestedTupleTy, info = i},
+    lo = 1, hi = 1, ty = doublyNestedTupleTy, info = i},
+  lo = 1, hi = 2, ty = TTuple {tys = [elemTy, elemTy], info = i}, info = i
+} in
+let flatSliceTy = TTuple { tys = create 2 (lam. elemTy), info = i } in
+let flattened = ESlice {
+  target = EVar {id = x, ty = flattenedTy, info = i},
+  lo = 5, hi = 6, ty = flatSliceTy, info = i
+} in
+utest flattenExpr e with flattened using trellisEqExpr else printTrellisExpr in
+
+-- x[1] -> x[1:2]
+let e = ESlice {
+  target = EVar {id = x, ty = tupleTy, info = i},
+  lo = 1, hi = 1, ty = TTuple {tys = [elemTy, elemTy], info = i}, info = i
+} in
+let flattened = ESlice {
+  target = EVar {id = x, ty = flattenedTy, info = i},
+  lo = 1, hi = 2, ty = TTuple {tys = [elemTy, elemTy], info = i}, info = i
+} in
+utest flattenExpr e with flattened using trellisEqExpr else printTrellisExpr in
+
+-- x[2] -> x[3:6]
+let e = ESlice {
+  target = EVar {id = x, ty = tupleTy, info = i},
+  lo = 2, hi = 2, ty = nestedTupleTy, info = i
+} in
+let flattened = ESlice {
+  target = EVar {id = x, ty = flattenedTy, info = i},
+  lo = 3, hi = 6, ty = TTuple {tys = create 4 (lam. elemTy), info = i}, info = i
+} in
+utest flattenExpr e with flattened using trellisEqExpr else printTrellisExpr in
+
+-- x[2][1] -> x[4:6]
+let e = ESlice {
+  target = ESlice {
+    target = EVar {id = x, ty = tupleTy, info = i},
+    lo = 2, hi = 2, ty = nestedTupleTy, info = i },
+  lo = 1, hi = 1, ty = doublyNestedTupleTy, info = i
+} in
+let flattened = ESlice {
+  target = EVar {id = x, ty = flattenedTy, info = i},
+  lo = 4, hi = 6, ty = TTuple {tys = create 3 (lam. elemTy), info = i}, info = i
+} in
+utest flattenExpr e with flattened using trellisEqExpr else printTrellisExpr in
+
+-- x[3:4] -> x[7:8]
+let e = ESlice {
+  target = EVar {id = x, ty = tupleTy, info = i},
+  lo = 3, hi = 4, ty = TTuple {tys = [elemTy, elemTy], info = i}, info = i
+} in
+let flattened = ESlice {
+  target = EVar {id = x, ty = flattenedTy, info = i},
+  lo = 7, hi = 8, ty = TTuple {tys = [elemTy, elemTy], info = i}, info = i
+} in
+utest flattenExpr e with flattened using trellisEqExpr else printTrellisExpr in
+
+()

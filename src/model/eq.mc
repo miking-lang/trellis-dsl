@@ -10,6 +10,10 @@ lang TrellisModelEqBase
     types : Bool
   }
 
+  sem defaultTrellisEqOptions : () -> EqOptions
+  sem defaultTrellisEqOptions =
+  | _ -> {types = false}
+
   -- Checks that all elements of two sequences, which must be of the same
   -- length, are equal.
   sem allEqual : all a. all b. ((a, b) -> Bool) -> [a] -> [b] -> Bool
@@ -112,20 +116,8 @@ end
 lang TrellisModelEq =
   TrellisModelAst + TrellisModelTypeEq + TrellisModelExprEq + TrellisModelSetEq
 
-  sem defaultTrellisEqOptions : () -> EqOptions
-  sem defaultTrellisEqOptions =
-  | _ -> {types = false}
-
-  sem trellisModelWithTypesEq : TModel -> TModel -> Bool
-  sem trellisModelWithTypesEq lhs =
-  | rhs -> trellisModelOptionsEq {defaultTrellisEqOptions () with types = true} lhs rhs
-
-  sem trellisModelEq : TModel -> TModel -> Bool
-  sem trellisModelEq lhs =
-  | rhs -> trellisModelOptionsEq (defaultTrellisEqOptions ()) lhs rhs
-
-  sem trellisModelOptionsEq : EqOptions -> TModel -> TModel -> Bool
-  sem trellisModelOptionsEq options lhs =
+  sem trellisModelEq : EqOptions -> TModel -> TModel -> Bool
+  sem trellisModelEq options lhs =
   | rhs -> eqModelH options (lhs, rhs)
 
   sem eqModelH : EqOptions -> (TModel, TModel) -> Bool
@@ -348,6 +340,6 @@ let model = {
   output = {x = x, o = y, cases = [defaultCase], info = i},
   transition = {x = x, y = y, cases = [defaultCase], info = i}
 } in
-utest model with model using trellisModelEq in
+utest model with model using trellisModelEq o in
 
 ()
