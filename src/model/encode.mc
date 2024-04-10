@@ -42,17 +42,7 @@ lang TrellisTypeCardinality = TrellisModelAst
     errorSingle [info] "Cannot compute the cardinality of a table type"
 end
 
-lang TrellisEncodeBase = TrellisModelExprPrettyPrint + TrellisModelAst
-  sem pprintBinOp =
-end
-
-lang TrellisEncodeMixedRadix = TrellisEncodeBase + TrellisTypeCardinality
-  syn BOp =
-  | OMod ()
-
-  sem pprintBinOp =
-  | OMod _ -> "%"
-
+lang TrellisEncodeMixedRadix = TrellisTypeCardinality
   sem generateMixedRadixOperations : Info -> [TType] -> Int -> Int -> TExpr -> TExpr
   sem generateMixedRadixOperations info tys lo hi =
   | target ->
@@ -62,8 +52,12 @@ lang TrellisEncodeMixedRadix = TrellisEncodeBase + TrellisTypeCardinality
     let mod = foldl muli 1 sliceCards in
     let totCard = foldl1 muli cards in
     let resultTy = TInt {bounds = Some (0, totCard), info = info} in
-    applyModulo info resultTy mod
-      (applyDivision info resultTy div target)
+    let expr = applyDivision info resultTy div target in
+    -- NOTE(larshum, 2024-04-09): We assume we have flattened the tuple and
+    -- that the encoded value is in the valid range. In this case, we do not
+    -- need to do a modulo when the leftmost component is zero.
+    if eqi lo 0 then expr
+    else applyModulo info resultTy mod expr
 
   sem applyModulo : Info -> TType -> Int -> TExpr -> TExpr
   sem applyModulo info ty mod =
@@ -154,7 +148,7 @@ let x = EVar {id = nameNoSym "x", ty = ty, info = i} in
 let proj = lam idx. ESlice {target = x, lo = idx, hi = idx, ty = ty2, info = i} in
 
 utest pprintExpr (encodeStateOperationsExpr (proj 0))
-with "((x / 12) % 6)" using eqString else ppStrings in
+with "(x / 12)" using eqString else ppStrings in
 utest pprintExpr (encodeStateOperationsExpr (proj 1))
 with "((x / 2) % 6)" using eqString else ppStrings in
 utest pprintExpr (encodeStateOperationsExpr (proj 2))
@@ -164,6 +158,6 @@ let slice = ESlice {
   target = x, lo = 0, hi = 1, ty = TTuple {tys = [ty2, ty2], info = i}, info = i
 } in
 utest pprintExpr (encodeStateOperationsExpr slice)
-with "((x / 2) % 36)" using eqString else ppStrings in
+with "(x / 2)" using eqString else ppStrings in
 
 ()

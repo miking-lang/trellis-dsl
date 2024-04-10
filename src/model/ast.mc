@@ -85,6 +85,7 @@ lang TrellisModelExprAst = TrellisModelTypeAst
   | OSub ()
   | OMul ()
   | ODiv ()
+  | OMod ()
   | OEq ()
   | ONeq ()
   | OLt ()

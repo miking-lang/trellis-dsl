@@ -61,6 +61,7 @@ lang TrellisModelExprPrettyPrint =
   | OSub _ -> "-"
   | OMul _ -> "*"
   | ODiv _ -> "/"
+  | OMod _ -> "%"
   | OEq _ -> "=="
   | ONeq _ -> "!="
   | OLt _ -> "<"
