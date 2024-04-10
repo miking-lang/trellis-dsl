@@ -8,14 +8,15 @@ include "model/convert.mc"
 include "model/encode.mc"
 include "model/pprint.mc"
 include "model/predecessors.mc"
+include "model/reduce-tables.mc"
 include "build.mc"
 include "entry-points.mc"
 include "trellis-arg.mc"
 
 lang Trellis =
   TrellisAst + TrellisModelAst + TrellisModelConvert + TrellisPredecessors +
-  TrellisCompileModel + TrellisEncode + TrellisGenerateViterbiEntry +
-  TrellisGenerateHMMProgram + TrellisBuild
+  TrellisCompileModel + TrellisReduceTableDimensionality + TrellisEncode +
+  TrellisGenerateViterbiEntry + TrellisGenerateHMMProgram + TrellisBuild
 end
 
 mexpr
@@ -40,6 +41,11 @@ match result with ParseOK r then
     -- Construct the model AST, which is a simpler representation of the above
     -- AST.
     let modelAst = constructTrellisModelRepresentation p in
+
+    -- Simplify the model by reducing the dimension of all tables to one and
+    -- transforming the model accordingly.
+    let modelAst = reduceTableDimensionalityModel modelAst in
+
     (if options.printModel then
       printLn (use TrellisModelPrettyPrint in pprintTrellisModel modelAst)
     else ());

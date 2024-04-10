@@ -12,7 +12,7 @@ lang TrellisModelEqBase
 
   sem defaultTrellisEqOptions : () -> EqOptions
   sem defaultTrellisEqOptions =
-  | _ -> {types = false}
+  | _ -> {types = true}
 
   -- Checks that all elements of two sequences, which must be of the same
   -- length, are equal.
@@ -177,8 +177,8 @@ mexpr
 use TestLang in
 
 let i = trellisInfo "trellis-eq" in
-let o = {defaultTrellisEqOptions () with types = true} in
-let o2 = defaultTrellisEqOptions () in
+let o = defaultTrellisEqOptions () in
+let o2 = {defaultTrellisEqOptions () with types = false} in
 let ppTypes = lam l. lam r.
   let pp = pprintTrellisType in
   utestDefaultToString pp pp l r

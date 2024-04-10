@@ -94,6 +94,7 @@ lang TrellisBuild = TrellisCompileBase + TrellisTypeBitwidth
     in
     let pythonGlueCode = strJoin "\n" [
       join [indent 1, "def __init__(self, args):"],
+      join [indent 2, "args = {i : j.flatten() for i, j in args.items()}"],
       join [indent 2, "preds = read_predecessors()"],
       join [indent 2, "self.state_type = ", stateNpType],
       join [indent 2, "self.out_type = ", outputNpType],
