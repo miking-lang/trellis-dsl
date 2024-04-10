@@ -67,6 +67,13 @@ lang TrellisModelTypeAst
       else None ()
     else None ()
   | (lty, rty) -> errorSingle [infoTTy lty, infoTTy rty] "Type mismatch"
+
+  sem sliceType : Int -> Int -> TType -> TType
+  sem sliceType lo hi =
+  | TTuple t ->
+    if eqi lo hi then get t.tys lo
+    else TTuple {t with tys = subsequence t.tys lo (addi (subi hi lo) 1)}
+  | ty -> errorSingle [infoTTy ty] "Invalid type of slice operation target"
 end
 
 lang TrellisModelExprAst = TrellisModelTypeAst

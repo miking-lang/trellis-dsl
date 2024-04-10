@@ -406,15 +406,9 @@ lang TrellisModelFlatten = TrellisModelAst
     with (lo, hi) in
 
     -- Construct the flattened slice operation.
-    match innerTargetTy with TTuple {tys = tys} then
-      let target = withTyTExpr innerTargetTy target in
-      let sliceTy =
-        if eqi lo hi then get tys lo
-        else
-          TTuple { tys = subsequence tys lo (addi (subi hi lo) 1), info = t.info }
-      in
-      ESlice {target = target, lo = lo, hi = hi, ty = sliceTy, info = t.info}
-    else errorSingle [t.info] "Invalid type of slice operation"
+    let target = withTyTExpr innerTargetTy target in
+    let sliceTy = sliceType lo hi innerTargetTy in
+    ESlice {target = target, lo = lo, hi = hi, ty = sliceTy, info = t.info}
   | e ->
     let e = withTyTExpr (flattenType (tyTExpr e)) e in
     smapTExprTExpr flattenExpr e

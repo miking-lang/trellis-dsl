@@ -6,6 +6,7 @@ include "model/ast.mc"
 include "model/compile.mc"
 include "model/convert.mc"
 include "model/encode.mc"
+include "model/merge-subseq-ops.mc"
 include "model/pprint.mc"
 include "model/predecessors.mc"
 include "model/reduce-tables.mc"
@@ -16,7 +17,8 @@ include "trellis-arg.mc"
 lang Trellis =
   TrellisAst + TrellisModelAst + TrellisModelConvert + TrellisPredecessors +
   TrellisCompileModel + TrellisReduceTableDimensionality + TrellisEncode +
-  TrellisGenerateViterbiEntry + TrellisGenerateHMMProgram + TrellisBuild
+  TrellisModelMergeSubsequentOperations + TrellisGenerateHMMProgram +
+  TrellisBuild
 end
 
 mexpr
@@ -42,16 +44,24 @@ match result with ParseOK r then
     -- AST.
     let modelAst = constructTrellisModelRepresentation p in
 
-    -- Simplify the model by reducing the dimension of all tables to one and
-    -- transforming the model accordingly.
-    let modelAst = reduceTableDimensionalityModel modelAst in
-
     (if options.printModel then
       printLn (use TrellisModelPrettyPrint in pprintTrellisModel modelAst)
     else ());
 
+    -- Simplify the model by reducing the dimension of all tables to one and
+    -- transforming the model accordingly.
+    let modelAst = reduceTableDimensionalityModel modelAst in
+
+    -- Merge subsequent operations on the same tuple in set constraints to
+    -- reduce the number of comparisons.
+    let modelAst = mergeSubsequentOperationsModel modelAst in
+
     -- Encodes state types as integers when in table accesses.
     let modelAst = encodeStateOperations options modelAst in
+
+    (if options.printTransformedModel then
+      printLn (use TrellisModelPrettyPrint in pprintTrellisModel modelAst)
+    else ());
 
     -- Produces a compilation environment which we use to accumulate
     -- information through later passes.

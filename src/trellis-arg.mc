@@ -14,6 +14,7 @@ type TrellisOptions = {
   maxpreds : Int,
   printParse : Bool,
   printModel : Bool,
+  printTransformedModel : Bool,
   outputDir : String,
   futharkTarget : String
 }
@@ -27,6 +28,7 @@ let trellisDefaultOptions = {
   maxpreds = negi 1,
   printParse = false,
   printModel = false,
+  printTransformedModel = false,
   outputDir = ".",
   futharkTarget = "multicore"
 }
@@ -82,6 +84,10 @@ let config = [
     "Pretty-prints the model AST after pre-processing the parsed AST.",
     lam p.
       let o = p.options in {o with printModel = true}),
+  ([("--print-transformed-model", "", "")],
+    "Pretty-prints the transformed model AST before generating code..",
+    lam p.
+      let o = p.options in {o with printTransformedModel = true}),
   ([("--output-dir", " ", "<dir>")],
     defaultStr trellisDefaultOptions.outputDir
       "Specifies the name of a directory in which files should be placed.",
