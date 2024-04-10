@@ -17,6 +17,6 @@ model {
   P(transition x y) = {
     | @{Sunny -> Sunny}   => 0.75
     | @{Sunny -> Rainy}   => 0.25
-    | {Rainy -> y | true} => 0.5
+    | {x -> y | x == Rainy} => 0.5
   }
 }
