@@ -187,9 +187,8 @@ lang TrellisCompileExpr =
     let compileTableArg = lam acc. lam targ.
       let index = compileTrellisExpr env targ in
       FEArrayAccess {
-        array = acc, index = convertToI64 index,
-        ty = FTyUnknown {info = info}, info = info
-      }
+        array = acc, index = index,
+        ty = FTyUnknown {info = info}, info = info}
     in
     let tableExpr = FEProj {
       target = FEVar {
@@ -198,7 +197,7 @@ lang TrellisCompileExpr =
       label = stringToSid (nameGetStr table), ty = FTyUnknown {info = info},
       info = info
     } in
-    let resultTy = compileTrellisType env ty in 
+    let resultTy = compileTrellisType env ty in
     withTypeFutTm resultTy (foldl compileTableArg tableExpr args)
   | EIf {cond = cond, thn = thn, els = els, ty = ty, info = info} ->
     let cond = compileTrellisExpr env cond in
@@ -270,23 +269,6 @@ lang TrellisCompileExpr =
         let op = FEConst {val = c, ty = ty, info = t.info} in
         constructBinOp t.info op lhs rhs
       end
-
-  sem convertToI64 : FutExpr -> FutExpr
-  sem convertToI64 =
-  | e ->
-    let i = infoFutTm e in
-    match tyFutTm e with FTyInt {sz = sz} then
-      use FutharkLiteralSizePrettyPrint in
-      let intModuleId = nameNoSym (pprintIntSize sz) in
-      FEApp {
-        lhs = FEProj {
-          target = FEVar {ident = intModuleId, ty = FTyUnknown {info = i}, info = i},
-          label = stringToSid "to_i64", ty = FTyUnknown {info = i}, info = i},
-        rhs = e, ty = FTyInt {sz = I64 (), info = i}, info = i}
-    else
-      match pprintType 0 pprintEnvEmpty (tyFutTm e) with (_, s) in
-      printLn (join ["Expression has type ", s]);
-      errorSingle [i] "Table access index was transformed to non-integer type"
 end
 
 -- Compiles set expressions to a boolean expression determining whether a given
@@ -367,13 +349,52 @@ lang TrellisCompileProbabilityFunction =
     let defaultBody = negInfExpr info in
     match foldr compileCase (mapEmpty nameCmp, defaultBody) cases
     with (tables, body) in
-    let args = cons (tablesId, nFutIdentTy_ tablesTyId) args in
+    let argIds = map (lam a. a.0) args in
+    let resymbolizedArgs = map (lam a. (nameSetNewSym a.0, a.1)) args in
+    let body = convertArgsToI64 resymbolizedArgs argIds body in
+    let args = cons (tablesId, nFutIdentTy_ tablesTyId) resymbolizedArgs in
     let funDecl = FDeclFun {
         ident = id, entry = false, typeParams = [],
         params = args, ret = FTyIdent {ident = probTyId, info = info},
         body = body, info = info
     } in
     ( tables, {args = args, decl = funDecl} )
+
+  sem convertArgsToI64 : [(Name, FutType)] -> [Name] -> FutExpr -> FutExpr
+  sem convertArgsToI64 args newIds =
+  | body ->
+    let i = infoFutTm body in
+    let int64 = FTyInt {sz = I64 (), info = i} in
+    let f = lam accExpr. lam arg.
+      match arg with ((argId, ty), bindId) in
+      let argModuleId =
+        -- NOTE(larshum, 2024-04-10): Currently, we only support states and
+        -- observations as arguments to the three probability functions. We
+        -- cast them to an i64 at the start to avoid issues with typing.
+        match ty with FTyIdent {ident = id} then
+          let str = nameGetStr id in
+          match str with "state_t" then
+            stateModuleId
+          else match str with "obs_t" then
+            obsModuleId
+          else
+            errorSingle [i] "Unsupported type of probability function argument"
+        else
+          errorSingle [i] "Unsupported type of probability function argument"
+      in
+      let castExpr = FEApp {
+        lhs = FEProj {
+          target = FEVar {
+            ident = argModuleId, ty = FTyUnknown {info = i}, info = i},
+          label = stringToSid "to_i64", ty = FTyUnknown {info = i}, info = i},
+        rhs = FEVar {ident = argId, ty = ty, info = i},
+        ty = int64, info = i
+      } in
+      FELet {
+        ident = bindId, tyBody = int64, body = castExpr,
+        inexpr = accExpr, ty = tyFutTm body, info = i}
+    in
+    foldl f body (zip args newIds)
 
   sem collectUsedTables : Map Name FutType -> Map Name FutType -> TExpr
                        -> Map Name FutType

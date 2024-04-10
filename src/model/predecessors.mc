@@ -151,8 +151,8 @@ lang TrellisPredecessors =
   sem generateFutharkCode env =
   | model ->
     let i = NoInfo () in
-    let i64 = FTyInt {sz = I64 (), info = i} in
-    let transArgs = [(model.transition.x, i64), (model.transition.y, i64)] in
+    let stateTy = nFutIdentTy_ stateTyId in
+    let transArgs = [(model.transition.x, stateTy), (model.transition.y, stateTy)] in
     let cases =
       map
         (lam c.
@@ -161,9 +161,17 @@ lang TrellisPredecessors =
     in
     match generateProbabilityFunction env i transitionProbabilityId transArgs cases
     with (_, {decl = decl}) in
+    let stateTyStr =
+      match pprintType 0 pprintEnvEmpty (stateFutharkType env) with (_, s) in
+      s
+    in
     let probTyStr = if env.options.useDoublePrecisionFloats then "f64" else "f32" in
     let p = FProg {decls = [
+      FDeclModuleAlias {ident = stateModuleId, moduleId = stateTyStr, info = NoInfo ()},
       FDeclModuleAlias {ident = probModuleId, moduleId = probTyStr, info = NoInfo ()},
+      FDeclType {
+        ident = stateTyId, typeParams = [],
+        ty = futProjTy_ (nFutIdentTy_ stateModuleId) "t", info = NoInfo ()},
       FDeclType {
         ident = probTyId, typeParams = [],
         ty = futProjTy_ (nFutIdentTy_ probModuleId) "t", info = NoInfo ()},

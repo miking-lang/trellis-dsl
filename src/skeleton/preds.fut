@@ -1,6 +1,6 @@
 
 let is_predecessor (x : i64) (y : i64) : bool =
-  transition_probability {} x y == 0.0
+  transition_probability {} (state.i64 x) (state.i64 y) == 0.0
 
 let count_preds (y : i64) : i64 =
   i64.sum (map (\x -> if is_predecessor x y then 1 else 0) (iota nstates))
