@@ -29,6 +29,7 @@ labels = [ "zc", "pc", "pg", "tc", "tg" ]
 x = np.arange(len(labels))
 
 fig, axs = plt.subplots(layout="constrained")
+axs.grid(which="both", zorder=0)
 width = 0.45
 
 avgs, errs = zip(*[load_full_time_label(label, "forward", 3) for label in labels])

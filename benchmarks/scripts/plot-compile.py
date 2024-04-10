@@ -20,6 +20,7 @@ labels = [ "weather", "3mer", "5mer", "7mer" ]
 x = np.arange(len(labels))
 
 fig, axs = plt.subplots(layout="constrained")
+axs.grid(which="both", zorder=0)
 width = 0.3
 
 avgs, errs = zip(*[load_data(label, "tc", "preds") for label in labels])
@@ -38,5 +39,11 @@ axs.set_xticks(x + width, labels)
 axs.set_yscale("log")
 axs.set_ylabel("Compilation time (s)")
 axs.legend(loc="upper left", ncols=2)
+
+avgs = avgs1 + avgs2 + avgs3
+ticks = np.arange(10, max(avgs), 10)
+fmt = axs.yaxis.get_major_formatter()
+labels = [fmt(x) for x in ticks]
+axs.yaxis.set_ticks(ticks, labels=labels)
 
 fig.savefig("compilation.pdf", bbox_inches="tight")
