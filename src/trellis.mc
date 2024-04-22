@@ -18,8 +18,9 @@ include "trellis-arg.mc"
 
 lang Trellis =
   TrellisAst + TrellisModelAst + TrellisModelConvert + TrellisGeneratePredecessors +
-  TrellisCompileModel + TrellisReduceTableDimensionality + TrellisEncode +
-  TrellisModelMergeSubsequentOperations + TrellisGenerateHMMProgram +
+  TrellisCompileModel + TrellisReduceTableDimensionality + TrellisConstantFold +
+  TrellisEncode + TrellisModelMergeSubsequentOperations +
+  TrellisGenerateHMMProgram +
   TrellisBuild
 end
 
