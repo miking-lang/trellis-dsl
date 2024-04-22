@@ -120,7 +120,7 @@ lang TrellisParsePredecessors
     in tokNumber 0 state
 end
 
-lang TrellisPredecessors =
+lang TrellisGeneratePredecessors =
   TrellisModelAst + TrellisWritePredecessors + TrellisParsePredecessors +
   TrellisCompileInitializer + TrellisEncode + FutharkAst + FutharkPrettyPrint
 
@@ -216,7 +216,7 @@ lang TrellisPredecessors =
     else None ()
 end
 
-lang TestLang = TrellisPredecessors + TrellisModelPrettyPrint
+lang TestLang = TrellisGeneratePredecessors + TrellisModelPrettyPrint
 end
 
 mexpr

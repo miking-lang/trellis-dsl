@@ -6,6 +6,7 @@ include "model/ast.mc"
 include "model/compile.mc"
 include "model/convert.mc"
 include "model/encode.mc"
+include "model/generate-predecessors.mc"
 include "model/merge-subseq-ops.mc"
 include "model/pprint.mc"
 include "model/predecessors.mc"
@@ -15,7 +16,7 @@ include "entry-points.mc"
 include "trellis-arg.mc"
 
 lang Trellis =
-  TrellisAst + TrellisModelAst + TrellisModelConvert + TrellisPredecessors +
+  TrellisAst + TrellisModelAst + TrellisModelConvert + TrellisGeneratePredecessors +
   TrellisCompileModel + TrellisReduceTableDimensionality + TrellisEncode +
   TrellisModelMergeSubsequentOperations + TrellisGenerateHMMProgram +
   TrellisBuild
