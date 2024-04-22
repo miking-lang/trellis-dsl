@@ -22,6 +22,8 @@ lang Trellis =
   TrellisEncode + TrellisModelMergeSubsequentOperations +
   TrellisGenerateHMMProgram +
   TrellisBuild
+
+  + TrellisModelPredecessorAnalysis
 end
 
 mexpr
@@ -54,6 +56,8 @@ match result with ParseOK r then
     (if options.printModel then
       printLn (use TrellisModelPrettyPrint in pprintTrellisModel modelAst)
     else ());
+
+    performAnalysis modelAst;
 
     -- Simplify the model by reducing the dimension of all tables to one and
     -- transforming the model accordingly.
