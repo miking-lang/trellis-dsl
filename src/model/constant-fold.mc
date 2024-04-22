@@ -1,11 +1,15 @@
+-- Defines constant folding on the Trellis model AST, by simplifying operations
+-- on constant values.
+
 include "math.mc"
 
 include "ast.mc"
 include "encode.mc"
+include "eq.mc"
 include "pprint.mc"
 include "../trellis-common.mc"
 
-lang TrellisConstantFold = TrellisModelAst + TrellisEncode
+lang TrellisConstantFoldExpr = TrellisModelAst + TrellisEncode
   type OpRec = {lhs : TExpr, rhs : TExpr, op : BOp, ty : TType, info : Info}
 
   sem constantFold : TExpr -> TExpr
@@ -26,23 +30,70 @@ lang TrellisConstantFold = TrellisModelAst + TrellisEncode
   | t ->
     let lhs = constantFold t.lhs in
     let rhs = constantFold t.rhs in
-    let t = {t with lhs = constantFold t.lhs, rhs = constantFold t.rhs} in
     switch t.op
     case OAdd _ | OSub _ | OMul _ | ODiv _ | OMod _ then
-      constantFoldArithOperation t (lhs, rhs)
-    case OEq _ | ONeq _ | OLt _ | OGt _ | OLeq _ | OGeq _ | OAnd _ | OOr _ then
-      constantFoldBoolOperation t (lhs, rhs)
+      constantFoldArithmeticOperation t (lhs, rhs)
+    case OEq _ | ONeq _ | OLt _ | OGt _ | OLeq _ | OGeq _ then
+      constantFoldComparisonOperation t (lhs, rhs)
+    case OAnd _ | OOr _ then
+      constantFoldBooleanOperation t (lhs, rhs)
     case _ then
       EBinOp t
     end
 
-  sem constantFoldArithOperation : OpRec -> (TExpr, TExpr) -> TExpr
-  sem constantFoldArithOperation t =
+  -- NOTE(larshum, 2024-04-22): In our lifting of constant values, we return
+  -- this to indicate that the non-constant part of the expression is empty. We
+  -- always have to check for this value to prevent it from leaking outside of
+  -- the constant folding.
+  syn TExpr =
+  | EEmpty ()
+
+  sem liftConstants : Int -> TExpr -> (TExpr, Int)
+  sem liftConstants n =
+  | EInt t -> (EEmpty (), addi n t.i)
+  | EBinOp t ->
+    switch (t.lhs, t.rhs)
+    case (EInt {i = li}, EInt {i = ri}) then
+      (EEmpty (), addi n (intOperation t.op li ri))
+    case (EInt {i = li}, _) then
+      liftConstants (addi n li) t.rhs
+    case (_, EInt {i = ri}) then
+      liftConstants (intOperation t.op n ri) t.lhs
+    case (_, _) then
+      match liftConstants n t.lhs with (lhs, n) in
+      match liftConstants n t.rhs with (rhs, n) in
+      (EBinOp {t with lhs = lhs, rhs = rhs}, n)
+    end
+  | e -> (e, n)
+
+  -- Determines if a given expression does not perform any operations but
+  -- addition and subtraction of literals and variables of integer type.
+  sem onlyPerformsAddSub : TExpr -> Bool
+  sem onlyPerformsAddSub =
+  | EVar _ | EInt _ | ESlice _ -> true
+  | EBinOp {op = OAdd _ | OSub _, lhs = lhs, rhs = rhs} ->
+    and (onlyPerformsAddSub lhs) (onlyPerformsAddSub rhs)
+  | _ -> false
+
+  sem constantFoldArithmeticOperation : OpRec -> (TExpr, TExpr) -> TExpr
+  sem constantFoldArithmeticOperation t =
   | (EInt {i = li}, EInt {i = ri}) ->
     EInt {i = intOperation t.op li ri, ty = t.ty, info = t.info}
   | (EProb {p = lp}, EProb {p = rp}) ->
     EProb {p = probOperation t.op t.info lp rp, ty = t.ty, info = t.info}
-  | (l, r) -> EBinOp {t with lhs = l, rhs = r}
+  | (l, r) ->
+    let e = EBinOp {t with lhs = l, rhs = r} in
+    match (tyTExpr l, onlyPerformsAddSub e)
+    with (TInt _, true) then
+      match liftConstants 0 e with (e, n) in
+      let cexpr =
+        EInt {i = n, ty = TInt {bounds = None (), info = t.info}, info = t.info}
+      in
+      match e with EEmpty _ then cexpr
+      else if eqi n 0 then e
+      else EBinOp {t with op = OAdd (), lhs = e, rhs = cexpr}
+    else
+      EBinOp {t with lhs = l, rhs = r}
 
   sem intOperation : BOp -> (Int -> Int -> Int)
   sem intOperation =
@@ -54,23 +105,52 @@ lang TrellisConstantFold = TrellisModelAst + TrellisEncode
 
   sem probOperation : BOp -> (Info -> Float -> Float -> Float)
   sem probOperation =
-  | OAdd _ -> lam. lam l. lam r. log (addf l r)
-  | OSub _ -> lam. lam l. lam r. log (subf l r)
   | OMul _ -> lam. lam l. lam r. exp (addf (log l) (log r))
   | ODiv _ -> lam. lam l. lam r. exp (subf (log l) (log r))
   | OMod _ -> lam i. errorSingle [i] "Modulo not supported on probabilities"
 
-  sem constantFoldBoolOperation : OpRec -> (TExpr, TExpr) -> TExpr
-  sem constantFoldBoolOperation t =
+  sem constantFoldComparisonOperation : OpRec -> (TExpr, TExpr) -> TExpr
+  sem constantFoldComparisonOperation t =
+  | (lhs, rhs) ->
+    let intExpr = lam n.
+      EInt {i = n, ty = TInt {bounds = None (), info = t.info}, info = t.info}
+    in
+    -- NOTE(larshum, 2024-04-22): For comparison operations (on integers) where
+    -- the only binary operations performed by either side is addition and
+    -- subtraction, we compute a combined literal value and move this to the
+    -- right-hand side of the comparison.
+    match (tyTExpr lhs, onlyPerformsAddSub lhs, onlyPerformsAddSub rhs)
+    with (TInt _, true, true) then
+      match liftConstants 0 lhs with (lhs, ln) in
+      match liftConstants 0 rhs with (rhs, rn) in
+      let n = subi rn ln in
+      let lhs =
+        match lhs with EEmpty _ then intExpr 0
+        else lhs
+      in
+      let rhs =
+        match rhs with EEmpty _ then intExpr n
+        else if eqi n 0 then rhs
+        else
+          EBinOp {
+            op = OAdd (), lhs = rhs,
+            rhs = EInt {
+              i = n, ty = TInt {bounds = None (), info = t.info},
+              info = t.info},
+            ty = t.ty, info = t.info }
+      in
+      constantFoldBooleanOperation t (lhs, rhs)
+    else constantFoldBooleanOperation t (lhs, rhs)
+
+  sem constantFoldBooleanOperation : OpRec -> (TExpr, TExpr) -> TExpr
+  sem constantFoldBooleanOperation t =
   | (EBool {b = lb}, EBool {b = rb}) ->
-    EBool {b = boolOperation t.op lb rb,
-           ty = TBool {info = t.info}, info = t.info}
+    EBool {b = boolOperation t.op lb rb, ty = t.ty, info = t.info}
   | (EInt {i = li}, EInt {i = ri}) ->
-    EBool {b = intBoolOperation t.op li ri,
-           ty = TBool {info = t.info}, info = t.info}
+    EBool {b = intBoolOperation t.op li ri, ty = t.ty, info = t.info}
   | (EProb {p = lp}, EProb {p = rp}) ->
-    EBool {b = probBoolOperation t.op lp rp,
-           ty = TBool {info = t.info}, info = t.info}
+    EBool {b = probBoolOperation t.op lp rp, ty = t.ty, info = t.info}
+  | (l, r) -> EBinOp {t with lhs = l, rhs = r}
 
   sem boolOperation : BOp -> (Bool -> Bool -> Bool)
   sem boolOperation =
@@ -98,16 +178,49 @@ lang TrellisConstantFold = TrellisModelAst + TrellisEncode
   | OGeq _ -> geqf
 end
 
-lang TestLang = TrellisConstantFold + TrellisModelPrettyPrint
+-- Defines constant folding on the model AST components containing expressions
+-- by using the definition on expressions above.
+lang TrellisConstantFold = TrellisConstantFoldExpr
+  sem constantFoldModel : TModel -> TModel
+  sem constantFoldModel =
+  | model & {initial = i, output = o, transition = t} ->
+    {model with initial = {i with cases = map constantFoldCase i.cases},
+                output = {o with cases = map constantFoldCase o.cases},
+                transition = {t with cases = map constantFoldCase t.cases}}
+
+  sem constantFoldCase : Case -> Case
+  sem constantFoldCase =
+  | c -> {c with cond = constantFoldSet c.cond, body = constantFold c.body}
+
+  sem constantFoldSet : TSet -> TSet
+  sem constantFoldSet =
+  | s -> smapTSetTExpr constantFold s
+end
+
+lang TestLang =
+  TrellisConstantFoldExpr + TrellisModelPrettyPrint + TrellisModelEq
 end
 
 mexpr
 
 use TestLang in
 
-let pprintTestExpr = lam e.
-  let e = constantFold e in
-  match pprintTrellisExpr pprintEnvEmpty e with (_, s) in s
+-- NOTE(larshum, 2024-04-22): When we run the constant folding, we have done
+-- all checks and transformations that depend on types, so keeping them
+-- consistent is not necessary at this point.
+let eqExpr = eqExpr {defaultTrellisEqOptions () with types = false} in
+let eqProbExpr = lam l. lam r.
+  match l with EProb {p = p} then
+    eqfApprox 1e-6 p r
+  else false
+in
+
+let ppExprs = lam l. lam r.
+  let pp = lam e.
+    match pprintTrellisExpr pprintEnvEmpty e with (_, s) in
+    s
+  in
+  utestDefaultToString pp pp l r
 in
 
 let i = trellisInfo "constant-fold" in
@@ -127,82 +240,124 @@ in
 let ifexpr = lam c. lam t. lam e.
   EIf {cond = c, thn = t, els = e, ty = tbool, info = i}
 in
-utest pprintTestExpr (bool false) with "false" using eqString else ppStrings in
-utest pprintTestExpr (bool true) with "true" using eqString else ppStrings in
-utest pprintTestExpr (ifexpr (bool false) (int 1) (int 2)) with "2"
-using eqString else ppStrings in
-utest pprintTestExpr (ifexpr (bool true) (int 1) (int 2)) with "1"
-using eqString else ppStrings in
+utest constantFold (bool false) with bool false using eqExpr else ppExprs in
+utest constantFold (bool true) with bool true using eqExpr else ppExprs in
+utest constantFold (ifexpr (bool false) (int 1) (int 2)) with int 2
+using eqExpr else ppExprs in
+utest constantFold (ifexpr (bool true) (int 1) (int 2)) with int 1
+using eqExpr else ppExprs in
 
-utest pprintTestExpr (bop (OEq ()) (bool true) (bool true) tbool) with "true"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (ONeq ()) (bool true) (bool false) tbool) with "true"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OAnd ()) (bool true) (bool false) tbool) with "false"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OOr ()) (bool true) (bool false) tbool) with "true"
-using eqString else ppStrings in
+utest constantFold (bop (OEq ()) (bool true) (bool true) tbool) with bool true
+using eqExpr else ppExprs in
+utest constantFold (bop (ONeq ()) (bool true) (bool false) tbool) with bool true
+using eqExpr else ppExprs in
+utest constantFold (bop (OAnd ()) (bool true) (bool false) tbool) with bool false
+using eqExpr else ppExprs in
+utest constantFold (bop (OOr ()) (bool true) (bool false) tbool) with bool true
+using eqExpr else ppExprs in
 
 -- Integers
-utest pprintTestExpr (int 2) with "2" using eqString else ppStrings in
-utest pprintTestExpr (bop (OAdd ()) (int 7) (int 3) tint) with "10"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OSub ()) (int 7) (int 3) tint) with "4"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OMul ()) (int 7) (int 3) tint) with "21"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (ODiv ()) (int 7) (int 3) tint) with "2"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OMod ()) (int 7) (int 3) tint) with "1"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OEq ()) (int 7) (int 3) tbool) with "false"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (ONeq ()) (int 7) (int 3) tbool) with "true"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OLt ()) (int 7) (int 3) tbool) with "false"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OGt ()) (int 7) (int 3) tbool) with "true"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OLeq ()) (int 7) (int 3) tbool) with "false"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OGeq ()) (int 7) (int 3) tbool) with "true"
-using eqString else ppStrings in
+utest constantFold (int 2) with int 2 using eqExpr else ppExprs in
+utest constantFold (bop (OAdd ()) (int 7) (int 3) tint) with int 10
+using eqExpr else ppExprs in
+utest constantFold (bop (OSub ()) (int 7) (int 3) tint) with int 4
+using eqExpr else ppExprs in
+utest constantFold (bop (OMul ()) (int 7) (int 3) tint) with int 21
+using eqExpr else ppExprs in
+utest constantFold (bop (ODiv ()) (int 7) (int 3) tint) with int 2
+using eqExpr else ppExprs in
+utest constantFold (bop (OMod ()) (int 7) (int 3) tint) with int 1
+using eqExpr else ppExprs in
+utest constantFold (bop (OEq ()) (int 7) (int 3) tbool) with bool false
+using eqExpr else ppExprs in
+utest constantFold (bop (ONeq ()) (int 7) (int 3) tbool) with bool true
+using eqExpr else ppExprs in
+utest constantFold (bop (OLt ()) (int 7) (int 3) tbool) with bool false
+using eqExpr else ppExprs in
+utest constantFold (bop (OGt ()) (int 7) (int 3) tbool) with bool true
+using eqExpr else ppExprs in
+utest constantFold (bop (OLeq ()) (int 7) (int 3) tbool) with bool false
+using eqExpr else ppExprs in
+utest constantFold (bop (OGeq ()) (int 7) (int 3) tbool) with bool true
+using eqExpr else ppExprs in
+
+let expr =
+  bop (OEq ())
+    (bop (OSub ()) (int 1) (int 3) tint)
+    (bop (OSub ()) (int 3) (bop (OAdd ()) (int 2) (int 3) tint) tint)
+    tbool
+in
+utest constantFold expr with bool true using eqExpr else ppExprs in
 
 -- Probabilities
-utest pprintTestExpr (prob 0.5) with "0.5" using eqString else ppStrings in
-utest pprintTestExpr (bop (OAdd ()) (prob 0.4) (prob 0.5) tprob) with "-0.105360515658"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OSub ()) (prob 0.5) (prob 0.4) tprob) with "-2.30258509299"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OMul ()) (prob 0.4) (prob 0.5) tprob) with "0.2"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (ODiv ()) (prob 0.4) (prob 0.5) tprob) with "0.8"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OEq ()) (prob 0.4) (prob 0.5) tbool) with "false"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (ONeq ()) (prob 0.4) (prob 0.5) tbool) with "true"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OLt ()) (prob 0.4) (prob 0.5) tbool) with "true"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OGt ()) (prob 0.4) (prob 0.5) tbool) with "false"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OLeq ()) (prob 0.4) (prob 0.5) tbool) with "true"
-using eqString else ppStrings in
-utest pprintTestExpr (bop (OGeq ()) (prob 0.4) (prob 0.5) tbool) with "false"
-using eqString else ppStrings in
+utest constantFold (prob 0.5) with prob 0.5 using eqExpr else ppExprs in
+utest constantFold (bop (OMul ()) (prob 0.4) (prob 0.5) tprob) with prob 0.2
+using eqExpr else ppExprs in
+utest constantFold (bop (ODiv ()) (prob 0.4) (prob 0.5) tprob) with prob 0.8
+using eqExpr else ppExprs in
+utest constantFold (bop (OEq ()) (prob 0.4) (prob 0.5) tbool) with bool false
+using eqExpr else ppExprs in
+utest constantFold (bop (ONeq ()) (prob 0.4) (prob 0.5) tbool) with bool true
+using eqExpr else ppExprs in
+utest constantFold (bop (OLt ()) (prob 0.4) (prob 0.5) tbool) with bool true
+using eqExpr else ppExprs in
+utest constantFold (bop (OGt ()) (prob 0.4) (prob 0.5) tbool) with bool false
+using eqExpr else ppExprs in
+utest constantFold (bop (OLeq ()) (prob 0.4) (prob 0.5) tbool) with bool true
+using eqExpr else ppExprs in
+utest constantFold (bop (OGeq ()) (prob 0.4) (prob 0.5) tbool) with bool false
+using eqExpr else ppExprs in
 
--- Expressions with unresolved variables
+-- Expressions including statically unknown variables
 let var = lam x. lam ty. EVar {id = nameNoSym x, ty = ty, info = i} in
 let nested1 =
   bop (OAdd ()) (var "x" tint) (bop (OMul ()) (int 2) (int 3) tint) tint
 in
-utest pprintTestExpr nested1 with "(x + 6)" using eqString else ppStrings in
+let expected = bop (OAdd ()) (var "x" tint) (int 6) tint in
+utest constantFold nested1 with expected using eqExpr else ppExprs in
 
 let nested2 =
   bop (OAdd ()) (int 2) (bop (OMul ()) (var "x" tint) (int 3) tint) tint
 in
-utest pprintTestExpr nested2 with "(2 + (x * 3))" using eqString else ppStrings in
+utest constantFold nested2 with nested2 using eqExpr else ppExprs in
 
--- TODO: nested expressions using more than one of the above categories...
+let expr =
+  bop (OEq ())
+    (bop (OAdd ()) (var "x" tint) (int 2) tint)
+    (bop (OAdd ()) (var "y" tint) (int 1) tint)
+    tbool
+in
+let expected =
+  bop (OEq ()) (var "x" tint) (bop (OAdd ()) (var "y" tint) (int -1) tint) tint
+in
+utest constantFold expr with expected using eqExpr else ppExprs in
+
+let expr =
+  bop (OEq ()) (bop (OAdd ()) (var "x" tint) (int 2) tint) (int 2) tbool
+in
+let expected = bop (OEq ()) (var "x" tint) (int 0) tbool in
+utest constantFold expr with expected using eqExpr else ppExprs in
+
+let expr =
+  bop (ONeq ()) (var "x" tint) (var "y" tint) tbool
+in
+utest constantFold expr with expr using eqExpr else ppExprs in
+
+let expr =
+  bop (OLt ())
+    (bop (OAdd ()) (int 1) (bop (OAdd ()) (var "x" tint) (int 2) tint) tint)
+    (bop (OAdd ()) (var "y" tint) (int 4) tint)
+    tbool
+in
+let expected =
+  bop (OLt ()) (var "x" tint) (bop (OAdd ()) (var "y" tint) (int 1) tint) tint
+in
+utest constantFold expr with expected using eqExpr else ppExprs in
+
+let expr =
+  bop (OEq ()) (var "x" tint) (bop (OAdd ()) (int 2) (int 3) tint) tbool
+in
+let expected = bop (OEq ()) (var "x" tint) (int 5) tbool in
+utest constantFold expr with expected using eqExpr else ppExprs in
 
 ()

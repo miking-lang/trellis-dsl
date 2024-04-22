@@ -4,6 +4,7 @@ include "parser/pprint.mc"
 include "parser/resolve.mc"
 include "model/ast.mc"
 include "model/compile.mc"
+include "model/constant-fold.mc"
 include "model/convert.mc"
 include "model/encode.mc"
 include "model/generate-predecessors.mc"
@@ -44,6 +45,10 @@ match result with ParseOK r then
     -- Construct the model AST, which is a simpler representation of the above
     -- AST.
     let modelAst = constructTrellisModelRepresentation p in
+
+    -- Apply constant folding to the model AST to simplify the condition
+    -- expressions of the set constraints.
+    let modelAst = constantFoldModel modelAst in
 
     (if options.printModel then
       printLn (use TrellisModelPrettyPrint in pprintTrellisModel modelAst)
