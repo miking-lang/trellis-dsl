@@ -300,9 +300,42 @@ lang TrellisModelPredecessorConstraintSimplification =
     mapFoldlOption simplifyConstraints env env.y
 end
 
+lang TrellisModelPredecessorDisjoint =
+  TrellisModelPredecessorConstraintSimplification
+
+  sem assertPairwiseDisjoint : [AnalysisEnv] -> ()
+  sem assertPairwiseDisjoint =
+  | setConstraints ->
+    let assertDisjoint = lam lhs. lam rhs.
+      if disjointConstraints lhs rhs then ()
+      else error "Found overlapping constraints" -- TODO: need to refer to info fields...
+    in
+    iteri
+      (lam i. lam lhs.
+        let rhs = subsequence setConstraints (addi i 1) (length setConstraints) in
+        iter (assertDisjoint lhs) rhs)
+      setConstraints
+
+  -- Determines whether two given environments containing constraints are
+  -- disjoint, i.e., if they describe set constraints with no transitions in
+  -- common. We do this by taking the union of the constraints on their
+  -- from-states and to-states, looking for a contradiction. They are not
+  -- disjoint if we can find a valid choice of each component, satisfying the
+  -- united constraints.
+  sem disjointConstraints : AnalysisEnv -> AnalysisEnv -> Bool
+  sem disjointConstraints lhs =
+  | rhs ->
+    let union = {
+      state = lhs.state,
+      x = mapUnionWith setUnion lhs.x rhs.x,
+      y = mapUnionWith setUnion lhs.y rhs.y
+    } in
+    optionIsNone (simplifyConstraints union)
+end
+
 lang TrellisModelPredecessorAnalysis =
-  TrellisModelPredecessorBase + TrellisModelPredecessorConstraintSimplification +
-  TrellisModelAst + TrellisTypeCardinality
+  TrellisModelPredecessorConstraintSimplification +
+  TrellisModelPredecessorDisjoint + TrellisModelAst + TrellisTypeCardinality
 
   sem performAnalysis : TModel -> ()
   sem performAnalysis =
@@ -323,11 +356,11 @@ lang TrellisModelPredecessorAnalysis =
     let emptyEnv = {state = state, x = mapEmpty subi, y = mapEmpty subi} in
     -- TODO: complete the implementation by reaching some kind of
     -- conclusions...
+    let envs = map (lam c. performCaseAnalysis emptyEnv c.cond) cases in
+    assertPairwiseDisjoint envs;
     iter
-      (lam c.
-        let env = performCaseAnalysis emptyEnv c.cond in
-        printLn (printAnalysisEnv env))
-      cases;
+      (lam env. printLn (printAnalysisEnv env))
+      envs;
     ()
 
   sem performCaseAnalysis : AnalysisEnv -> TSet -> AnalysisEnv
@@ -376,8 +409,8 @@ lang TrellisModelPredecessorAnalysis =
         else if and (nameEq id2 x) (nameEq id1 y) then Some (lo2, lo1)
         else None ()
       with Some (xidx, yidx) then
-        let v = setOfSeq cmpPredConstraint [EqYPlusNum (yidx, 0)] in
-        {env with x = mapInsertWith concat xidx v env.x}
+        let v = singletonConstraint (EqYPlusNum (yidx, 0)) in
+        {env with x = mapInsertWith setUnion xidx v env.x}
       else env
     else error "Analysis only works on single components, not slices"
   | EBinOp {
