@@ -210,7 +210,7 @@ lang TrellisModelPredecessorConstraintSimplification =
 
   sem validateLiteralEqualityConstraints : AnalysisEnv -> Int -> Set PredConstraint
                                         -> Option (Int, Set PredConstraint)
-  sem validateLiteralEqualityConstraints env xidx =
+  sem validateLiteralEqualityConstraints env idx =
   | constraints ->
     let eqLit = lam c.
       match c with EqNum n then Some n else None ()
@@ -221,7 +221,7 @@ lang TrellisModelPredecessorConstraintSimplification =
     -- literal value is outside of its valid range.
     match eqc with [] then Some (-1, constraints)
     else match eqc with [n] then
-      let maxval = get env.state xidx in
+      let maxval = get env.state idx in
       if and (geqi n 0) (lti n maxval) then
         Some (n, setRemove (EqNum n) constraints)
       else None ()
@@ -265,9 +265,39 @@ lang TrellisModelPredecessorConstraintSimplification =
     in
     mapFilterWithKey (lam c. lam. isInequalityConstraint c) constraints
 
+  sem removeContradictoryInequalityConstraints : Int -> Set PredConstraint
+                                              -> Set PredConstraint
+  sem removeContradictoryInequalityConstraints maxv =
+  | constraints ->
+    let isContradictoryInequality = lam c.
+      match c with NeqNum n then or (lti n 0) (geqi n maxv) else false
+    in
+    mapFilterWithKey (lam c. lam. not (isContradictoryInequality c)) constraints
+
   sem simplifyToStateConstraints : AnalysisEnv -> Option AnalysisEnv
   sem simplifyToStateConstraints =
-  | env -> Some env
+  | env ->
+    let simplifyConstraints = lam env. lam idx. lam c.
+      -- 1. Remove inequallity constraints that are contradictory due to being
+      --    negative or beyond the range of the type.
+      let maxv = get env.state idx in
+      let c = removeContradictoryInequalityConstraints maxv c in
+
+      -- 2. Validate the literal equality constraints (as for the from-state).
+      match validateLiteralEqualityConstraints env idx c with Some (eqn, rest) then
+        if eqi eqn -1 then
+          Some {env with y = mapInsert idx rest env.y}
+        else
+          -- 3. If we have a literal equality constraint, we remove all
+          --    inequality constraints and ensure these do not contradict the
+          --    equality constraint.
+          match eliminateInequalityConstraints eqn rest with Some c then
+            let v = setInsert (EqNum eqn) c in
+            Some {env with y = mapInsert idx v env.y}
+          else None ()
+      else None ()
+    in
+    mapFoldlOption simplifyConstraints env env.y
 end
 
 lang TrellisModelPredecessorAnalysis =
@@ -450,7 +480,7 @@ let yconstr2 = {
 } in
 let expected = {
   empty with x = mapFromSeq subi [(0, pc [EqNum 1])],
-             y = mapFromSeq subi [(2, pc [EqNum 0, NeqNum 3])]
+             y = mapFromSeq subi [(2, pc [EqNum 0])]
 } in
 utest simplifyConstraints yconstr2 with Some expected using eqc else ppc in
 
