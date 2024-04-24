@@ -42,14 +42,14 @@ lang TrellisModelPredecessorBase
   sem singletonConstraint =
   | c -> setOfSeq cmpPredConstraint [c]
 
-  type AnalysisEnv = {
+  type ConstraintEnv = {
     state : [Int],
     x : Map Int (Set PredConstraint),
     y : Map Int (Set PredConstraint)
   }
 
-  sem printAnalysisEnv : AnalysisEnv -> String
-  sem printAnalysisEnv =
+  sem printConstraintEnv : ConstraintEnv -> String
+  sem printConstraintEnv =
   | {state = _, x = x, y = y} ->
     let printConstraint = lam lhs. lam c.
       join [lhs, printPredConstraint c]
@@ -65,14 +65,14 @@ end
 lang TrellisModelPredecessorConstraintSimplification =
   TrellisModelPredecessorBase
 
-  sem simplifyConstraints : AnalysisEnv -> Option AnalysisEnv
+  sem simplifyConstraints : ConstraintEnv -> Option ConstraintEnv
   sem simplifyConstraints =
   | env ->
     match simplifyFromStateConstraints env with Some env then
       simplifyToStateConstraints env
     else None ()
 
-  sem simplifyFromStateConstraints : AnalysisEnv -> Option AnalysisEnv
+  sem simplifyFromStateConstraints : ConstraintEnv -> Option ConstraintEnv
   sem simplifyFromStateConstraints =
   | env ->
     let simplifyConstraints = lam env. lam idx. lam c.
@@ -113,8 +113,8 @@ lang TrellisModelPredecessorConstraintSimplification =
     in
     mapFoldlOption simplifyConstraints env env.x
 
-  sem propagateFromStateConstraints : AnalysisEnv -> Set PredConstraint
-                                   -> Option AnalysisEnv
+  sem propagateFromStateConstraints : ConstraintEnv -> Set PredConstraint
+                                   -> Option ConstraintEnv
   sem propagateFromStateConstraints env =
   | constraints ->
     let isLiteralConstraint = lam c.
@@ -143,8 +143,8 @@ lang TrellisModelPredecessorConstraintSimplification =
       else None ()
     else None ()
 
-  sem propagateLiteralConstraint : Int -> Int -> AnalysisEnv
-                                -> PredConstraint -> Option AnalysisEnv
+  sem propagateLiteralConstraint : Int -> Int -> ConstraintEnv
+                                -> PredConstraint -> Option ConstraintEnv
   sem propagateLiteralConstraint yidx yn env =
   | EqNum n ->
     let ymaxval = get env.state yidx in
@@ -160,8 +160,8 @@ lang TrellisModelPredecessorConstraintSimplification =
     let yconstraint = singletonConstraint (NeqNum np) in
     Some {env with y = mapInsertWith setUnion yidx yconstraint env.y}
 
-  sem propagatePairwiseToConstraints : AnalysisEnv -> [PredConstraint]
-                                    -> Option AnalysisEnv
+  sem propagatePairwiseToConstraints : ConstraintEnv -> [PredConstraint]
+                                    -> Option ConstraintEnv
   sem propagatePairwiseToConstraints env =
   | toConstraints ->
     let propagateConstraints = lam env. lam idxc.
@@ -175,8 +175,8 @@ lang TrellisModelPredecessorConstraintSimplification =
     let indexedConstraints = mapi (lam idx. lam x. (idx, x)) toConstraints in
     optionFoldlM propagateConstraints env indexedConstraints
 
-  sem propagateConstraint : AnalysisEnv -> (PredConstraint, PredConstraint)
-                         -> Option AnalysisEnv
+  sem propagateConstraint : ConstraintEnv -> (PredConstraint, PredConstraint)
+                         -> Option ConstraintEnv
   sem propagateConstraint env =
   | (EqYPlusNum (lidx, ln), EqYPlusNum (ridx, rn)) ->
     let n = subi rn ln in
@@ -195,7 +195,7 @@ lang TrellisModelPredecessorConstraintSimplification =
       printPredConstraint r
     ])
 
-  sem propagateBoundConstraint : AnalysisEnv -> PredConstraint -> AnalysisEnv
+  sem propagateBoundConstraint : ConstraintEnv -> PredConstraint -> ConstraintEnv
   sem propagateBoundConstraint env =
   | EqYPlusNum (yidx, n) ->
     let maxv = get env.state yidx in
@@ -208,7 +208,7 @@ lang TrellisModelPredecessorConstraintSimplification =
   | c ->
     error (concat "Unexpected constraint on to-state: " (printPredConstraint c))
 
-  sem validateLiteralEqualityConstraints : AnalysisEnv -> Int -> Set PredConstraint
+  sem validateLiteralEqualityConstraints : ConstraintEnv -> Int -> Set PredConstraint
                                         -> Option (Int, Set PredConstraint)
   sem validateLiteralEqualityConstraints env idx =
   | constraints ->
@@ -274,7 +274,7 @@ lang TrellisModelPredecessorConstraintSimplification =
     in
     mapFilterWithKey (lam c. lam. not (isContradictoryInequality c)) constraints
 
-  sem simplifyToStateConstraints : AnalysisEnv -> Option AnalysisEnv
+  sem simplifyToStateConstraints : ConstraintEnv -> Option ConstraintEnv
   sem simplifyToStateConstraints =
   | env ->
     let simplifyConstraints = lam env. lam idx. lam c.
@@ -303,7 +303,7 @@ end
 lang TrellisModelPredecessorDisjoint =
   TrellisModelPredecessorConstraintSimplification
 
-  sem assertPairwiseDisjoint : [AnalysisEnv] -> ()
+  sem assertPairwiseDisjoint : [ConstraintEnv] -> ()
   sem assertPairwiseDisjoint =
   | setConstraints ->
     let assertDisjoint = lam lhs. lam rhs.
@@ -322,7 +322,7 @@ lang TrellisModelPredecessorDisjoint =
   -- from-states and to-states, looking for a contradiction. They are not
   -- disjoint if we can find a valid choice of each component, satisfying the
   -- united constraints.
-  sem disjointConstraints : AnalysisEnv -> AnalysisEnv -> Bool
+  sem disjointConstraints : ConstraintEnv -> ConstraintEnv -> Bool
   sem disjointConstraints lhs =
   | rhs ->
     let union = {
@@ -331,6 +331,18 @@ lang TrellisModelPredecessorDisjoint =
       y = mapUnionWith setUnion lhs.y rhs.y
     } in
     optionIsNone (simplifyConstraints union)
+
+  -- As above, but considers only the constraints imposed on the to-states,
+  -- meaning we treat the from-state as if it had no constraints.
+  sem disjointToStateConstraints : ConstraintEnv -> ConstraintEnv -> Bool
+  sem disjointToStateConstraints lhs =
+  | rhs ->
+    let c = {
+      state = lhs.state,
+      x = mapEmpty subi,
+      y = mapUnionWith setUnion lhs.y rhs.y
+    } in
+    optionIsNone (simplifyConstraints c)
 end
 
 lang TrellisModelPredecessorAnalysis =
@@ -359,11 +371,11 @@ lang TrellisModelPredecessorAnalysis =
     let envs = map (lam c. performCaseAnalysis emptyEnv c.cond) cases in
     assertPairwiseDisjoint envs;
     iter
-      (lam env. printLn (printAnalysisEnv env))
+      (lam env. printLn (printConstraintEnv env))
       envs;
     ()
 
-  sem performCaseAnalysis : AnalysisEnv -> TSet -> AnalysisEnv
+  sem performCaseAnalysis : ConstraintEnv -> TSet -> ConstraintEnv
   sem performCaseAnalysis env =
   | SAll _ -> error "Set containing all transitions not supported yet"
   | SValueBuilder _ -> error "Set containing fixed values not supported yet"
@@ -372,7 +384,7 @@ lang TrellisModelPredecessorAnalysis =
     match simplifyConstraints env with Some env then env
     else error "Found inconsistency when simplifying constraints"
 
-  sem performConditionAnalysis : Name -> Name -> AnalysisEnv -> TExpr -> AnalysisEnv
+  sem performConditionAnalysis : Name -> Name -> ConstraintEnv -> TExpr -> ConstraintEnv
   sem performConditionAnalysis x y env =
   | EBinOp {
       op = op & (OEq _ | ONeq _),
@@ -447,7 +459,7 @@ use TestLang in
 
 let eqConstraints = mapEq setEq in
 let ppConstraints = lam l. lam r.
-  let pp = printAnalysisEnv in
+  let pp = printConstraintEnv in
   utestDefaultToString pp pp l r
 in
 let eqc = lam l. lam r.
@@ -460,9 +472,13 @@ let eqc = lam l. lam r.
   case _ then false
   end
 in
+let printConstraints = lam l. lam r.
+  let pp = printConstraintEnv in
+  utestDefaultToString pp pp l r
+in
 let ppc = lam l. lam r.
   let pp = lam o.
-    match o with Some c then join ["Some (", printAnalysisEnv c, ")"]
+    match o with Some c then join ["Some (", printConstraintEnv c, ")"]
     else "None"
   in
   utestDefaultToString pp pp l r
@@ -552,5 +568,115 @@ let expected = {
       (2, pc [EqYPlusNum (1, 1), NeqNum 3])]
 } in
 utest simplifyConstraints prop with Some expected using eqc else ppc in
+
+-- Testing the disjoint constraints property
+let intersectingConstraints = lam l. lam r.
+  not (disjointConstraints l r)
+in
+let intersectingToStateConstraints = lam l. lam r.
+  not (disjointToStateConstraints l r)
+in
+utest empty with empty using intersectingConstraints else printConstraints in
+
+let lhs = {
+  empty with x = mapFromSeq subi [(0, pc [EqNum 0])]
+} in
+let rhs = {
+  empty with x = mapFromSeq subi [(0, pc [EqNum 1])]
+} in
+utest lhs with rhs using disjointConstraints else printConstraints in
+
+let lhs = {
+  empty with y = mapFromSeq subi [(0, pc [EqNum 0])]
+} in
+let rhs = {
+  empty with y = mapFromSeq subi [(0, pc [EqNum 1])]
+} in
+utest lhs with rhs using disjointConstraints else printConstraints in
+
+-- Constraints from the 3-mer model - note that the first version of the fourth
+-- constraint (c4v1) overlaps with the third constraint, but the second version
+-- (c4v2) does not.
+let c1 = {
+  empty with x = mapFromSeq subi [(1, pc [EqYPlusNum (0, 0)]), (2, pc [EqYPlusNum (1, 0)]), (3, pc [EqNum 0])]
+} in
+let eqKmer = mapFromSeq subi (create 3 (lam i. (i, pc [EqYPlusNum (i, 0)]))) in
+let c2 = {
+  empty with x = mapUnion eqKmer (mapFromSeq subi [(3, pc [EqNum 15])]),
+             y = mapFromSeq subi [(3, pc [EqNum 15])]
+} in
+let c3 = {
+  c2 with y = mapFromSeq subi [(3, pc [EqNum 14])]
+} in
+let c4v1 = {
+  empty with x = mapUnion eqKmer (mapFromSeq subi [(3, pc [EqYPlusNum (3, 1)])]),
+             y = mapFromSeq subi [(3, pc [NeqNum 15])]
+} in
+let c4v2 = {
+  c4v1 with y = mapFromSeq subi [(3, pc [NeqNum 15, NeqNum 14])]
+} in
+utest c1 with c2 using disjointConstraints else printConstraints in
+utest c1 with c3 using disjointConstraints else printConstraints in
+utest c1 with c4v1 using disjointConstraints else printConstraints in
+utest c1 with c4v2 using disjointConstraints else printConstraints in
+utest c2 with c3 using disjointConstraints else printConstraints in
+utest c2 with c4v1 using disjointConstraints else printConstraints in
+utest c2 with c4v2 using disjointConstraints else printConstraints in
+utest c3 with c4v1 using intersectingConstraints else printConstraints in
+utest c3 with c4v2 using disjointConstraints else printConstraints in
+
+utest c1 with c2 using intersectingToStateConstraints else printConstraints in
+utest c1 with c3 using intersectingToStateConstraints else printConstraints in
+utest c1 with c4v1 using intersectingToStateConstraints else printConstraints in
+utest c1 with c4v2 using intersectingToStateConstraints else printConstraints in
+utest c2 with c3 using disjointToStateConstraints else printConstraints in
+utest c2 with c4v1 using disjointToStateConstraints else printConstraints in
+utest c2 with c4v2 using disjointToStateConstraints else printConstraints in
+utest c3 with c4v1 using intersectingToStateConstraints else printConstraints in
+utest c3 with c4v2 using disjointToStateConstraints else printConstraints in
+
+let lhs = {
+  empty with x = mapFromSeq subi [(0, pc [NeqNum 0])]
+} in
+let rhs = {
+  empty with x = mapFromSeq subi [(0, pc [NeqNum 1])]
+} in
+utest lhs with rhs using intersectingConstraints else printConstraints in
+
+let lhs = {
+  empty with x = mapFromSeq subi [(0, pc [EqYPlusNum (0, 1)])]
+} in
+let lhsExpected = {
+  empty with x = mapFromSeq subi [(0, pc [EqYPlusNum (0, 1)])],
+             y = mapFromSeq subi [(0, pc [NeqNum 3])]
+} in
+utest simplifyConstraints lhs with Some lhsExpected using eqc else ppc in
+
+let rhs = {
+  empty with x = mapFromSeq subi [(0, pc [EqYPlusNum (0, 2)])]
+} in
+let rhsExpected = {
+  empty with x = mapFromSeq subi [(0, pc [EqYPlusNum (0, 2)])],
+             y = mapFromSeq subi [(0, pc [NeqNum 3, NeqNum 2])]
+} in
+utest simplifyConstraints rhs with Some rhsExpected using eqc else ppc in
+
+--utest lhsExpected with rhsExpected using disjointConstraints else printConstraints in
+
+let lhs = {
+  empty with x = mapFromSeq subi [(0, pc [EqYPlusNum (0, 1), EqYPlusNum (1, 1)])]
+} in
+let lhsExpected = {
+  empty with x = mapFromSeq subi [(0, pc [EqYPlusNum (0, 1)])],
+             y = mapFromSeq subi [(0, pc [EqYPlusNum (1, 0), NeqNum 3]), (1, pc [NeqNum 3])]
+} in
+utest simplifyConstraints lhs with Some lhsExpected using eqc else ppc in
+
+let rhs = {
+  empty with y = mapFromSeq subi [(0, pc [NeqNum 2]), (1, pc [EqNum 2])]
+} in
+utest simplifyConstraints rhs with Some rhs using eqc else ppc in
+
+--utest lhsExpected with rhs using disjointConstraints else printConstraints in
 
 ()
