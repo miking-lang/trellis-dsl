@@ -10,8 +10,8 @@ include "model/encode.mc"
 include "model/generate-predecessors.mc"
 include "model/merge-subseq-ops.mc"
 include "model/pprint.mc"
-include "model/predecessors.mc"
 include "model/reduce-tables.mc"
+include "constraints/predecessors.mc"
 include "build.mc"
 include "entry-points.mc"
 include "trellis-arg.mc"
@@ -57,7 +57,9 @@ match result with ParseOK r then
       printLn (use TrellisModelPrettyPrint in pprintTrellisModel modelAst)
     else ());
 
-    performAnalysis modelAst;
+    -- TODO: Use the result of this analysis to determine how to proceed in the
+    -- compilation.
+    performPredecessorAnalysis options modelAst;
 
     -- Simplify the model by reducing the dimension of all tables to one and
     -- transforming the model accordingly.

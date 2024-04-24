@@ -11,6 +11,8 @@ type TrellisOptions = {
   useDoublePrecisionFloats : Bool,
   forcePrecomputeTables : Bool,
   skipPredecessors : Bool,
+  warnPredecessorAnalysis : Bool,
+  errorPredecessorAnalysis : Bool,
   maxpreds : Int,
   printParse : Bool,
   printModel : Bool,
@@ -25,6 +27,8 @@ let trellisDefaultOptions = {
   useDoublePrecisionFloats = false,
   forcePrecomputeTables = false,
   skipPredecessors = false,
+  warnPredecessorAnalysis = false,
+  errorPredecessorAnalysis = false,
   maxpreds = negi 1,
   printParse = false,
   printModel = false,
@@ -71,6 +75,16 @@ let config = [
       "Makes the compiler skip the predecessor computation part, to speed up compilation. Requires using the maxpreds argument to specify the maximum number of predecessors manually.",
     lam p.
       let o = p.options in {o with skipPredecessors = true}),
+  ([("--warn-predecessor-analysis", "", "")],
+    defaultStr (bool2string trellisDefaultOptions.warnPredecessorAnalysis)
+      "If enabled, the compiler warns if the predecessor analysis fails and prints the reason(s) why.",
+    lam p.
+      let o = p.options in {o with warnPredecessorAnalysis = true}),
+  ([("--error-predecessor-analysis", "", "")],
+    defaultStr (bool2string trellisDefaultOptions.errorPredecessorAnalysis)
+      "If enabled, the compiler reports errors and exits with return code 1 if the predecessor analysis fails.",
+    lam p.
+      let o = p.options in {o with errorPredecessorAnalysis = true}),
   ([("--maxpreds", " ", "<n>")],
     defaultStr (int2string trellisDefaultOptions.maxpreds)
       "Specifies the maximum number of predecessors of any node. Should be used with the --skip-predecessors flag.",
