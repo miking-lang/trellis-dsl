@@ -150,8 +150,7 @@ let eqypn_ = lam yidx. lam n. EqYPlusNum (yidx, n, NoInfo ()) in
 let eqCheck = lam l. lam r.
   switch (result.consume l, result.consume r)
   case ((_, Right lv), (_, Right rv)) then eqBool lv rv
-  case ((_, Left le), (_, Left re)) then
-    forAll (lam x. eqZ3Error x.0 x.1) (zip le re)
+  case ((_, Left le), (_, Left re)) then eqSeq eqZ3Error le re
   case _ then false
   end
 in
@@ -159,7 +158,7 @@ in
 let pc = setOfSeq cmpPredConstraint in
 let empty = {
   state = [4, 4, 4, 16],
-  x = mapEmpty subi, y = mapEmpty subi, infos = []
+  x = mapEmpty subi, y = mapEmpty subi, info = NoInfo ()
 } in
 
 let x = mapFromSeq subi [

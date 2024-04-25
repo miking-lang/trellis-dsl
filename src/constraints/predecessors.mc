@@ -5,40 +5,65 @@
 
 include "../model/ast.mc"
 include "../model/encode.mc"
+include "compile.mc"
 include "repr.mc"
 include "simplify.mc"
 include "z3.mc"
 
-lang TrellisConstraintDisjoint =
+lang TrellisConstraintZ3Analysis =
   TrellisConstraintZ3 + TrellisModelCompileSetConstraintError
 
   syn ConstraintError =
   | IntersectingSetConstraints [Info]
-  | Z3Error String
+  | EmptySetConstraint Info
+  | Z3FailError String
 
   sem printConstraintErrorMessage warning =
   | IntersectingSetConstraints i ->
     printSection warning i "Set constraints are not disjoint"
-  | Z3Error s -> s
+  | EmptySetConstraint i ->
+    printSection true [i] "Set constraint describes an empty set"
+  | Z3FailError s -> s
 
   sem eqConstraintErrorH =
   | (IntersectingSetConstraints li, IntersectingSetConstraints ri) ->
-    forAll (lam x. eqi (infoCmp x.0 x.1) 0) (zip li ri)
-  | (Z3Error ls, Z3Error rs) -> eqString ls rs
+    eqSeq (lam l. lam r. eqi (infoCmp l r) 0) li ri
+  | (Z3FailError ls, Z3FailError rs) -> eqString ls rs
 
-  sem ensureDisjointSetConstraints : [ConstraintRepr]
-                                  -> Result () ConstraintError [ConstraintRepr]
-  sem ensureDisjointSetConstraints =
+  sem z3Error : [Z3Error] -> ConstraintError
+  sem z3Error =
+  | errs -> Z3FailError (strJoin "\n" (map printZ3Error errs))
+
+  -- Verifies that each set constraint described by a corresponding constraint
+  -- representation is non-empty. If it is not, we produce a warning.
+  sem verifyNonempty : [ConstraintRepr] -> ConstraintResult [ConstraintRepr]
+  sem verifyNonempty =
+  | setConstraints ->
+    let checkNonempty = lam acc. lam c.
+      switch result.consume (checkEmpty c)
+      case (_, Right true) then
+        result.withAnnotations (result.warn (EmptySetConstraint c.info)) acc
+      case (_, Right false) then
+        acc
+      case (_, Left errs) then
+        result.withAnnotations (result.err (z3Error errs)) acc
+      end
+    in
+    foldl checkNonempty (result.ok setConstraints) setConstraints
+
+  -- Verifies that all pairs of set constraints are disjoint from each other.
+  -- This is a prerequisite for the CUDA code generation.
+  sem verifyDisjointSetConstraints : [ConstraintRepr] -> ConstraintResult [ConstraintRepr]
+  sem verifyDisjointSetConstraints =
   | setConstraints ->
     let checkDisjoint = lam acc. lam lhs. lam rhs.
       switch result.consume (disjointConstraints lhs rhs)
       case (_, Right true) then acc
       case (_, Right false) then
-        let infos = concat lhs.infos rhs.infos in
+        let infos = [lhs.info, rhs.info] in
         result.withAnnotations (result.err (IntersectingSetConstraints infos)) acc
-      case (_, Left z3errs) then
-        let err = Z3Error (strJoin "\n" (map printZ3Error z3errs)) in
-        result.withAnnotations (result.err err) acc
+      case (_, Left errs) then
+        result.withAnnotations (result.err (z3Error errs)) acc
       end
     in
     if checkZ3Installed () then
@@ -49,7 +74,7 @@ lang TrellisConstraintDisjoint =
             (lam acc. lam c2. checkDisjoint acc c1 c2)
             acc rhs)
         (result.ok setConstraints) setConstraints
-    else result.err (Z3Error "Could not find command z3")
+    else result.err (Z3FailError "Could not find command z3")
 
   -- Determines whether two given environments containing constraints are
   -- disjoint, i.e., if they describe set constraints with no transitions in
@@ -64,7 +89,7 @@ lang TrellisConstraintDisjoint =
       state = lhs.state,
       x = mapUnionWith setUnion lhs.x rhs.x,
       y = mapUnionWith setUnion lhs.y rhs.y,
-      infos = concat lhs.infos rhs.infos
+      info = mergeInfo lhs.info rhs.info
     } in
     checkEmpty union
 
@@ -83,7 +108,7 @@ lang TrellisConstraintDisjoint =
 end
 
 lang TrellisModelPredecessorAnalysis =
-  TrellisConstraintSimplification + TrellisConstraintDisjoint +
+  TrellisConstraintSimplification + TrellisConstraintZ3Analysis +
   TrellisModelAst + TrellisTypeCardinality
 
   sem performPredecessorAnalysis : TrellisOptions -> TModel -> Option [ConstraintRepr]
@@ -96,10 +121,14 @@ lang TrellisModelPredecessorAnalysis =
   sem performPredecessorAnalysisH options stateType =
   | {cases = cases, info = info} ->
     let res = result.mapM (lam c. setConstraintToRepr stateType c.cond) cases in
-    let res = result.bind res ensureDisjointSetConstraints in
+    let res = result.bind res verifyNonempty in
+    let res = result.bind res verifyDisjointSetConstraints in
     switch result.consume res
-    case (_, Right reprs) then Some reprs
-    case (_, Left errors) then
+    case (warnings, Right reprs) then
+      printAnalysisWarningMessages warnings;
+      Some reprs
+    case (warnings, Left errors) then
+      printAnalysisWarningMessages warnings;
       if options.errorPredecessorAnalysis then
         printAnalysisErrorMessage false errors;
         exit 1
@@ -109,6 +138,13 @@ lang TrellisModelPredecessorAnalysis =
       else
         None ()
     end
+
+  sem printAnalysisWarningMessages : [ConstraintError] -> ()
+  sem printAnalysisWarningMessages =
+  | warnings ->
+    if null warnings then () else
+    let strs = strJoin "\n" (map (printConstraintErrorMessage true) warnings) in
+    printLn strs
 
   sem printAnalysisErrorMessage : Bool -> [ConstraintError] -> ()
   sem printAnalysisErrorMessage warning =
@@ -121,7 +157,9 @@ lang TrellisModelPredecessorAnalysis =
     let msg = join [
       "Predecessor analysis failed\n",
       errStrs,
-      fallbackStr
+      fallbackStr,
+      "\n"
     ] in
-    printLn msg
+    if warning then print msg
+    else printError "\n"
 end

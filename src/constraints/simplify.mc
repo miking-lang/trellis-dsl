@@ -34,16 +34,16 @@ lang TrellisConstraintSimplification = TrellisModelCompileSetConstraint
   -- Attempts to simplify the given constraints, producing a result which
   -- contains error if the simplification results in contradictions or
   -- violations of a valid program.
-  sem simplifyConstraints : ConstraintRepr -> ConstraintResult
+  sem simplifyConstraints : ConstraintRepr -> ConstraintResult ConstraintRepr
   sem simplifyConstraints =
   | constraints ->
     let acc = simplifyFromStateConstraints constraints in
     result.bind acc simplifyToStateConstraints
 
-  sem simplifyFromStateConstraints : ConstraintRepr -> ConstraintResult
+  sem simplifyFromStateConstraints : ConstraintRepr -> ConstraintResult ConstraintRepr
   sem simplifyFromStateConstraints =
   | constraints ->
-    let info = foldl mergeInfo (NoInfo ()) constraints.infos in
+    let info = constraints.info in
     let state = constraints.state in
     let simplifyConstraints = lam acc. lam idx. lam c.
       -- 1. Propagate literal constraints on the from-state to the
@@ -84,8 +84,8 @@ lang TrellisConstraintSimplification = TrellisModelCompileSetConstraint
     in
     mapFoldWithKey simplifyConstraints (result.ok constraints) constraints.x
 
-  sem propagateFromStateConstraints : Info -> [Int] -> ConstraintResult
-                                   -> Set PredConstraint -> ConstraintResult
+  sem propagateFromStateConstraints : Info -> [Int] -> ConstraintResult ConstraintRepr
+                                   -> Set PredConstraint -> ConstraintResult ConstraintRepr
   sem propagateFromStateConstraints info state acc =
   | constraints ->
     let isLiteralConstraint = lam c.
@@ -113,8 +113,8 @@ lang TrellisConstraintSimplification = TrellisModelCompileSetConstraint
     -- within its bounds.
     foldl (propagateBoundConstraint state) acc toStateConstraints
 
-  sem propagateLiteralConstraint : [Int] -> Int -> Int -> ConstraintResult
-                                -> PredConstraint -> ConstraintResult
+  sem propagateLiteralConstraint : [Int] -> Int -> Int -> ConstraintResult ConstraintRepr
+                                -> PredConstraint -> ConstraintResult ConstraintRepr
   sem propagateLiteralConstraint state yidx yn acc =
   | EqNum (n, info) ->
     let ymaxval = get state yidx in
@@ -128,8 +128,8 @@ lang TrellisConstraintSimplification = TrellisModelCompileSetConstraint
     let yconstraint = singletonConstraint (NeqNum (np, info)) in
     result.map (lam env. {env with y = mapInsertWith setUnion yidx yconstraint env.y}) acc
 
-  sem propagatePairwiseToConstraints : [Int] -> ConstraintResult
-                                    -> [PredConstraint] -> ConstraintResult
+  sem propagatePairwiseToConstraints : [Int] -> ConstraintResult ConstraintRepr
+                                    -> [PredConstraint] -> ConstraintResult ConstraintRepr
   sem propagatePairwiseToConstraints state acc =
   | toConstraints ->
     let propagateConstraints = lam acc. lam idxc.
@@ -143,9 +143,9 @@ lang TrellisConstraintSimplification = TrellisModelCompileSetConstraint
     let indexedConstraints = mapi (lam idx. lam x. (idx, x)) toConstraints in
     foldl propagateConstraints acc indexedConstraints
 
-  sem propagateConstraint : [Int] -> ConstraintResult
+  sem propagateConstraint : [Int] -> ConstraintResult ConstraintRepr
                          -> (PredConstraint, PredConstraint)
-                         -> ConstraintResult
+                         -> ConstraintResult ConstraintRepr
   sem propagateConstraint state acc =
   | (EqYPlusNum (lidx, ln, linfo), EqYPlusNum (ridx, rn, rinfo)) ->
     let n = subi rn ln in
@@ -165,8 +165,8 @@ lang TrellisConstraintSimplification = TrellisModelCompileSetConstraint
       printPredConstraint r
     ])
 
-  sem propagateBoundConstraint : [Int] -> ConstraintResult -> PredConstraint
-                              -> ConstraintResult
+  sem propagateBoundConstraint : [Int] -> ConstraintResult ConstraintRepr
+                              -> PredConstraint -> ConstraintResult ConstraintRepr
   sem propagateBoundConstraint state acc =
   | EqYPlusNum (yidx, n, info) ->
     let maxv = get state yidx in
@@ -180,8 +180,8 @@ lang TrellisConstraintSimplification = TrellisModelCompileSetConstraint
     error (concat "Unexpected constraint on to-state: " (printPredConstraint c))
 
   sem validateLiteralEqualityConstraints : Info -> [Int] -> Int
-                                        -> Result () ConstraintError (Set PredConstraint)
-                                        -> Result () ConstraintError (Int, Set PredConstraint)
+                                        -> ConstraintResult (Set PredConstraint)
+                                        -> ConstraintResult (Int, Set PredConstraint)
   sem validateLiteralEqualityConstraints info state idx =
   | constraints ->
     let eqLit = lam c.
@@ -257,10 +257,10 @@ lang TrellisConstraintSimplification = TrellisModelCompileSetConstraint
     in
     mapFilterWithKey (lam c. lam. not (isContradictoryInequality c)) constraints
 
-  sem simplifyToStateConstraints : ConstraintRepr -> ConstraintResult
+  sem simplifyToStateConstraints : ConstraintRepr -> ConstraintResult ConstraintRepr
   sem simplifyToStateConstraints =
   | constraints ->
-    let info = foldl mergeInfo (NoInfo ()) constraints.infos in
+    let info = constraints.info in
     let state = constraints.state in
     let simplifyConstraints = lam acc. lam idx. lam c.
       -- 1. Remove inequallity constraints that are contradictory due to being
@@ -304,10 +304,7 @@ let pc = setOfSeq cmpPredConstraint in
 -- constraints on the from-state or the to-state, represents a set constraint
 -- that describes all possible transitions between pairs of states.
 let empty = {
-  state = [4, 4, 4, 16],
-  x = mapEmpty subi,
-  y = mapEmpty subi,
-  infos = []
+  state = [4, 4, 4, 16], x = mapEmpty subi, y = mapEmpty subi, info = NoInfo ()
 } in
 utest simplifyConstraints empty with result.ok empty using eqc else ppc in
 

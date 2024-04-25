@@ -46,7 +46,7 @@ lang TrellisSetConstraintRepr = TrellisModelAst + TrellisTypeCardinality
     state : [Int],
     x : Map Int (Set PredConstraint),
     y : Map Int (Set PredConstraint),
-    infos : [Info]
+    info : Info
   }
 
   sem defaultConstraintRepr : Info -> TType -> ConstraintRepr
@@ -60,7 +60,7 @@ lang TrellisSetConstraintRepr = TrellisModelAst + TrellisTypeCardinality
       match stateType with TTuple {tys = tys} then map cardinalityType tys
       else [cardinalityType stateType]
     in
-    { state = state, x = mapEmpty subi, y = mapEmpty subi, infos = [info] }
+    { state = state, x = mapEmpty subi, y = mapEmpty subi, info = info }
 
   sem printConstraintRepr : ConstraintRepr -> String
   sem printConstraintRepr =

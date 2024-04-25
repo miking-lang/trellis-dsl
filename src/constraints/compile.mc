@@ -48,19 +48,19 @@ lang TrellisModelCompileSetConstraintError
     eqi (infoCmp li ri) 0
   | (UnsupportedEquality li, UnsupportedEquality ri) ->
     eqi (infoCmp li ri) 0
+
+  type ConstraintResult a = Result ConstraintError ConstraintError a
 end
 
 lang TrellisModelCompileSetConstraint =
   TrellisModelCompileSetConstraintError + TrellisModelAst +
   TrellisSetConstraintRepr
 
-  type ConstraintResult = Result () ConstraintError ConstraintRepr
-
   -- Converts a transition set constraint with a given state type to the
   -- abstract constraint representation. If the set constraint is a value
   -- builder, or the conditional expressions contain unsupported expressions,
   -- all errors are returned instead.
-  sem setConstraintToRepr : TType -> TSet -> ConstraintResult
+  sem setConstraintToRepr : TType -> TSet -> ConstraintResult ConstraintRepr
   sem setConstraintToRepr stateType =
   | SAll t ->
     -- NOTE(larshum, 2024-04-24): The default constraint representation
@@ -75,8 +75,8 @@ lang TrellisModelCompileSetConstraint =
       (lam acc. lam cond. extractCondition t.x t.y acc cond)
       acc t.conds
 
-  sem extractCondition : Name -> Name -> ConstraintResult -> TExpr
-                      -> ConstraintResult
+  sem extractCondition : Name -> Name -> ConstraintResult ConstraintRepr -> TExpr
+                      -> ConstraintResult ConstraintRepr
   sem extractCondition x y acc =
   | EBinOp {
       op = op & (OEq _ | ONeq _),
@@ -163,24 +163,26 @@ lang ConstraintTestLang =
   sem eqConstraints : ConstraintRepr -> ConstraintRepr -> Bool
   sem eqConstraints l =
   | r ->
-    if forAll (lam x. eqi x.0 x.1) (zip l.state r.state) then
+    if eqSeq eqi l.state r.state then
       if mapEq setEq l.x r.x then mapEq setEq l.y r.y
       else false
     else false
 
-  sem eqc : ConstraintResult -> ConstraintResult -> Bool
+  sem eqc : ConstraintResult ConstraintRepr -> ConstraintResult ConstraintRepr -> Bool
   sem eqc l =
   | r -> eqcH (result.consume l, result.consume r)
 
-  type T = ([()], Either [ConstraintError] ConstraintRepr)
+  type T = ([ConstraintError], Either [ConstraintError] ConstraintRepr)
 
   sem eqcH : (T, T) -> Bool
   sem eqcH =
-  | ((_, Right l), (_, Right r)) -> eqConstraints l r
-  | ((_, Left l), (_, Left r)) -> eqSeq eqConstraintError l r
+  | ((lw, Right l), (rw, Right r)) ->
+    and (eqSeq eqConstraintError lw rw) (eqConstraints l r)
+  | ((lw, Left l), (rw, Left r)) ->
+    and (eqSeq eqConstraintError lw rw) (eqSeq eqConstraintError l r)
   | _ -> false
 
-  sem ppc : ConstraintResult -> ConstraintResult -> String
+  sem ppc : ConstraintResult ConstraintRepr -> ConstraintResult ConstraintRepr -> String
   sem ppc l =
   | r ->
     let pp = lam r.
