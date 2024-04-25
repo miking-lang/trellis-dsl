@@ -49,7 +49,9 @@ lang TrellisConstraintZ3Analysis =
         result.withAnnotations (result.err (z3Error errs)) acc
       end
     in
-    foldl checkNonempty (result.ok setConstraints) setConstraints
+    if checkZ3Installed () then
+      foldl checkNonempty (result.ok setConstraints) setConstraints
+    else result.err (Z3FailError "Could not find command 'z3'")
 
   -- Verifies that all pairs of set constraints are disjoint from each other.
   -- This is a prerequisite for the CUDA code generation.
@@ -74,7 +76,7 @@ lang TrellisConstraintZ3Analysis =
             (lam acc. lam c2. checkDisjoint acc c1 c2)
             acc rhs)
         (result.ok setConstraints) setConstraints
-    else result.err (Z3FailError "Could not find command z3")
+    else result.err (Z3FailError "Could not find command 'z3'")
 
   -- Determines whether two given environments containing constraints are
   -- disjoint, i.e., if they describe set constraints with no transitions in
