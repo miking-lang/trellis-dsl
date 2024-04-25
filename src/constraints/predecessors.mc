@@ -13,17 +13,18 @@ lang TrellisConstraintDisjoint =
   TrellisConstraintZ3 + TrellisModelCompileSetConstraintError
 
   syn ConstraintError =
-  | IntersectingSetConstraints Info
+  | IntersectingSetConstraints [Info]
   | Z3Error String
 
-  sem constraintErrorInfo =
-  | IntersectingSetConstraints i -> i
-  | Z3Error _ -> NoInfo ()
-
-  sem printConstraintError =
+  sem printConstraintErrorMessage warning =
   | IntersectingSetConstraints i ->
-    infoErrorString i "Set constraints are not disjoint"
+    printSection warning i "Set constraints are not disjoint"
   | Z3Error s -> s
+
+  sem eqConstraintErrorH =
+  | (IntersectingSetConstraints li, IntersectingSetConstraints ri) ->
+    forAll (lam x. eqi (infoCmp x.0 x.1) 0) (zip li ri)
+  | (Z3Error ls, Z3Error rs) -> eqString ls rs
 
   sem ensureDisjointSetConstraints : [ConstraintRepr]
                                   -> Result () ConstraintError [ConstraintRepr]
@@ -33,20 +34,22 @@ lang TrellisConstraintDisjoint =
       switch result.consume (disjointConstraints lhs rhs)
       case (_, Right true) then acc
       case (_, Right false) then
-        let info = mergeInfo lhs.info rhs.info in
-        result.withAnnotations (result.err (IntersectingSetConstraints info)) acc
+        let infos = concat lhs.infos rhs.infos in
+        result.withAnnotations (result.err (IntersectingSetConstraints infos)) acc
       case (_, Left z3errs) then
         let err = Z3Error (strJoin "\n" (map printZ3Error z3errs)) in
         result.withAnnotations (result.err err) acc
       end
     in
-    foldli
-      (lam acc. lam idx. lam c1.
-        let rhs = subsequence setConstraints (addi idx 1) (length setConstraints) in
-        foldl
-          (lam acc. lam c2. checkDisjoint acc c1 c2)
-          acc rhs)
-      (result.ok setConstraints) setConstraints
+    if checkZ3Installed () then
+      foldli
+        (lam acc. lam idx. lam c1.
+          let rhs = subsequence setConstraints (addi idx 1) (length setConstraints) in
+          foldl
+            (lam acc. lam c2. checkDisjoint acc c1 c2)
+            acc rhs)
+        (result.ok setConstraints) setConstraints
+    else result.err (Z3Error "Could not find command z3")
 
   -- Determines whether two given environments containing constraints are
   -- disjoint, i.e., if they describe set constraints with no transitions in
@@ -61,7 +64,7 @@ lang TrellisConstraintDisjoint =
       state = lhs.state,
       x = mapUnionWith setUnion lhs.x rhs.x,
       y = mapUnionWith setUnion lhs.y rhs.y,
-      info = mergeInfo lhs.info rhs.info
+      infos = concat lhs.infos rhs.infos
     } in
     checkEmpty union
 
@@ -98,25 +101,25 @@ lang TrellisModelPredecessorAnalysis =
     case (_, Right reprs) then Some reprs
     case (_, Left errors) then
       if options.errorPredecessorAnalysis then
-        printAnalysisErrorMessage true errors;
+        printAnalysisErrorMessage false errors;
         exit 1
       else if options.warnPredecessorAnalysis then
-        printAnalysisErrorMessage false errors;
+        printAnalysisErrorMessage true errors;
         None ()
       else
         None ()
     end
 
   sem printAnalysisErrorMessage : Bool -> [ConstraintError] -> ()
-  sem printAnalysisErrorMessage terminating =
+  sem printAnalysisErrorMessage warning =
   | errors ->
-    let errStrs = strJoin "\n" (map printConstraintError errors) in
+    let errStrs = strJoin "\n" (map (printConstraintErrorMessage warning) errors) in
     let fallbackStr =
-      if terminating then ""
-      else "\nFalling back to pre-computing predecessors"
+      if warning then "\nFalling back to pre-computing predecessors"
+      else ""
     in
     let msg = join [
-      "Predecessor analysis failed due to the following errors:\n",
+      "Predecessor analysis failed\n",
       errStrs,
       fallbackStr
     ] in

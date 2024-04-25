@@ -17,34 +17,37 @@ lang TrellisModelCompileSetConstraintError
   | UnsupportedCondition Info
   | UnsupportedEquality Info
 
-  sem constraintErrorInfo : ConstraintError -> Info
-  sem constraintErrorInfo =
-  | UnsupportedSet i -> i
-  | UnsupportedCondition i -> i
-  | UnsupportedEquality i -> i
+  sem printSection : Bool -> [Info] -> String -> String
+  sem printSection warning infos =
+  | msg ->
+    let section = {errorDefault with msg = msg, infos = infos} in
+    match errorMsg [section] {single = "", multi = ""} with (i, msg) in
+    if warning then infoWarningString i msg
+    else infoErrorString i msg
 
-  sem printConstraintError : ConstraintError -> String
-  sem printConstraintError =
-  | UnsupportedSet i -> infoErrorString i "Unsupported set construct"
+  sem printConstraintErrorMessage : Bool -> ConstraintError -> String
+  sem printConstraintErrorMessage warning =
+  | UnsupportedSet i ->
+    printSection warning [i] "Unsupported set construct"
   | UnsupportedCondition i ->
-    infoErrorString i "Unsupported condition expression"
+    printSection warning [i] "Unsupported condition expression"
   | UnsupportedEquality i ->
-    infoErrorString i "Unsupported shape of equality/inequality condition"
+    printSection warning [i] "Unsupported shape of equality/inequality condition"
 
   sem eqConstraintError : ConstraintError -> ConstraintError -> Bool
   sem eqConstraintError l =
   | r ->
     if eqi (constructorTag l) (constructorTag r) then
-      if eqi (infoCmp (constraintErrorInfo l) (constraintErrorInfo r)) 0 then
-        eqConstraintErrorH (l, r)
-      else false
+      eqConstraintErrorH (l, r)
     else false
 
-  -- Implementation of this is only needed for error types that contain more
-  -- information than an info field.
   sem eqConstraintErrorH : (ConstraintError, ConstraintError) -> Bool
   sem eqConstraintErrorH =
-  | _ -> true
+  | (UnsupportedSet li, UnsupportedSet ri) -> eqi (infoCmp li ri) 0
+  | (UnsupportedCondition li, UnsupportedCondition ri) ->
+    eqi (infoCmp li ri) 0
+  | (UnsupportedEquality li, UnsupportedEquality ri) ->
+    eqi (infoCmp li ri) 0
 end
 
 lang TrellisModelCompileSetConstraint =
@@ -184,7 +187,7 @@ lang ConstraintTestLang =
       let x = result.consume r in
       match x with (_, Right c) then printConstraintRepr c
       else match x with (_, Left errs) then
-        strJoin "\n" (map printConstraintError errs)
+        strJoin "\n" (map (printConstraintErrorMessage true) errs)
       else never
     in
     utestDefaultToString pp pp l r

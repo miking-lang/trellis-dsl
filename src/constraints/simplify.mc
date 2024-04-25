@@ -14,22 +14,22 @@ lang TrellisConstraintSimplification = TrellisModelCompileSetConstraint
   | NonLiteralConstraint (Info, PredConstraint)
   | OutOfValidRange Info
 
-  sem constraintErrorInfo =
-  | ContradictionError i -> i
-  | NonLiteralConstraint (i, _) -> i
-  | OutOfValidRange i -> i
-
-  sem printConstraintError =
+  sem printConstraintErrorMessage warning =
   | ContradictionError i ->
-    infoErrorString i "Found contradictory constraints"
+    printSection warning [i] "Found contradictory constraints"
   | NonLiteralConstraint (i, c) ->
-    infoErrorString i (concat "Unsupported non-literal constraint " (printPredConstraint c))
+    let msg = concat "Unsupported non-literal constraint " (printPredConstraint c) in
+    printSection warning [i] msg
   | OutOfValidRange i ->
-    infoErrorString i "Literal equality constraint is outside range of type"
+    printSection warning [i] "Literal equality constraint is outside range of type"
 
   sem eqConstraintErrorH =
-  | (NonLiteralConstraint l, NonLiteralConstraint r) ->
-    eqi (cmpPredConstraint l.1 r.1) 0
+  | (ContradictionError li, ContradictionError ri) ->
+    eqi (infoCmp li ri) 0
+  | (NonLiteralConstraint (li, lc), NonLiteralConstraint (ri, rc)) ->
+    and (eqi (infoCmp li ri) 0) (eqi (cmpPredConstraint lc rc) 0)
+  | (OutOfValidRange li, OutOfValidRange ri) ->
+    eqi (infoCmp li ri) 0
 
   -- Attempts to simplify the given constraints, producing a result which
   -- contains error if the simplification results in contradictions or
@@ -43,7 +43,7 @@ lang TrellisConstraintSimplification = TrellisModelCompileSetConstraint
   sem simplifyFromStateConstraints : ConstraintRepr -> ConstraintResult
   sem simplifyFromStateConstraints =
   | constraints ->
-    let info = constraints.info in
+    let info = foldl mergeInfo (NoInfo ()) constraints.infos in
     let state = constraints.state in
     let simplifyConstraints = lam acc. lam idx. lam c.
       -- 1. Propagate literal constraints on the from-state to the
@@ -260,7 +260,7 @@ lang TrellisConstraintSimplification = TrellisModelCompileSetConstraint
   sem simplifyToStateConstraints : ConstraintRepr -> ConstraintResult
   sem simplifyToStateConstraints =
   | constraints ->
-    let info = constraints.info in
+    let info = foldl mergeInfo (NoInfo ()) constraints.infos in
     let state = constraints.state in
     let simplifyConstraints = lam acc. lam idx. lam c.
       -- 1. Remove inequallity constraints that are contradictory due to being
@@ -307,7 +307,7 @@ let empty = {
   state = [4, 4, 4, 16],
   x = mapEmpty subi,
   y = mapEmpty subi,
-  info = NoInfo ()
+  infos = []
 } in
 utest simplifyConstraints empty with result.ok empty using eqc else ppc in
 

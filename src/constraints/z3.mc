@@ -68,16 +68,14 @@ end
 
 lang TrellisConstraintZ3 = TrellisConstraintPrintZ3
   syn Z3Error =
-  | NotFound ()
   | UnknownOutput {program : String, stdout : String, stderr : String}
   | NonZeroReturnCode {program : String, stdout : String, stderr : String, code : Int}
 
   sem printZ3Error : Z3Error -> String
   sem printZ3Error =
-  | NotFound _ -> "Could not find installation of Z3"
   | UnknownOutput t ->
     join [
-      "Received unknown output when running z3 on following program:\n",
+      "Received unknown output when running z3 on the following program:\n",
       t.program, "\n\nstdout:", t.stdout, "\nstderr:\n", t.stderr ]
   | NonZeroReturnCode t ->
     join [
@@ -93,7 +91,6 @@ lang TrellisConstraintZ3 = TrellisConstraintPrintZ3
 
   sem eqZ3ErrorH : (Z3Error, Z3Error) -> Bool
   sem eqZ3ErrorH =
-  | (NotFound _, NotFound _) -> true
   | (UnknownOutput l, UnknownOutput r) ->
     if eqString l.program r.program then
       if eqString l.stdout r.stdout then
@@ -109,34 +106,33 @@ lang TrellisConstraintZ3 = TrellisConstraintPrintZ3
       else false
     else false
 
+  sem checkZ3Installed : () -> Bool
+  sem checkZ3Installed =
+  | _ -> sysCommandExists "z3"
+
   -- Checks whether the given environment of constraints describes the empty
   -- set. We use this to check whether sets of constraints are disjoint (via
   -- intersection).
   sem checkEmpty : ConstraintRepr -> Result () Z3Error Bool
   sem checkEmpty =
   | constraints ->
-    -- Check that z3 is installed - if it is not, we simply return None to
-    -- indicate this. It allows us to use a fallback approach should it not be
-    -- available.
-    if sysCommandExists "z3" then
-      let str = printZ3Satisfiability constraints in
-      let path = sysTempFileMake () in
-      writeFile path str;
-      let r = sysRunCommand ["z3", path] "" "." in
-      deleteFile path;
-      if eqi r.returncode 0 then
-        switch strTrim r.stdout
-        case "sat" then result.ok false
-        case "unsat" then result.ok true
-        case _ then 
-          result.err (UnknownOutput {program = str, stdout = r.stdout, stderr = r.stderr})
-        end
-      else
-        result.err (NonZeroReturnCode {
-          program = str, stdout = r.stdout, stderr = r.stderr,
-          code = r.returncode
-        })
-    else result.err (NotFound ())
+    let str = printZ3Satisfiability constraints in
+    let path = sysTempFileMake () in
+    writeFile path str;
+    let r = sysRunCommand ["z3", path] "" "." in
+    deleteFile path;
+    if eqi r.returncode 0 then
+      switch strTrim r.stdout
+      case "sat" then result.ok false
+      case "unsat" then result.ok true
+      case _ then
+        result.err (UnknownOutput {program = str, stdout = r.stdout, stderr = r.stderr})
+      end
+    else
+      result.err (NonZeroReturnCode {
+        program = str, stdout = r.stdout, stderr = r.stderr,
+        code = r.returncode
+      })
 end
 
 mexpr
@@ -145,7 +141,7 @@ use TrellisConstraintZ3 in
 
 -- NOTE(larshum, 2024-04-24): Skip running the tests in this file if z3 is not
 -- installed.
-if not (sysCommandExists "z3") then () else
+if not (checkZ3Installed ()) then () else
 
 let eqn_ = lam n. EqNum (n, NoInfo ()) in
 let neqn_ = lam n. NeqNum (n, NoInfo ()) in
@@ -163,7 +159,7 @@ in
 let pc = setOfSeq cmpPredConstraint in
 let empty = {
   state = [4, 4, 4, 16],
-  x = mapEmpty subi, y = mapEmpty subi, info = NoInfo ()
+  x = mapEmpty subi, y = mapEmpty subi, infos = []
 } in
 
 let x = mapFromSeq subi [

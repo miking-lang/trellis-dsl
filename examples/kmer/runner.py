@@ -51,8 +51,19 @@ tables = {
 }
 hmm = HMM(tables)
 
+t0 = time.time()
 outputs = hmm.viterbi(signals)
 probs = hmm.forward(signals)
+t1 = time.time()
+
+# Sketch of the interface to the Baum-Welch algorithm for training the HMM on
+# given observation data. The result is the updated tables that we originally
+# provided to the HMM. Should the model also update itself, as a side-effect,
+# or should we create a new one ('hmm2 = HMM(upd_tables)')?
+#for i in range(10):
+#    A, B, pi = hmm.baum_welch(signals)
+#    upd_tables = update_tables(A, B, pi)
+#    hmm.update_tables(upd_tables)
 
 outc = ['A','C','G','T']
 for i, signal in enumerate(outputs):
@@ -61,3 +72,4 @@ for i, signal in enumerate(outputs):
         if s % 16 == 0:
             print(outc[(s // 16) % 4], end="")
     print("")
+print(t1-t0)
