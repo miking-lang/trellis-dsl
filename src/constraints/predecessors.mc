@@ -36,21 +36,21 @@ lang TrellisConstraintZ3Analysis =
 
   -- Verifies that each set constraint described by a corresponding constraint
   -- representation is non-empty. If it is not, we produce a warning.
-  sem verifyNonempty : [ConstraintRepr] -> ConstraintResult [ConstraintRepr]
-  sem verifyNonempty =
+  sem verifyNonEmptySetConstraints : [ConstraintRepr] -> ConstraintResult [ConstraintRepr]
+  sem verifyNonEmptySetConstraints =
   | setConstraints ->
     let checkNonempty = lam acc. lam c.
       switch result.consume (checkEmpty c)
       case (_, Right true) then
         result.withAnnotations (result.warn (EmptySetConstraint c.info)) acc
       case (_, Right false) then
-        acc
+        result.map (lam seq. snoc seq c) acc
       case (_, Left errs) then
         result.withAnnotations (result.err (z3Error errs)) acc
       end
     in
     if checkZ3Installed () then
-      foldl checkNonempty (result.ok setConstraints) setConstraints
+      foldl checkNonempty (result.ok []) setConstraints
     else result.err (Z3FailError "Could not find command 'z3'")
 
   -- Verifies that all pairs of set constraints are disjoint from each other.
@@ -123,7 +123,7 @@ lang TrellisModelPredecessorAnalysis =
   sem performPredecessorAnalysisH options stateType =
   | {cases = cases, info = info} ->
     let res = result.mapM (lam c. setConstraintToRepr stateType c.cond) cases in
-    let res = result.bind res verifyNonempty in
+    let res = result.bind res verifyNonEmptySetConstraints in
     let res = result.bind res verifyDisjointSetConstraints in
     switch result.consume res
     case (warnings, Right reprs) then
@@ -165,3 +165,34 @@ lang TrellisModelPredecessorAnalysis =
     if warning then print msg
     else printError "\n"
 end
+
+lang TestLang = TrellisConstraintZ3Analysis + ConstraintTestLang end
+
+mexpr
+
+use TestLang in
+
+let eqUnwrappedLhs = lam eqf. lam l. lam r.
+  match result.consume l with (_, Right v) then
+    eqf v r
+  else false
+in
+let isError = lam l. lam.
+  optionIsNone (result.toOption l)
+in
+
+let int_ = lam n. TInt {bounds = Some (0, n), info = NoInfo ()} in
+let stateType = TTuple {tys = [int_ 2, int_ 6], info = NoInfo ()} in
+let pc = setOfSeq cmpPredConstraint in
+let c1 = defaultConstraintRepr (NoInfo ()) stateType in
+let c2 = {
+  c1 with x = mapFromSeq subi [(0, pc [EqNum (0, NoInfo ()), NeqNum (0, NoInfo ())])]
+} in
+let c3 = {
+  c1 with x = mapFromSeq subi [(0, pc [EqNum (0, NoInfo ())])]
+} in
+utest verifyNonEmptySetConstraints [c1, c2, c3] with [c1, c3] using eqUnwrappedLhs (eqSeq eqConstraints) in
+
+utest verifyDisjointSetConstraints [c1, c2, c3] with () using isError in
+
+()
