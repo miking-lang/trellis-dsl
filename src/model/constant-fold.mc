@@ -92,8 +92,7 @@ lang TrellisConstantFoldExpr = TrellisModelAst + TrellisEncode
       match e with EEmpty _ then cexpr
       else if eqi n 0 then e
       else EBinOp {t with op = OAdd (), lhs = e, rhs = cexpr}
-    else
-      EBinOp {t with lhs = l, rhs = r}
+    else e
 
   sem intOperation : BOp -> (Int -> Int -> Int)
   sem intOperation =
@@ -137,7 +136,7 @@ lang TrellisConstantFoldExpr = TrellisModelAst + TrellisEncode
             rhs = EInt {
               i = n, ty = TInt {bounds = None (), info = t.info},
               info = t.info},
-            ty = t.ty, info = t.info }
+            ty = tyTExpr rhs, info = t.info }
       in
       constantFoldBooleanOperation t (lhs, rhs)
     else constantFoldBooleanOperation t (lhs, rhs)
@@ -205,10 +204,7 @@ mexpr
 
 use TestLang in
 
--- NOTE(larshum, 2024-04-22): When we run the constant folding, we have done
--- all checks and transformations that depend on types, so keeping them
--- consistent is not necessary at this point.
-let eqExpr = eqExpr {defaultTrellisEqOptions () with types = false} in
+let eqExpr = eqExpr (defaultTrellisEqOptions ()) in
 let eqProbExpr = lam l. lam r.
   match l with EProb {p = p} then
     eqfApprox 1e-6 p r
@@ -328,7 +324,7 @@ let expr =
     tbool
 in
 let expected =
-  bop (OEq ()) (var "x" tint) (bop (OAdd ()) (var "y" tint) (int -1) tint) tint
+  bop (OEq ()) (var "x" tint) (bop (OAdd ()) (var "y" tint) (int -1) tint) tbool
 in
 utest constantFold expr with expected using eqExpr else ppExprs in
 
@@ -350,7 +346,7 @@ let expr =
     tbool
 in
 let expected =
-  bop (OLt ()) (var "x" tint) (bop (OAdd ()) (var "y" tint) (int 1) tint) tint
+  bop (OLt ()) (var "x" tint) (bop (OAdd ()) (var "y" tint) (int 1) tint) tbool
 in
 utest constantFold expr with expected using eqExpr else ppExprs in
 
