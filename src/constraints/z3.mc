@@ -160,6 +160,7 @@ let empty = {
   state = [4, 4, 4, 16],
   x = mapEmpty subi, y = mapEmpty subi, info = NoInfo ()
 } in
+utest checkEmpty empty with result.ok false using eqCheck in
 
 let x = mapFromSeq subi [
   (0, pc [eqypn_ 0 0]),
@@ -173,6 +174,7 @@ let y = mapFromSeq subi [
 let lhs = {
   empty with x = x, y = y
 } in
+utest checkEmpty lhs with result.ok false using eqCheck in
 
 let x = mapFromSeq subi [
   (0, pc [eqypn_ 0 0]),
@@ -186,6 +188,7 @@ let y = mapFromSeq subi [
 let rhs1 = {
   empty with x = x, y = y
 } in
+utest checkEmpty rhs1 with result.ok false using eqCheck in
 
 let y = mapFromSeq subi [
   (3, pc [neqn_ 15, neqn_ 14])
@@ -193,6 +196,7 @@ let y = mapFromSeq subi [
 let rhs2 = {
   empty with x = x, y = y
 } in
+utest checkEmpty rhs2 with result.ok false using eqCheck in
 
 let q1 = {lhs with
   x = mapUnionWith setUnion lhs.x rhs1.x,
@@ -205,5 +209,41 @@ let q2 = {lhs with
   y = mapUnionWith setUnion lhs.y rhs2.y
 } in
 utest checkEmpty q2 with result.ok true using eqCheck in
+
+-- Below are contradictory examples that are considered empty as no valid pairs
+-- of states can be contained in them.
+let q3 = {
+  empty with x = mapFromSeq subi [(0, pc [eqn_ 0, eqn_ 1])]
+} in
+utest checkEmpty q3 with result.ok true using eqCheck in
+
+let q4 = {
+  empty with x = mapFromSeq subi [(0, pc [neqn_ 0, neqn_ 1, neqn_ 2, neqn_ 3])]
+} in
+utest checkEmpty q4 with result.ok true using eqCheck in
+
+let q5 = {
+  empty with x = mapFromSeq subi [(0, pc [eqypn_ 0 3])],
+             y = mapFromSeq subi [(0, pc [neqn_ 0])]
+} in
+utest checkEmpty q5 with result.ok true using eqCheck in
+
+let q6 = {
+  empty with x = mapFromSeq subi [(0, pc [eqypn_ 0 0, eqn_ 0])],
+             y = mapFromSeq subi [(0, pc [eqn_ 1])]
+} in
+utest checkEmpty q6 with result.ok true using eqCheck in
+
+let q7 = {
+  empty with x = mapFromSeq subi [(0, pc [eqypn_ 0 0, eqypn_ 1 1])],
+             y = mapFromSeq subi [(0, pc [eqn_ 2]), (1, pc [neqn_ 1])]
+} in
+utest checkEmpty q7 with result.ok true using eqCheck in
+
+let q8 = {
+  empty with x = mapFromSeq subi [(0, pc [eqypn_ 0 3]), (1, pc [eqypn_ 0 0, eqypn_ 1 0])],
+             y = mapFromSeq subi [(1, pc [neqn_ 0])]
+} in
+utest checkEmpty q8 with result.ok true using eqCheck in
 
 ()
