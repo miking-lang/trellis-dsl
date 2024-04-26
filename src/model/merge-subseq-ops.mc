@@ -29,6 +29,21 @@ lang TrellisModelMergeSubsequentOperations = TrellisModelAst
 
   sem mergeSubsequentOperations : [TExpr] -> TExpr -> [TExpr]
   sem mergeSubsequentOperations acc =
+  | e & (ESlice {target = EVar {id = id}, lo = idx}) ->
+    match acc with a ++ [
+      ESlice (t & {target = EVar {id = id2}, lo = lidx, hi = hidx})
+    ] then
+      if nameEq id id2 then
+        match
+          if eqi (addi idx 1) lidx then Some (idx, hidx)
+          else if eqi idx (addi hidx 1) then Some (lidx, idx)
+          else None ()
+        with Some (lo, hi) then
+          let ty = sliceType lo hi (tyTExpr t.target) in
+          snoc a (ESlice {t with lo = lo, hi = hi, ty = ty})
+        else snoc acc e
+      else snoc acc e
+    else snoc acc e
   | e & (EBinOp {
       op = op & (OEq _ | ONeq _),
       lhs = ESlice {target = EVar {id = lid}, lo = lidx},
@@ -142,6 +157,32 @@ let expected = setOfConds [
   neq (slice x 1 2) (slice y 1 2),
   eq (slice x 3 3) (slice y 3 3)
 ] in
+utest mergeSubsequentOperationsSet s with expected using eqSet else ppSets in
+
+-- NOTE(larshum, 2024-04-26): Below, we test the merging on direct slice
+-- expressions. These are not valid to use in a set, but this form of
+-- construction makes things easier.
+
+-- x[0], x[1], x[2]
+-- <==>
+-- x[0:2]
+let s = setOfConds [
+  slice x 0 0,
+  slice x 1 1,
+  slice x 2 2
+] in
+let expected = setOfConds [slice x 0 2] in
+utest mergeSubsequentOperationsSet s with expected using eqSet else ppSets in
+
+-- x[1], x[2], x[0]
+-- <==>
+-- x[0:2]
+let s = setOfConds [
+  slice x 1 1,
+  slice x 2 2,
+  slice x 0 0
+] in
+let expected = setOfConds [slice x 0 2] in
 utest mergeSubsequentOperationsSet s with expected using eqSet else ppSets in
 
 ()
