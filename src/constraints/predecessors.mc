@@ -28,6 +28,7 @@ lang TrellisConstraintZ3Analysis =
   sem eqConstraintErrorH =
   | (IntersectingSetConstraints li, IntersectingSetConstraints ri) ->
     eqSeq (lam l. lam r. eqi (infoCmp l r) 0) li ri
+  | (EmptySetConstraint li, EmptySetConstraint ri) -> eqi (infoCmp li ri) 0
   | (Z3FailError ls, Z3FailError rs) -> eqString ls rs
 
   sem z3Error : [Z3Error] -> ConstraintError
@@ -39,25 +40,26 @@ lang TrellisConstraintZ3Analysis =
   sem verifyNonEmptySetConstraints : [ConstraintRepr] -> ConstraintResult [ConstraintRepr]
   sem verifyNonEmptySetConstraints =
   | setConstraints ->
-    let checkNonempty = lam acc. lam c.
+    let checkNonempty = lam acc. lam i. lam c.
       switch result.consume (checkEmpty c)
       case (_, Right true) then
         result.withAnnotations (result.warn (EmptySetConstraint c.info)) acc
       case (_, Right false) then
-        result.map (lam seq. snoc seq c) acc
+        acc
       case (_, Left errs) then
         result.withAnnotations (result.err (z3Error errs)) acc
       end
     in
     if checkZ3Installed () then
-      foldl checkNonempty (result.ok []) setConstraints
+      foldli checkNonempty (result.ok setConstraints) setConstraints
     else result.err (Z3FailError "Could not find command 'z3'")
 
   -- Verifies that all pairs of set constraints are disjoint from each other.
   -- This is a prerequisite for the CUDA code generation.
-  sem verifyDisjointSetConstraints : [ConstraintRepr] -> ConstraintResult [ConstraintRepr]
+  sem verifyDisjointSetConstraints : [ConstraintRepr]
+                                  -> ConstraintResult [ConstraintRepr]
   sem verifyDisjointSetConstraints =
-  | setConstraints ->
+  | constraints ->
     let checkDisjoint = lam acc. lam lhs. lam rhs.
       switch result.consume (disjointConstraints lhs rhs)
       case (_, Right true) then acc
@@ -71,11 +73,11 @@ lang TrellisConstraintZ3Analysis =
     if checkZ3Installed () then
       foldli
         (lam acc. lam idx. lam c1.
-          let rhs = subsequence setConstraints (addi idx 1) (length setConstraints) in
+          let rhs = subsequence constraints (addi idx 1) (length constraints) in
           foldl
             (lam acc. lam c2. checkDisjoint acc c1 c2)
             acc rhs)
-        (result.ok setConstraints) setConstraints
+        (result.ok constraints) constraints
     else result.err (Z3FailError "Could not find command 'z3'")
 
   -- Determines whether two given environments containing constraints are
@@ -191,7 +193,14 @@ let c2 = {
 let c3 = {
   c1 with x = mapFromSeq subi [(0, pc [EqNum (0, NoInfo ())])]
 } in
-utest verifyNonEmptySetConstraints [c1, c2, c3] with [c1, c3] using eqUnwrappedLhs (eqSeq eqConstraints) in
+utest verifyNonEmptySetConstraints [c1, c2, c3]
+with ([EmptySetConstraint (NoInfo ())], [c1, c2, c3])
+using lam l. lam r.
+  match result.consume l with (warns, Right v) then
+    if eqSeq eqConstraintError warns r.0 then eqSeq eqConstraints v r.1
+    else false
+  else false
+in
 
 utest verifyDisjointSetConstraints [c1, c2, c3] with () using isError in
 

@@ -51,7 +51,7 @@ lang TrellisEncodeMixedRadix = TrellisTypeCardinality
     let sliceCards = subsequence cards lo (addi (subi hi lo) 1) in
     let mod = foldl muli 1 sliceCards in
     let totCard = foldl1 muli cards in
-    let resultTy = TInt {bounds = Some (0, totCard), info = info} in
+    let resultTy = TInt {bounds = Some (0, subi totCard 1), info = info} in
     let expr = applyDivision info resultTy div target in
     -- NOTE(larshum, 2024-04-09): We assume we have flattened the tuple and
     -- that the encoded value is in the valid range. In this case, we do not
@@ -80,7 +80,7 @@ lang TrellisEncodeExpr = TrellisEncodeMixedRadix
     match t.ty with TTable _ then EVar t
     else
       let maxsz = cardinalityType t.ty in
-      let ty = TInt {bounds = Some (0, maxsz), info = t.info} in
+      let ty = TInt {bounds = Some (0, subi maxsz 1), info = t.info} in
       EVar {t with ty = ty}
   | ESlice {target = target, lo = lo, hi = hi, ty = ty, info = info} ->
     if lti hi lo then errorSingle [info] "Invalid slice node" else
