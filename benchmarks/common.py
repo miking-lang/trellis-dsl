@@ -25,23 +25,13 @@ def get_weather_inputs_trellis(signals_path):
 # Generates uniformly distributed initial positions among the states at layer
 # zero. All other states have probability zero initially.
 def generate_init_probs(k):
-    init_probs = np.zeros((4**k, 16), dtype=np.float32)
+    init_probs = np.zeros((16, 4**k), dtype=np.float32)
     for kmer in range(0, 4**k):
-        init_probs[kmer][0] = log(1.0 / float(4**k))
-        for layer in range(1, 16):
-            init_probs[kmer][layer] = -inf
+        init_probs[0][kmer] = log(1.0 / float(4**k))
+    for layer in range(1, 16):
+        for kmer in range(0, 4**k):
+            init_probs[layer][kmer] = -inf
     return init_probs
-
-def reverse_index(i, k):
-    return sum([(i // 4**x) % 4 * (4**(k-x-1)) for x in range(k)])
-
-def transform_output_probs(obs, k):
-    output_probs = np.zeros((4**k, 101), dtype=np.float32)
-    for i in range(4**k):
-        idx = reverse_index(i, k)
-        for j in range(len(obs)):
-            output_probs[i][j] = obs[j][idx]
-    return output_probs
 
 def read_kmer_inputs_trellis(model_path, signals_path):
     with h5py.File(model_path, "r") as f:
@@ -50,9 +40,10 @@ def read_kmer_inputs_trellis(model_path, signals_path):
         trans1 = np.log(f['Tables']['TransitionProbabilities'][:])
         duration = np.log(f['Tables']['DurationProbabilities'][:])
         tail_factor = np.log(f['Tables']['DurationProbabilities'].attrs['TailFactor'])
-        kmer_length = f['Parameters'].attrs['KMerLength']
-        init_probs = generate_init_probs(kmer_length)
-        output_probs = transform_output_probs(obs, kmer_length)
+        k = f['Parameters'].attrs['KMerLength']
+        init_probs = generate_init_probs(k)
+        trans1 = trans1.reshape(4, 4**k).transpose(1, 0).flatten()
+        out_prob = obs.flatten()
     with h5py.File(signals_path, "r") as f:
         keys = list(f.keys())
         signals = [f[k]['Raw']['Signal'][:].tolist() for k in keys]
@@ -60,7 +51,7 @@ def read_kmer_inputs_trellis(model_path, signals_path):
         'gamma': tail_factor,
         'trans1': trans1,
         'trans2': duration,
-        'outputProb': output_probs,
+        'outputProb': out_prob,
         'initialProb': init_probs
     }
     return (tables, signals)

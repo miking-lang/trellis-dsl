@@ -1,7 +1,7 @@
 #!/bin/sh
 
-MODEL_PATH=../../synthetic_dna/model/Params3_true.h5
-SIGNAL_PATH=../../synthetic_dna/data/signals100_1.fast5
+MODEL_PATH=../../benchmarks/models/3mer.hdf5
+SIGNAL_PATH=../../benchmarks/signals/kmer.hdf5
 
 case $1 in
   build)
@@ -11,7 +11,7 @@ case $1 in
     python3 runner.py $MODEL_PATH $SIGNAL_PATH
     ;;
   clean)
-    rm -rf *generated* trellis.py __init__.py __pycache__ predecessors.txt
+    rm -rf hmm.cu trellis.py __pycache__ __init__.py
     ;;
   *)
     >&2 echo "Expected argument 'build', 'run' or 'clean'"
