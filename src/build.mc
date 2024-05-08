@@ -21,8 +21,8 @@ lang TrellisGeneratePython = TrellisTypeCardinality + TrellisTypeBitwidth
     else if lti n 64 then "np.uint64"
     else errorSingle [infoTTy ty] "Type bitwidth too large for a 64-bit value"
 
-  sem generatePythonWrapper : TrellisOptions -> TModel -> String
-  sem generatePythonWrapper options =
+  sem generatePythonWrapper : TrellisOptions -> Map Name TExpr -> TModel -> String
+  sem generatePythonWrapper options syntheticTables =
   | model ->
     let numStates = cardinalityType model.stateType in
     let pyStateType = numpyTypeSize model.stateType in
@@ -50,7 +50,7 @@ lang TrellisGeneratePython = TrellisTypeCardinality + TrellisTypeBitwidth
       join [indent 3, "err, = cuda.cuCtxDestroy(self.ctx)"],
       join [indent 3, "cuda_check(err)"],
       join [indent 1, "def copy_args(self, args):"],
-      generateCopyToGpuTables model
+      generateCopyToGpuTables syntheticTables model
     ]
 
   sem getTableField : Name -> String
@@ -99,8 +99,8 @@ lang TrellisGeneratePython = TrellisTypeCardinality + TrellisTypeBitwidth
 
   -- Generate code to copy the data of all tables of the given model to the
   -- GPU.
-  sem generateCopyToGpuTables : TModel -> String
-  sem generateCopyToGpuTables =
+  sem generateCopyToGpuTables : Map Name TExpr -> TModel -> String
+  sem generateCopyToGpuTables syntheticTables =
   | {tables = tables} ->
     -- Code for flattening tables and copying them to the GPU. Single element
     -- tables are converted to NumPy arrays instead.
@@ -121,6 +121,18 @@ lang TrellisGeneratePython = TrellisTypeCardinality + TrellisTypeBitwidth
       in
       strJoin "\n" copiesStrs
     in
+    -- Construct the synthetic tables based on the tables provided as
+    -- arguments.
+    let syntheticTablesStr =
+      strJoin "\n"
+        (mapFoldWithKey
+          (lam acc. lam id. lam expr.
+            let tid = getTableField id in
+            snoc acc (join [
+              indent 2, "self.", tid, " = np.array(", exprToPythonString expr,
+              ", dtype=self.prob_type)" ]))
+          [] syntheticTables)
+    in
     -- Construct the list of table pointers which are passed to CUDA kernels
     -- when launching them.
     let tablePtrs =
@@ -135,18 +147,81 @@ lang TrellisGeneratePython = TrellisTypeCardinality + TrellisTypeBitwidth
               snoc acc (join [indent 3, "self.", tid, ","]))
           [] tables
       in
+      -- We add the synthetic tables to the back of the list
+      let tablePtrsStr =
+        mapFoldWithKey
+          (lam acc. lam id. lam.
+            let tid = getTableField id in
+            snoc acc (join [indent 3, "self.", tid, ","]))
+          tablePtrsStr syntheticTables
+      in
       strJoin "\n" [
         join [indent 2, "self.table_ptrs = ["],
         strJoin "\n" tablePtrsStr,
         join [indent 2, "]"]
       ]
     in
-    join [copies, "\n", tablePtrs]
+    join [copies, "\n", syntheticTablesStr, "\n", tablePtrs]
+
+  sem exprToPythonString : TExpr -> String
+  sem exprToPythonString =
+  | EBool t -> if t.b then "true" else "false"
+  | EInt t -> int2string t.i
+  | EProb t -> float2string (log t.p)
+  | ETableAccess {table = table, args = []} ->
+    join ["args['", nameGetStr table, "']"]
+  | ETableAccess {table = table, args = [a]} ->
+    join ["args['", nameGetStr table, "'][", exprToPythonString a, "]"]
+  | EIf t ->
+    join [
+      exprToPythonString t.thn, " if ", exprToPythonString t.cond, " else ",
+      exprToPythonString t.els ]
+  | EBinOp (t & {op = OAdd _ | OSub _ | OMul _ | ODiv _}) ->
+    arithOpToPythonString t
+  | EBinOp t ->
+    join [
+      "(", exprToPythonString t.lhs, " ", opToPythonString t.op, " ",
+      exprToPythonString t.rhs, ")" ]
+  | _ ->
+    error "Internal error: Replaced non-constant body with synthetic table"
+
+  sem arithOpToPythonString : BinOpRecord -> String
+  sem arithOpToPythonString =
+  | {op = op, lhs = lhs, rhs = rhs, ty = ty, info = info} ->
+    let l = exprToPythonString lhs in
+    let r = exprToPythonString rhs in
+    match ty with TInt _ then
+      join ["(", l, " ", opToPythonString op, " ", r, ")"]
+    else match ty with TProb _ then
+      match op with OAdd _ | OSub _ then
+        join ["np.log(np.exp(", l, ") ", opToPythonString op, " np.exp(", r, "))"]
+      else match op with OMul _ then
+        join ["(", l, " ", opToPythonString (OAdd ()), " ", r, ")"]
+      else
+        join ["(", l, " ", opToPythonString (OSub ()), " ", r, ")"]
+    else error "Internal error: Invalid type of arithmetic expression"
+
+  sem opToPythonString : BOp -> String
+  sem opToPythonString =
+  | OAdd _ -> "+"
+  | OSub _ -> "-"
+  | OMul _ -> "*"
+  | ODiv _ -> "/"
+  | OMod _ -> "%"
+  | OEq _ -> "=="
+  | ONeq _ -> "!="
+  | OLt _ -> "<"
+  | OGt _ -> ">"
+  | OLeq _ -> "<="
+  | OGeq _ -> ">="
+  | OAnd _ -> "and"
+  | OOr _ -> "or"
 end
 
 lang TrellisBuild = TrellisCudaPrettyPrint + TrellisGeneratePython
-  sem buildPythonLibrary : TrellisOptions -> TModel -> CuProgram -> ()
-  sem buildPythonLibrary options model =
+  sem buildPythonLibrary : TrellisOptions -> Map Name TExpr -> TModel
+                        -> CuProgram -> ()
+  sem buildPythonLibrary options syntheticTables model =
   | cuProg ->
     let absPath = lam file. join [options.outputDir, "/", file] in
 
@@ -161,13 +236,13 @@ lang TrellisBuild = TrellisCudaPrettyPrint + TrellisGeneratePython
     writeFile filePath (concat (printCudaProgram cuProg) skeletonCode);
 
     -- 3. Read the pre-defined Python wrapper code.
-    let pythonWrapper = readFile (concat trellisSrcLoc "skeleton/nvrtc-wrap.py") in
+    let wrapStr = readFile (concat trellisSrcLoc "skeleton/nvrtc-wrap.py") in
 
     -- 4. Generate the model-specific Python wrapper code and combine it with
     -- the skeleton code to produce a simple Python library in 'trellis.py'
     -- usable from other files.
     writeFile (absPath "trellis.py")
-      (concat pythonWrapper (generatePythonWrapper options model));
+      (concat wrapStr (generatePythonWrapper options syntheticTables model));
 
     -- 5. Create an empty file '__init__.py' to allow calling the generated
     -- Python library from another directory.

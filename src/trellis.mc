@@ -5,10 +5,9 @@ include "parser/resolve.mc"
 include "model/ast.mc"
 include "model/constant-fold.mc"
 include "model/convert.mc"
-include "model/encode.mc"
-include "model/merge-subseq-ops.mc"
 include "model/pprint.mc"
 include "model/reduce-tables.mc"
+include "model/table-opt.mc"
 include "constraints/predecessors.mc"
 include "./cuda/compile.mc"
 include "./cuda/pprint.mc"
@@ -17,6 +16,7 @@ include "trellis-arg.mc"
 
 lang Trellis =
   TrellisAst + TrellisModelAst + TrellisModelConvert + TrellisConstantFold +
+  TrellisReduceTableDimensionality + TrellisModelReplaceNonTrivialBody +
   TrellisModelPredecessorAnalysis + TrellisCudaCompile + TrellisBuild
 end
 
@@ -51,6 +51,18 @@ match result with ParseOK r then
       printLn (use TrellisModelPrettyPrint in pprintTrellisModel modelAst)
     else ());
 
+    -- Simplify the model by reducing the dimension of all tables to one and
+    -- transforming the model accordingly.
+    let modelAst = reduceTableDimensionalityModel modelAst in
+
+    -- Replaces non-trivial bodies in probability functions that are
+    -- independent of the input variables with a new synthetic table. The
+    -- result is an environment mapping the name of a synthetic table to the
+    -- expression it represents, and the updated model AST containing synthetic
+    -- tables.
+    match replaceNonTrivialBodiesInProbabilityFunctions modelAst
+    with (tableEnv, modelAst) in
+
     -- Produces an abstract representation of the predecessor constraints
     -- imposed by each case of the transition probability function. The result
     -- is an option; should the cases include conditions of unsupported shape,
@@ -60,9 +72,9 @@ match result with ParseOK r then
     -- Compiles the provided model with the constraints to CUDA code, using
     -- different approaches depending on whether the predecessor constraints
     -- are supported or not.
-    let cuProg = compileToCuda options modelAst constraints in
+    let cuProg = compileToCuda options tableEnv modelAst constraints in
 
-    buildPythonLibrary options modelAst cuProg
+    buildPythonLibrary options tableEnv modelAst cuProg
 else
   argPrintError result;
   exit 1

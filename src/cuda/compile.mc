@@ -163,11 +163,26 @@ lang TrellisCudaConstantDefs = TrellisCudaCompileBase + TrellisTypeCardinality
 end
 
 lang TrellisCudaModelMacros = TrellisCudaCompileBase + TrellisCudaPrettyPrint
-  sem generateModelMacroDefinitions : CuCompileEnv -> TModel -> [CuTop]
-  sem generateModelMacroDefinitions env =
+  sem generateModelMacroDefinitions : CuCompileEnv -> Map Name TExpr -> TModel
+                                   -> [CuTop]
+  sem generateModelMacroDefinitions env syntheticTables =
   | model ->
-    let paramsStr = mapFoldWithKey addTableParameter "" model.tables in
-    let argsStr = strJoin ", " (map nameGetStr (mapKeys model.tables)) in
+    let paramsStr =
+      let s = mapFoldWithKey addTableParameter "" model.tables in
+      let synTableTypes =
+        mapMapWithKey
+          (lam id. lam e.
+            TTable {args = [], ret = tyTExpr e, info = infoTExpr e})
+          syntheticTables
+      in
+      mapFoldWithKey addTableParameter s synTableTypes
+    in
+    let argsStr =
+      let args =
+        map nameGetStr (concat (mapKeys model.tables) (mapKeys syntheticTables))
+      in
+      strJoin ", " args
+    in
     [ cudaMacroDef hmmDeclParamsId paramsStr
     , cudaMacroDef hmmCallArgsId argsStr ]
 
@@ -222,9 +237,9 @@ lang TrellisCudaCompileExpr = TrellisCudaCompileBase + TrellisModelTypePrettyPri
       (cudaCompileTrellisExpr bound t.lhs)
       (cudaCompileTrellisExpr bound t.rhs)
 
-  type BinOpStruct = {op : BOp, lhs : TExpr, rhs : TExpr, ty : TType, info : Info}
+  type BinOpRecord = {op : BOp, lhs : TExpr, rhs : TExpr, ty : TType, info : Info}
 
-  sem compileArithmeticOperation : Set Name -> BinOpStruct -> CExpr
+  sem compileArithmeticOperation : Set Name -> BinOpRecord -> CExpr
   sem compileArithmeticOperation bound =
   | {op = op, lhs = lhs, rhs = rhs, ty = ty, info = info} ->
     let lhs = cudaCompileTrellisExpr bound lhs in
@@ -832,11 +847,11 @@ end
 lang TrellisCudaCompile =
   TrellisCudaCompileTypeDefs + TrellisCudaConstantDefs + TrellisCudaModelMacros +
   TrellisCudaProbabilityFunction + TrellisCudaHMM + TrellisEncode +
-  TrellisModelMergeSubsequentOperations + TrellisReduceTableDimensionality
+  TrellisModelMergeSubsequentOperations
 
-  sem compileToCuda : TrellisOptions -> TModel -> Option [ConstraintRepr]
-                   -> CuProgram
-  sem compileToCuda options model =
+  sem compileToCuda : TrellisOptions -> Map Name TExpr -> TModel
+                   -> Option [ConstraintRepr] -> CuProgram
+  sem compileToCuda options syntheticTables model =
   | None _ ->
     error "CUDA code generation does not yet support compilation without a successful predecessor analysis"
   | Some constraints ->
@@ -851,10 +866,6 @@ lang TrellisCudaCompile =
       constraints = constraints, transFunNames = [], tables = model.tables,
       opts = options, stateType = stateTy
     } in
-
-    -- Simplify the model by reducing the dimension of all tables to one and
-    -- transforming the model accordingly.
-    let model = reduceTableDimensionalityModel model in
 
     -- Merges operations on subseqent components of the same state or output
     -- among the conditions of a set constraint.
@@ -877,7 +888,7 @@ lang TrellisCudaCompile =
     -- Generates macros used to declare and call functions while passing all
     -- tables declared in the model as arguments, to simplify code generation
     -- as all tables are always available where they are needed.
-    let modelMacroDefs = generateModelMacroDefinitions env model in
+    let modelMacroDefs = generateModelMacroDefinitions env syntheticTables model in
 
     -- Generates the probability functions based on the model.
     match generateProbabilityFunctions env model.initial model.output model.transition
