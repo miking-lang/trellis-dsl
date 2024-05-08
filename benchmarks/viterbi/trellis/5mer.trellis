@@ -9,30 +9,30 @@ alias ObsType = 0 .. 100
 
 model {
   -- Declaration of the state and output types
-  state = (Kmer, Duration)
+  state = (Duration, Kmer)
   output = ObsType
 
   -- Declaration of tables containing data provided at runtime
-  table initialProb(Kmer, Duration) : Probability
-  table outputProb(Kmer, ObsType) : Probability
-  table trans1(Nucleotide, Kmer) : Probability
+  table initialProb(Duration, Kmer) : Probability
+  table outputProb(ObsType, Kmer) : Probability
+  table trans1(Kmer, Nucleotide) : Probability
   table trans2(Duration) : Probability
   table gamma() : Probability
 
   -- Definitions of the initial, output, and transition probability functions
   P(initial x) = initialProb(x[0], x[1])
-  P(output o | x) = outputProb(x[0], o)
+  P(output o | x) = outputProb(o, x[1])
   P(transition x y) = {
-    | { ([a, as...], 1) -> ([bs..., b], k) | as == bs } =>
-      trans1(y[0][4], x[0]) * trans2(y[1])
+    | { (1, [a, as...]) -> (k, [bs..., b]) | as == bs } =>
+      trans1(x[1], y[1][4]) * trans2(y[0])
 
-    | { (x1, n1) -> (x2, n2) | x1 == x2, n1 == maxduration, n2 == maxduration } =>
+    | { (n1, x1) -> (n2, x2) | x1 == x2, n1 == maxduration, n2 == maxduration } =>
       gamma()
 
-    | { (x1, n1) -> (x2, n2) | x1 == x2, n1 == maxduration, n2 == maxduration - 1 } =>
+    | { (n1, x1) -> (n2, x2) | x1 == x2, n1 == maxduration, n2 == maxduration - 1 } =>
       1.0 - gamma()
 
-    | { (x1, n1) -> (x2, n2) | x1 == x2, n2 == n1 - 1 } =>
+    | { (n1, x1) -> (n2, x2) | x1 == x2, n2 == n1 - 1, n2 != maxduration - 1 } =>
       1.0
   }
 }
