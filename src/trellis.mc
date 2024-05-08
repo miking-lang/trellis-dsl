@@ -18,9 +18,8 @@ include "entry-points.mc"
 include "trellis-arg.mc"
 
 lang Trellis =
-  TrellisAst + TrellisModelAst + TrellisModelConvert + TrellisConstantFold
-
-  + TrellisModelPredecessorAnalysis + TrellisCudaCompile
+  TrellisAst + TrellisModelAst + TrellisModelConvert + TrellisConstantFold +
+  TrellisModelPredecessorAnalysis + TrellisCudaCompile + TrellisBuild
 end
 
 mexpr
@@ -30,7 +29,7 @@ use Trellis in
 let result = argParse trellisDefaultOptions config in
 match result with ParseOK r then
   let options : TrellisOptions = r.options in
-  if neqi (length r.strings) 1 then
+  if or options.help (neqi (length r.strings) 1) then
     print (menu ());
     exit 0
   else
@@ -63,52 +62,9 @@ match result with ParseOK r then
     -- Compiles the provided model with the constraints to CUDA code, using
     -- different approaches depending on whether the predecessor constraints
     -- are supported or not.
-    let cu = compileToCuda options modelAst constraints in
+    let cuProg = compileToCuda options modelAst constraints in
 
-    -- TODO: output the CUDA code to a file, generate a Python wrapper, etc.
-    printLn (use TrellisCudaPrettyPrint in printCudaProgram cu);
-
-    exit 0
---
---    -- Simplify the model by reducing the dimension of all tables to one and
---    -- transforming the model accordingly.
---    let modelAst = reduceTableDimensionalityModel modelAst in
---
---    -- Merge subsequent operations on the same tuple in set constraints to
---    -- reduce the number of comparisons.
---    let modelAst = mergeSubsequentOperationsModel modelAst in
---
---    -- Encodes state types as integers when in table accesses.
---    let modelAst = encodeStateOperations options modelAst in
---
---    (if options.printTransformedModel then
---      printLn (use TrellisModelPrettyPrint in pprintTrellisModel modelAst)
---    else ());
---
---    -- Produces a compilation environment which we use to accumulate
---    -- information through later passes.
---    let env = initCompileEnv options modelAst in
---
---    -- Attempt to compute the predecessors, unless the programmer explicitly
---    -- asks the compiler not to.
---    let env =
---      if options.skipPredecessors then env
---      else computePredecessors env modelAst
---    in
---
---    -- Compile the Trellis model to Futhark, producing the initializer,
---    -- definitions of the probability functions, as well as the compilation
---    -- environment.
---    let fut = compileTrellisModel env modelAst in
---
---    -- Generate a complete Futhark program by gluing together parts from the
---    -- compilation results with pre-defined implemenentations of the core HMM
---    -- algorithms (found under "src/skeleton").
---    let prog = generateHMMProgram fut in
---
---    -- Runs the building to produce a working Python wrapper which can be used
---    -- to call the Futhark code.
---    buildPythonWrapper fut.env prog
+    buildPythonLibrary options modelAst cuProg
 else
   argPrintError result;
   exit 1

@@ -191,7 +191,7 @@ lang TrellisCudaModelMacros = TrellisCudaCompileBase + TrellisCudaPrettyPrint
     else join [acc, ", ", str]
 end
 
-lang TrellisCudaCompileExpr = TrellisCudaCompileBase
+lang TrellisCudaCompileExpr = TrellisCudaCompileBase + TrellisModelTypePrettyPrint
   sem cudaCompileTrellisExpr : Set Name -> TExpr -> CExpr
   sem cudaCompileTrellisExpr bound =
   | EBool {b = b} -> CEInt {i = if b then 1 else 0}
@@ -215,19 +215,58 @@ lang TrellisCudaCompileExpr = TrellisCudaCompileBase
       cond = cudaCompileTrellisExpr bound cond,
       thn = cudaCompileTrellisExpr bound thn,
       els = cudaCompileTrellisExpr bound els }
-  | EBinOp {op = op, lhs = lhs, rhs = rhs} ->
-    CEBinOp {
-      op = compileOp op,
-      lhs = cudaCompileTrellisExpr bound lhs,
-      rhs = cudaCompileTrellisExpr bound rhs }
+  | EBinOp ({op = OAdd _ | OSub _ | OMul _ | ODiv _ | OMod _} & t) ->
+    compileArithmeticOperation bound t
+  | EBinOp t ->
+    bop (compileOp t.op)
+      (cudaCompileTrellisExpr bound t.lhs)
+      (cudaCompileTrellisExpr bound t.rhs)
+
+  type BinOpStruct = {op : BOp, lhs : TExpr, rhs : TExpr, ty : TType, info : Info}
+
+  sem compileArithmeticOperation : Set Name -> BinOpStruct -> CExpr
+  sem compileArithmeticOperation bound =
+  | {op = op, lhs = lhs, rhs = rhs, ty = ty, info = info} ->
+    let lhs = cudaCompileTrellisExpr bound lhs in
+    let rhs = cudaCompileTrellisExpr bound rhs in
+    match ty with TInt _ then
+      compileIntegerOperation lhs rhs op
+    else match ty with TProb _ then
+      compileProbabilityOperation info lhs rhs op
+    else
+      errorSingle [info]
+        (concat "Invalid type of arithmetic operation: " (pprintTrellisType ty))
+
+  sem compileIntegerOperation : CExpr -> CExpr -> BOp -> CExpr
+  sem compileIntegerOperation lhs rhs =
+  | OAdd _ -> bop (COAdd ()) lhs rhs
+  | OSub _ -> bop (COSub ()) lhs rhs
+  | OMul _ -> bop (COMul ()) lhs rhs
+  | ODiv _ -> bop (CODiv ()) lhs rhs
+  | OMod _ -> bop (COMod ()) lhs rhs
+
+  sem compileProbabilityOperation : Info -> CExpr -> CExpr -> BOp -> CExpr
+  sem compileProbabilityOperation info lhs rhs =
+  | op & (OAdd _ | OSub _) ->
+    let cOperator =
+      match op with OAdd _ then COAdd () else COSub ()
+    in
+    -- NOTE(larshum, 2024-05-08): Addition and subtraction on probabilities,
+    -- which are represented in a logarithmic scale, requires exponentiating
+    -- both arguments and computing the logarithm of the result.
+    let expCExpr = lam e. CEApp {fun = nameNoSym "exp", args = [e]} in
+    let logCExpr = lam e. CEApp {fun = nameNoSym "log", args = [e]} in
+    logCExpr (bop cOperator (expCExpr lhs) (expCExpr rhs))
+  | op & (OMul _ | ODiv _) ->
+    let cOperator =
+      match op with OMul _ then COAdd () else COSub ()
+    in
+    bop cOperator lhs rhs
+  | OMod _ ->
+    errorSingle [info] "Modulo operation not supported on probabilities"
 
   sem compileOp : BOp -> CBinOp
   sem compileOp =
-  | OAdd _ -> COAdd ()
-  | OSub _ -> COSub ()
-  | OMul _ -> COMul ()
-  | ODiv _ -> CODiv ()
-  | OMod _ -> COMod ()
   | OEq _ -> COEq ()
   | ONeq _ -> CONeq ()
   | OLt _ -> COLt ()
@@ -461,12 +500,12 @@ lang TrellisCudaCompileTransitionCase =
   | EqNum (n, _) ->
     let intTy = TInt {bounds = None (), info = cinfo} in
     let arg = EInt { i = n, ty = intTy, info = cinfo } in
-    EBinOp { op = OEq (), lhs = componentExpr predId, rhs = arg,
+    EBinOp { op = OEq (), lhs = componentExpr componentId, rhs = arg,
              ty = TBool {info = cinfo}, info = cinfo }
   | NeqNum (n, _) ->
     let intTy = TInt {bounds = None (), info = cinfo} in
     let arg = EInt { i = n, ty = intTy, info = cinfo } in
-    EBinOp { op = ONeq (), lhs = componentExpr predId, rhs = arg,
+    EBinOp { op = ONeq (), lhs = componentExpr componentId, rhs = arg,
              ty = TBool {info = cinfo}, info = cinfo }
   | EqYPlusNum (yidx, n, _) ->
     let intTy = TInt {bounds = None (), info = cinfo} in
@@ -476,7 +515,7 @@ lang TrellisCudaCompileTransitionCase =
       rhs = EInt { i = n, ty = intTy, info = cinfo },
       ty = intTy, info = cinfo
     } in
-    EBinOp { op = OEq (), lhs = componentExpr predId, rhs = arg,
+    EBinOp { op = OEq (), lhs = componentExpr componentId, rhs = arg,
              ty = TBool {info = cinfo}, info = cinfo }
 
   -- Given the representation of a set constraint, computes expressions
@@ -585,7 +624,9 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
       -- state_t state;
       (CTyVar {id = stateTyId}, stateId),
       -- prob_t probs;
-      (CTyPtr {ty = CTyVar {id = probTyId}}, probsId)
+      (CTyPtr {ty = CTyVar {id = probTyId}}, probsId),
+      -- HMM_DECL_PARAMS
+      (CTyEmpty (), hmmDeclParamsId)
     ] in
     let pidx = nameSym "pidx" in
     let forwardCode = CSComp {
@@ -616,7 +657,10 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
           init = Some (CIExpr {expr = CEInt {i = 0}}) },
         -- state_t pred;
         CSDef {
-          ty = CTyVar {id = stateTyId}, id = Some predId, init = None () }],
+          ty = CTyVar {id = stateTyId}, id = Some predId, init = None () },
+        -- prob_t p;
+        CSDef {
+          ty = CTyVar {id = probTyId}, id = Some probId, init = None () }],
         stmts,
         -- return pidx;
         [CSRet {val = Some (CEVar {id = pidx})}]
@@ -641,7 +685,9 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
       -- state_t *maxs;
       (CTyPtr {ty = CTyVar {id = stateTyId}}, maxStateId),
       -- prob_t *maxp;
-      (CTyPtr {ty = CTyVar {id = probTyId}}, maxProbId)
+      (CTyPtr {ty = CTyVar {id = probTyId}}, maxProbId),
+      -- HMM_DECL_PARAMS
+      (CTyEmpty (), hmmDeclParamsId)
     ] in
     let viterbiCode = CSComp {
       stmts = [
@@ -655,7 +701,7 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
                   (var predId)))) },
         CSIf {
           -- if (p > *maxp) {
-          cond = bop (COGt ()) (var predId) (uop (CODeref ()) (var maxProbId)),
+          cond = bop (COGt ()) (var probId) (uop (CODeref ()) (var maxProbId)),
           thn = [
             -- *maxs = pred;
             CSExpr {expr =

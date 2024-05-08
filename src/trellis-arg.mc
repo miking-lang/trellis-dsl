@@ -6,35 +6,29 @@ let defaultStr = lam defaultOptStr. lam msg.
   join [msg, " (default: ", defaultOptStr, ")"]
 
 type TrellisOptions = {
+  help : Bool,
   batchSize : Int,
   batchOverlap : Int,
   useDoublePrecisionFloats : Bool,
-  forcePrecomputeTables : Bool,
   skipPredecessors : Bool,
   warnPredecessorAnalysis : Bool,
   errorPredecessorAnalysis : Bool,
-  maxpreds : Int,
   printParse : Bool,
   printModel : Bool,
-  printTransformedModel : Bool,
-  outputDir : String,
-  futharkTarget : String
+  outputDir : String
 }
 
 let trellisDefaultOptions = {
+  help = false,
   batchSize = 1024,
   batchOverlap = 128,
   useDoublePrecisionFloats = false,
-  forcePrecomputeTables = false,
   skipPredecessors = false,
   warnPredecessorAnalysis = false,
   errorPredecessorAnalysis = false,
-  maxpreds = negi 1,
   printParse = false,
   printModel = false,
-  printTransformedModel = false,
-  outputDir = ".",
-  futharkTarget = "multicore"
+  outputDir = "."
 }
 
 let _supportedFutharkTargets = setOfSeq cmpString [
@@ -50,6 +44,8 @@ let validateFutharkTarget = lam target.
     error msg
 
 let config = [
+  ([("--help", "", "")],
+    "Show this menu.", lam p. let o = p.options in {o with help = true}),
   ([("--batch-size", " ", "<n>")],
     defaultStr (int2string trellisDefaultOptions.batchSize)
       "Manually sets the size of each batch of input values processed in Viterbi.",
@@ -65,16 +61,6 @@ let config = [
       "Use double-precision floating point numbers.",
     lam p.
       let o = p.options in {o with useDoublePrecisionFloats = true}),
-  ([("--precompute-tables", "", "")],
-    defaultStr (bool2string trellisDefaultOptions.forcePrecomputeTables)
-      "Pre-computes all probability tables when constructing the model. This improves execution time but increases memory usage.",
-    lam p.
-      let o = p.options in {o with forcePrecomputeTables = true}),
-  ([("--skip-predecessors", "", "")],
-    defaultStr (bool2string trellisDefaultOptions.skipPredecessors)
-      "Makes the compiler skip the predecessor computation part, to speed up compilation. Requires using the maxpreds argument to specify the maximum number of predecessors manually.",
-    lam p.
-      let o = p.options in {o with skipPredecessors = true}),
   ([("--warn-predecessor-analysis", "", "")],
     defaultStr (bool2string trellisDefaultOptions.warnPredecessorAnalysis)
       "If enabled, the compiler warns if the predecessor analysis fails and prints the reason(s) why.",
@@ -85,11 +71,6 @@ let config = [
       "If enabled, the compiler reports errors and exits with return code 1 if the predecessor analysis fails.",
     lam p.
       let o = p.options in {o with errorPredecessorAnalysis = true}),
-  ([("--maxpreds", " ", "<n>")],
-    defaultStr (int2string trellisDefaultOptions.maxpreds)
-      "Specifies the maximum number of predecessors of any node. Should be used with the --skip-predecessors flag.",
-    lam p.
-      let o = p.options in {o with maxpreds = argToInt p}),
   ([("--print-parse", "", "")],
     "Pretty-prints the initial AST after parsing.",
     lam p.
@@ -98,20 +79,11 @@ let config = [
     "Pretty-prints the model AST after pre-processing the parsed AST.",
     lam p.
       let o = p.options in {o with printModel = true}),
-  ([("--print-transformed-model", "", "")],
-    "Pretty-prints the transformed model AST before generating code..",
-    lam p.
-      let o = p.options in {o with printTransformedModel = true}),
   ([("--output-dir", " ", "<dir>")],
     defaultStr trellisDefaultOptions.outputDir
       "Specifies the name of a directory in which files should be placed.",
     lam p.
-      let o = p.options in {o with outputDir = argToString p}),
-  ([("--futhark-target", " ", "<target>")],
-    defaultStr trellisDefaultOptions.futharkTarget
-      "Specifies the target backend to use when compiling Futhark.",
-    lam p.
-      let o = p.options in {o with futharkTarget = validateFutharkTarget (argToString p)})
+      let o = p.options in {o with outputDir = argToString p})
 ]
 
 let menu = lam. join [
