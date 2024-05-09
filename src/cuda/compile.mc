@@ -755,9 +755,7 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
   | cases ->
     let nopStmt = CSNop () in
     let stmts = map (generatePredecessorCase env nopStmt) cases in
-    CSComp {
-      stmts = snoc stmts tailStmt
-    }
+    CSComp { stmts = snoc stmts tailStmt }
 
   sem generatePredecessorCase : CuCompileEnv -> CStmt -> TransitionCase -> CStmt
   sem generatePredecessorCase env tailStmt =
@@ -797,10 +795,6 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
     -- allow optimizations, so we do not introduce any new variables here.
     acc
   | {id = id, ub = ub, value = CFixedYPlus (yexpr, n)} ->
-    -- NOTE(larshum, 2024-05-07): This is an underapproximation of the actually
-    -- bound variables, as we may bound the identifiers of other components.
-    -- However, this expression should only refer to the current state
-    -- identifier.
     let bound = setOfSeq nameCmp [stateId] in
     let body =
       bop (COAdd ()) (cudaCompileTrellisExpr bound yexpr) (CEInt {i = n})
@@ -809,13 +803,10 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
       ty = CTyVar {id = stateTyId}, id = Some id,
       init = Some (CIExpr {expr = body})
     } in
-    let boundsCheck =
-      if lti n 0 then bop (COGe ()) (var id) (CEInt {i = 0})
-      else bop (COLt ()) (var id) (CEInt {i = ub})
-    in
-    CSComp {stmts = [
-      componentDef,
-      CSIf { cond = boundsCheck, thn = [acc], els = [] } ]}
+    -- NOTE(larshum, 2024-05-09): Following the constraint propagation, we do
+    -- not need to do bounds checking for the from-state (predecessor). The
+    -- inequality constraints on the to-state will handle this.
+    CSComp {stmts = [componentDef, acc]}
   | {id = id, ub = ub, value = CFlex prohibited} ->
     let for = lam id. lam init. lam max. lam body.
       CSComp {stmts = [
