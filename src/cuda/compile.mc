@@ -548,9 +548,9 @@ lang TrellisCudaCompileTransitionCase =
   -- the predecessor, computes the values for which it is valid.
   sem predecessorCondition : CuCompileEnv -> ConstraintRepr -> ([TExpr], [ComponentValue])
   sem predecessorCondition env =
-  | {state = state, x = x} ->
+  | {state = state, x = x, y = y} & c ->
     let produceComponentRepr = lam i. lam componentSize.
-      let value = computeComponentValue env (mapLookup i x) in
+      let value = computeComponentValue env c i in
       { id = nameSym "x", ub = componentSize, value = value }
     in
     let f = lam c.
@@ -565,19 +565,24 @@ lang TrellisCudaCompileTransitionCase =
         ESlice {
           target = t, lo = yidx, hi = yidx, ty = get env.stateType yidx,
           info = cinfo }
+      else match c.value with CFixedYPlus (yexpr, n) then
+        EBinOp {
+          op = OAdd (),
+          lhs = yexpr,
+          rhs = EInt {i = n, ty = ty, info = cinfo},
+          ty = ty, info = cinfo }
       else
         EVar {id = c.id, ty = ty, info = cinfo}
     in
     let componentValues = mapi produceComponentRepr state in
     let componentExprs = map f componentValues in
-    (map f componentValues, componentValues)
+    (componentExprs, componentValues)
 
   -- Computes a representation of the value of a component based on the
   -- constraints imposed on it.
-  sem computeComponentValue : CuCompileEnv -> Option (Set PredConstraint) -> CValue
-  sem computeComponentValue env =
-  | None _ -> CFlex []
-  | Some constraintsSet ->
+  sem computeComponentValue : CuCompileEnv -> ConstraintRepr -> Int -> CValue
+  sem computeComponentValue env constraint =
+  | idx ->
     let lookupEqLitConstraint =
       findMap
         (lam c. match c with EqNum (n, _) then Some n else None ())
@@ -588,13 +593,7 @@ lang TrellisCudaCompileTransitionCase =
           match c with EqYPlusNum (yidx, n, _) then Some (yidx, n)
           else None ())
     in
-    let collectNeqConstraints =
-      mapOption (lam c. match c with NeqNum (n, _) then Some n else None ())
-    in
-    let constraints = setToSeq constraintsSet in
-    match lookupEqLitConstraint constraints with Some n then
-      CFixed n
-    else match lookupEqYConstraint constraints with Some (yidx, n) then
+    let fixedYConstraint = lam yidx. lam n.
       if eqi n 0 then CFixedY yidx else
       let sliceExpr = ESlice {
         target = EVar {
@@ -602,8 +601,31 @@ lang TrellisCudaCompileTransitionCase =
           info = cinfo },
         lo = yidx, hi = yidx, ty = get env.stateType yidx, info = cinfo
       } in
-      CFixedYPlus (encodeStateOperationsExpr sliceExpr, n)
-    else CFlex (collectNeqConstraints constraints)
+      CFixedYPlus (sliceExpr, n)
+    in
+    let collectNeqConstraints =
+      mapOption (lam c. match c with NeqNum (n, _) then Some n else None ())
+    in
+    match mapLookup idx constraint.x with Some constraintSet then
+      let constraints = setToSeq constraintSet in
+      match lookupEqLitConstraint constraints with Some n then
+        -- NOTE(larshum, 2024-05-09): If the to-state has a literal constraint,
+        -- so that it is also fixed, then we express our constraint in terms of
+        -- that state to enable later optimizations of the resulting predecessor
+        -- expression.
+        match
+          optionBind
+            (mapLookup idx constraint.y)
+            (lam c. lookupEqLitConstraint (setToSeq c))
+        with Some yn then
+          let diff = subi n yn in
+          fixedYConstraint idx diff
+        else
+          CFixed n
+      else match lookupEqYConstraint constraints with Some (yidx, n) then
+        fixedYConstraint yidx n
+      else CFlex (collectNeqConstraints constraints)
+    else CFlex []
 end
 
 lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
@@ -808,23 +830,10 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
   -- that are marked as disallowed.
   sem generatePredecessorComponent : CuCompileEnv -> CStmt -> ComponentValue -> CStmt
   sem generatePredecessorComponent env acc =
-  | {value = CFixed _ | CFixedY _} ->
+  | {value = CFixed _ | CFixedY _ | CFixedYPlus _} ->
     -- NOTE(larshum, 2024-05-07): For this case, we inline the definition to
     -- allow optimizations, so we do not introduce any new variables here.
     acc
-  | {id = id, ub = ub, value = CFixedYPlus (yexpr, n)} ->
-    let bound = setOfSeq nameCmp [stateId] in
-    let body =
-      bop (COAdd ()) (cudaCompileTrellisExpr bound yexpr) (CEInt {i = n})
-    in
-    let componentDef = CSDef {
-      ty = CTyVar {id = stateTyId}, id = Some id,
-      init = Some (CIExpr {expr = body})
-    } in
-    -- NOTE(larshum, 2024-05-09): Following the constraint propagation, we do
-    -- not need to do bounds checking for the from-state (predecessor). The
-    -- inequality constraints on the to-state will handle this.
-    CSComp {stmts = [componentDef, acc]}
   | {id = id, ub = ub, value = CFlex prohibited} ->
     let for = lam id. lam init. lam max. lam body.
       CSComp {stmts = [
