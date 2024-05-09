@@ -6,8 +6,8 @@
 include "../model/ast.mc"
 include "../model/encode.mc"
 include "compile.mc"
+include "propagate.mc"
 include "repr.mc"
-include "simplify.mc"
 include "z3.mc"
 
 lang TrellisConstraintZ3Analysis =
@@ -112,7 +112,7 @@ lang TrellisConstraintZ3Analysis =
 end
 
 lang TrellisModelPredecessorAnalysis =
-  TrellisConstraintSimplification + TrellisConstraintZ3Analysis +
+  TrellisConstraintPropagation + TrellisConstraintZ3Analysis +
   TrellisModelAst + TrellisTypeCardinality
 
   sem performPredecessorAnalysis : TrellisOptions -> TModel -> Option [ConstraintRepr]
@@ -125,6 +125,7 @@ lang TrellisModelPredecessorAnalysis =
   sem performPredecessorAnalysisH options stateType =
   | {cases = cases, info = info} ->
     let res = result.mapM (lam c. setConstraintToRepr stateType c.cond) cases in
+    let res = result.map (map propagateConstraints) res in
     let res = result.bind res verifyNonEmptySetConstraints in
     let res = result.bind res verifyDisjointSetConstraints in
     switch result.consume res
