@@ -434,7 +434,10 @@ lang TrellisCudaCompileTransitionCase =
 
     -- The name of the transition probability function computing the actual
     -- value to be produced by this case.
-    probFunName : Name
+    probFunName : Name,
+
+    -- The abstract constraints which this case represents.
+    constraints : ConstraintRepr
   }
 
   -- Converts the representation of a constraint on a case of the transition
@@ -455,7 +458,8 @@ lang TrellisCudaCompileTransitionCase =
     { toStateCond = combineTransitionConds (transitionCondition env repr)
     , predecessorExpr = combinePredecessorConds exprs
     , predecessorComponents = components
-    , probFunName = id }
+    , probFunName = id
+    , constraints = repr }
 
   -- Combines a sequence of boolean expressions to one expression performing
   -- boolean AND of the components. If the sequence is empty, we return a true
@@ -757,10 +761,24 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
   sem generatePredecessorsCases : CuCompileEnv -> CStmt -> [TransitionCase]
                                -> CStmt
   sem generatePredecessorsCases env tailStmt =
-  | [c] -> generatePredecessorCase env tailStmt c
   | cases ->
-    let nopStmt = CSNop () in
-    let stmts = map (generatePredecessorCase env nopStmt) cases in
+    let stmts =
+      map
+        (lam c.
+          -- NOTE(larshum, 2024-04-09): We omit the algorithm-specific
+          -- statement which processes the result for cases that only produce
+          -- one predecessor. These cases are covered by running the
+          -- algorithm-specific statement after all cases - which improves
+          -- performance in CUDA. For cases with loops producing more than one
+          -- predecessor, we keep the algorithm-specific statement for
+          -- simplicity.
+          let tailStmt =
+            if eqi (countPredecessors c.constraints) 1 then CSNop ()
+            else tailStmt
+          in
+          generatePredecessorCase env tailStmt c)
+      cases
+    in
     CSComp { stmts = snoc stmts tailStmt }
 
   sem generatePredecessorCase : CuCompileEnv -> CStmt -> TransitionCase -> CStmt
