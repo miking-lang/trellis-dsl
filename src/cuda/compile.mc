@@ -1,5 +1,6 @@
 -- Defines the compilation from the Trellis model AST to CUDA.
 
+include "graph.mc"
 include "mexpr/info.mc"
 
 include "../trellis-arg.mc"
@@ -56,6 +57,12 @@ lang TrellisCudaCompileBase =
     -- Maps the index of each case of the transition probability function to
     -- its representation.
     constraints : [ConstraintRepr],
+
+    -- A sequence of sets representing the indices of constraints that should
+    -- be grouped together in the code generation. By grouping constraints
+    -- together, we can omit unnecessary if-conditions and compute a more
+    -- accurate upper bound on the number of predecessors.
+    constraintGroups : [Set Int],
 
     -- The tables defined in the Trellis model being compiled.
     tables : Map Name TType,
@@ -146,20 +153,24 @@ lang TrellisCudaConstantDefs = TrellisCudaCompileBase + TrellisTypeCardinality
   | model ->
     let numStates = cardinalityType model.stateType in
     let numObs = cardinalityType model.outType in
-    let numPreds = computeMaxPredecessors env.constraints in
+    let numPreds = computeMaxPredecessors env.constraintGroups env.constraints in
     [ cudaIntMacroDef batchSizeId env.opts.batchSize
     , cudaIntMacroDef batchOverlapId env.opts.batchOverlap
     , cudaIntMacroDef numStatesId numStates
     , cudaIntMacroDef numObsId numObs
     , cudaIntMacroDef numPredsId numPreds ]
 
-  sem computeMaxPredecessors : [ConstraintRepr] -> Int
-  sem computeMaxPredecessors =
+  sem computeMaxPredecessors : [Set Int] -> [ConstraintRepr] -> Int
+  sem computeMaxPredecessors constraintGroups =
   | c ->
-    -- TODO(larshum, 2024-04-26): We may have cases which are mutually
-    -- exclusive for a given to-state, in which case the below solution
-    -- overapproximates the maximum (resulting in worse performance).
-    foldl addi 0 (map countPredecessors c)
+    -- NOTE(larshum, 2024-05-09): As the cases (represented by the constraints)
+    -- in a group are mutually exclusive in the sense that we run at most one
+    -- of the cases, we compute the maximum number of predecessors among all
+    -- cases in the group.
+    let countMaxPredecessorsInGroup : Set Int -> Int = lam g.
+      setFold (lam acc. lam i. maxi acc (countPredecessors (get c i))) 0 g
+    in
+    foldl addi 0 (map countMaxPredecessorsInGroup constraintGroups)
 end
 
 lang TrellisCudaModelMacros = TrellisCudaCompileBase + TrellisCudaPrettyPrint
@@ -423,11 +434,7 @@ lang TrellisCudaCompileTransitionCase =
 
     -- The name of the transition probability function computing the actual
     -- value to be produced by this case.
-    probFunName : Name,
-
-    -- The original representation of the constraints based on which this case
-    -- representation was defined.
-    constraints : ConstraintRepr
+    probFunName : Name
   }
 
   -- Converts the representation of a constraint on a case of the transition
@@ -448,8 +455,7 @@ lang TrellisCudaCompileTransitionCase =
     { toStateCond = combineTransitionConds (transitionCondition env repr)
     , predecessorExpr = combinePredecessorConds exprs
     , predecessorComponents = components
-    , probFunName = id
-    , constraints = repr }
+    , probFunName = id }
 
   -- Combines a sequence of boolean expressions to one expression performing
   -- boolean AND of the components. If the sequence is empty, we return a true
@@ -611,11 +617,11 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
         env.constraints
     in
 
-    -- OPT(larshum, 2024-05-07): We should group together transition
-    -- probability cases for which we know we always take (at most) one. This
-    -- allows us to have one branch after all cases, rather than one per
-    -- branch, which can significantly improve the performance of CUDA code.
-    let groups = map (lam c. [c]) transitionCases in
+    -- Group together transition cases based on the result of our earlier
+    -- analysis.
+    let groups =
+      map (lam g. map (get transitionCases) (setToSeq g)) env.constraintGroups
+    in
 
     -- Generate CUDA code for each algorithm, considering each group of cases
     -- one by one.
@@ -835,10 +841,99 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
     for id 0 ub body
 end
 
+lang TrellisGroupConstraints = TrellisModelPredecessorAnalysis
+  sem groupMutuallyExclusiveConstraints : CuCompileEnv -> CuCompileEnv
+  sem groupMutuallyExclusiveConstraints =
+  | env ->
+    let n = length env.constraints in
+
+    -- Construct an undirected graph where each vertex represents a constraint
+    -- representation (a case in the transition probability function). We add
+    -- an edge between a pair of cases if they have independent to-states
+    -- (meaning at most one of them may run simultaneously for a given
+    -- to-state).
+    let g =
+      foldli
+        (lam g. lam i. lam. digraphAddVertexCheck i g true)
+        (graphEmpty subi (lam. lam. true)) env.constraints
+    in
+    let g =
+      foldli
+        (lam g. lam i. lam c1.
+          foldli
+            (lam g. lam j. lam c2.
+              if gti i j then
+                addEdgeIfDisjointToStateConstraints g (i, c1) (j, c2)
+              else
+                g)
+            g env.constraints)
+        g env.constraints
+    in
+
+    -- Compute the strongly connected components (SCCs) of the undirected graph
+    -- using Tarjan's algorithm and attempt to combine these SCCs into distinct
+    -- groups.
+    -- TODO(larshum, 2024-05-09): Add a more sophisticated analysis that works
+    -- better in situations where most cases are pairwise disjoint.
+    let sccs = digraphTarjan g in
+    {env with constraintGroups = foldl (addDisjointGroups env.constraints) [] sccs}
+
+  -- The property of having disjoint to-states is not transitive. For an SCC
+  -- with three or more constraints, we check whether they are all disjoint. If
+  -- yes, we group them together, and otherwise we split them up individually
+  -- to avoid NP-hard problems.
+  sem addDisjointGroups : [ConstraintRepr] -> [Set Int] -> [Int] -> [Set Int]
+  sem addDisjointGroups constraints groups =
+  | [] ->
+    groups
+  | ([_] | [_, _]) & s ->
+    snoc groups (setOfSeq subi s)
+  | scc ->
+    let c = map (get constraints) scc in
+    let unionY =
+      foldl
+        (lam acc. lam c.
+          {acc with y = mapUnionWith setUnion acc.y c.y,
+                    info = mergeInfo acc.info c.info})
+        (head c) (tail c)
+    in
+    switch result.consume (checkEmpty unionY)
+    case (_, Right true) then
+      snoc groups (setOfSeq subi scc)
+    case (_, Right false) then
+      concat groups (map (lam i. setOfSeq subi [i]) scc)
+    case (_, Left errs) then
+      let errStr = printConstraintErrorMessage true (z3Error errs) in
+      let msg = join [
+        "Grouping of constraints failed:\n", errStr, "\n"
+      ] in
+      printError msg;
+      exit 1
+    end
+
+  sem addEdgeIfDisjointToStateConstraints
+    : Graph Int () -> (Int, ConstraintRepr) -> (Int, ConstraintRepr) -> Graph Int ()
+  sem addEdgeIfDisjointToStateConstraints g x =
+  | (j, c2) ->
+    match x with (i, c1) in
+    switch result.consume (disjointToStateConstraints c1 c2)
+    case (_, Right true) then
+      graphAddEdge i j () g
+    case (_, Right false) then g
+    case (_, Left errs) then
+      let errStr = printConstraintErrorMessage true (z3Error errs) in
+      let msg = join [
+        "Grouping of constraints failed:\n", errStr, "\n"
+      ] in
+      printError msg;
+      exit 1
+    end
+end
+
 lang TrellisCudaCompile =
   TrellisCudaCompileTypeDefs + TrellisCudaConstantDefs + TrellisCudaModelMacros +
   TrellisCudaProbabilityFunction + TrellisCudaHMM + TrellisEncode +
-  TrellisModelMergeSubsequentOperations
+  TrellisModelMergeSubsequentOperations + TrellisGroupConstraints
 
   sem compileToCuda : TrellisOptions -> Map Name TExpr -> TModel
                    -> Option [ConstraintRepr] -> CuProgram
@@ -854,9 +949,11 @@ lang TrellisCudaCompile =
     in
 
     let env : CuCompileEnv = {
-      constraints = constraints, transFunNames = [], tables = model.tables,
-      opts = options, stateType = stateTy
+      constraints = constraints, constraintGroups = [], transFunNames = [],
+      tables = model.tables, opts = options, stateType = stateTy
     } in
+
+    let env = groupMutuallyExclusiveConstraints env in
 
     -- Merges operations on subseqent components of the same state or output
     -- among the conditions of a set constraint.
