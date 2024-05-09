@@ -758,23 +758,17 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
   -- times within a loop. Otherwise, if we have multiple cases, we insert this
   -- tail statement after all cases have ran. This should only happen when the
   -- cases are independent of each other and do not include loops.
-  sem generatePredecessorsCases : CuCompileEnv -> CStmt -> [TransitionCase]
-                               -> CStmt
+  sem generatePredecessorsCases : CuCompileEnv -> CStmt
+                               -> [TransitionCase] -> CStmt
   sem generatePredecessorsCases env tailStmt =
+  | [c] -> generatePredecessorCase env tailStmt c
   | cases ->
     let stmts =
       map
         (lam c.
-          -- NOTE(larshum, 2024-04-09): We omit the algorithm-specific
-          -- statement which processes the result for cases that only produce
-          -- one predecessor. These cases are covered by running the
-          -- algorithm-specific statement after all cases - which improves
-          -- performance in CUDA. For cases with loops producing more than one
-          -- predecessor, we keep the algorithm-specific statement for
-          -- simplicity.
           let tailStmt =
-            if eqi (countPredecessors c.constraints) 1 then CSNop ()
-            else tailStmt
+            if gti (countPredecessors c.constraints) 1 then tailStmt
+            else CSNop ()
           in
           generatePredecessorCase env tailStmt c)
       cases
@@ -908,6 +902,11 @@ lang TrellisGroupConstraints = TrellisModelPredecessorAnalysis
     snoc groups (setOfSeq subi s)
   | scc ->
     let c = map (get constraints) scc in
+    -- NOTE(larshum, 2024-05-09): The current approach only supports merging
+    -- cases that produce exactly one predecessor.
+    if any (lam x. gti (countPredecessors x) 1) c then
+      concat groups (map (lam i. setOfSeq subi [i]) scc)
+    else
     let unionY =
       foldl
         (lam acc. lam c.
