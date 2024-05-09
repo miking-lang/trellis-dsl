@@ -166,7 +166,7 @@ lang TrellisModelPredecessorAnalysis =
       "\n"
     ] in
     if warning then print msg
-    else printError "\n"
+    else printError msg
 end
 
 lang TestLang = TrellisConstraintZ3Analysis + ConstraintTestLang end
