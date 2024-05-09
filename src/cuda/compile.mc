@@ -891,51 +891,78 @@ lang TrellisGroupConstraints = TrellisModelPredecessorAnalysis
         g env.constraints
     in
 
-    -- Compute the strongly connected components (SCCs) of the undirected graph
-    -- using Tarjan's algorithm and attempt to combine these SCCs into distinct
-    -- groups.
-    -- TODO(larshum, 2024-05-09): Add a more sophisticated analysis that works
-    -- better in situations where most cases are pairwise disjoint.
-    let sccs = digraphTarjan g in
-    {env with constraintGroups = foldl (addDisjointGroups env.constraints) [] sccs}
+    -- We use the Bron-Kerbosch algorithm to find all maximal cliques of the
+    -- graph. Each clique represents a set of constraints that are all disjoint
+    -- from each other. We sort these by length so that we start by considering
+    -- the larger cliques (more valuable).
+    -- NOTE(larshum, 2024-05-09): Computing the maximal cliques of a graph is
+    -- an NP-complete problem, so this part scales very poorly with the number
+    -- of vertices. However, as the number of vertices are the number of cases
+    -- in the transition probability function, this should be acceptable for
+    -- most typical Trellis programs.
+    let cliques = bronKerbosch g in
+    let cliques = sort (lam l. lam r. subi (setSize r) (setSize l)) cliques in
 
-  -- The property of having disjoint to-states is not transitive. For an SCC
-  -- with three or more constraints, we check whether they are all disjoint. If
-  -- yes, we group them together, and otherwise we split them up individually
-  -- to avoid NP-hard problems.
-  sem addDisjointGroups : [ConstraintRepr] -> [Set Int] -> [Int] -> [Set Int]
-  sem addDisjointGroups constraints groups =
-  | [] ->
-    groups
-  | ([_] | [_, _]) & s ->
-    snoc groups (setOfSeq subi s)
-  | scc ->
-    let c = map (get constraints) scc in
-    -- NOTE(larshum, 2024-05-09): The current approach only supports merging
-    -- cases that produce exactly one predecessor.
-    if any (lam x. gti (countPredecessors x) 1) c then
-      concat groups (map (lam i. setOfSeq subi [i]) scc)
-    else
-    let unionY =
-      foldl
-        (lam acc. lam c.
-          {acc with y = mapUnionWith setUnion acc.y c.y,
-                    info = mergeInfo acc.info c.info})
-        (head c) (tail c)
+    -- Go through all cliques and try to add the constraints of each clique as
+    -- a constraint group. After going through all cliques, add the remaining
+    -- constraints one-by-one as singleton groups.
+    let cg = addDisjointCliqueGroups env.constraints cliques in
+    {env with constraintGroups = addDisjointCliqueGroups env.constraints cliques}
+
+  -- For an SCC with two or more constraints, we verify that the combination of
+  -- all cases cover all possible to-states, such that we must always take
+  -- exactly one of the cases. If they do, we group them together, and
+  -- otherwise we split them up individually.
+  sem addDisjointCliqueGroups : [ConstraintRepr] -> [Set Int] -> [Set Int]
+  sem addDisjointCliqueGroups constraints =
+  | cliques ->
+    let addSingleConstraintGroup = lam cg. lam v.
+      cons (setOfSeq subi [v]) cg
     in
-    switch result.consume (checkEmpty unionY)
-    case (_, Right true) then
-      snoc groups (setOfSeq subi scc)
-    case (_, Right false) then
-      concat groups (map (lam i. setOfSeq subi [i]) scc)
-    case (_, Left errs) then
-      let errStr = printConstraintErrorMessage true (z3Error errs) in
-      let msg = join [
-        "Grouping of constraints failed:\n", errStr, "\n"
-      ] in
-      printError msg;
-      exit 1
-    end
+    let vertices = setOfSeq subi (create (length constraints) (lam i. i)) in
+
+    -- Try to add all the vertices in each clique to a separate group of
+    -- constraints, which we can handle in a more efficient way than if all
+    -- constraints are considered individually. The result is the remaining
+    -- vertices, that were not added to any group, and the constraint groups
+    -- that were successfully formed from cliques.
+    match foldl (tryAddCliqueGroup constraints) (vertices, []) cliques
+    with (remainingVertices, constraintGroups) in
+
+    -- Add all remaining vertices after attempting to insert groups of
+    -- constraints that form a clique in the graph.
+    setFold addSingleConstraintGroup constraintGroups remainingVertices
+
+  sem tryAddCliqueGroup : [ConstraintRepr] -> (Set Int, [Set Int]) -> Set Int
+                       -> (Set Int, [Set Int])
+  sem tryAddCliqueGroup constraints acc =
+  | cliqueSet ->
+    match acc with (remainingVertices, constraintGroups) in
+
+    -- If any node in the clique has been added to another group, we do not
+    -- consider it again.
+    let clique = setToSeq cliqueSet in
+    if forAll (lam x. setMem x remainingVertices) clique then
+      let c = map (get constraints) clique in
+      -- NOTE(larshum, 2024-05-09): The current implementation only supports
+      -- merging cases that produce exactly one predecessor, as other cases
+      -- would require some kind of unrolling.
+      if any (lam x. gti (countPredecessors x) 1) c then acc else
+      switch result.consume (checkCoversAllToStates c)
+      case (_, Right true) then
+        ( setSubtract remainingVertices cliqueSet
+        , cons cliqueSet constraintGroups )
+      case (_, Right false) then
+        acc
+      case (_, Left errs) then
+        let errStr = printConstraintErrorMessage true (z3Error errs) in
+        let msg = join [
+          "Grouping of constraints failed:\n", errStr, "\n"
+        ] in
+        printError msg;
+        exit 1
+      end
+    else acc
 
   sem addEdgeIfDisjointToStateConstraints
     : Graph Int () -> (Int, ConstraintRepr) -> (Int, ConstraintRepr) -> Graph Int ()
