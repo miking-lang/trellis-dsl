@@ -8,7 +8,7 @@ case $1 in
     python3 runner.py
     ;;
   clean)
-    rm -rf *generated* trellis.py __init__.py __pycache__ predecessors.txt
+    rm -rf hmm.cu trellis.py __pycache__ predecessors.npy
     ;;
   *)
     >&2 echo "Expected argument 'build', 'run' or 'clean'"

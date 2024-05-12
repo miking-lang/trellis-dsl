@@ -34,3 +34,5 @@ for n in range(1, len(signal)+1):
     p = hmm.forward([enc_signal[0:n]])
     err = abs(math.exp(p[0]) - expected[n-1])
     print(f"t={n} error: {err}")
+    if math.isnan(err):
+        break
