@@ -77,6 +77,13 @@ lang TrellisCudaCompileBase =
     -- Options passed to the compiler.
     opts : TrellisOptions,
 
+    -- The maximum number of predecessors of any state in the model.
+    numPreds : Int,
+
+    -- Determines whether predecessors are precomputed at compile-time or if
+    -- they are handled through the predecessor analysis.
+    precomputedPredecessors : Bool,
+
     -- Components of the state type.
     stateType : [TType]
   }
@@ -96,7 +103,9 @@ lang TrellisCudaCompileBase =
   sem cudaNegInf : () -> CExpr
   sem cudaNegInf =
   | _ ->
-    CEBinOp { op = CODiv (), lhs = CEFloat {f = 1.0}, rhs = CEFloat {f = 0.0} }
+    CEUnOp {
+      op = CONeg (),
+      arg = CEBinOp { op = CODiv (), lhs = CEFloat {f = 1.0}, rhs = CEFloat {f = 0.0} } }
 end
 
 lang TrellisCudaCompileTypeDefs = TrellisCudaCompileBase + TrellisTypeBitwidth
@@ -155,12 +164,17 @@ lang TrellisCudaConstantDefs = TrellisCudaCompileBase + TrellisTypeCardinality
   | model ->
     let numStates = cardinalityType model.stateType in
     let numObs = cardinalityType model.outType in
-    let numPreds = computeMaxPredecessors env.constraintGroups env.constraints in
-    [ cudaIntMacroDef batchSizeId env.opts.batchSize
-    , cudaIntMacroDef batchOverlapId env.opts.batchOverlap
-    , cudaIntMacroDef numStatesId numStates
-    , cudaIntMacroDef numObsId numObs
-    , cudaIntMacroDef numPredsId numPreds ]
+    let tops =
+      [ cudaIntMacroDef batchSizeId env.opts.batchSize
+      , cudaIntMacroDef batchOverlapId env.opts.batchOverlap
+      , cudaIntMacroDef numStatesId numStates
+      , cudaIntMacroDef numObsId numObs
+      , cudaIntMacroDef numPredsId env.numPreds ]
+    in
+    if env.precomputedPredecessors then
+      let defPrecomputePredsId = nameNoSym "PRECOMPUTE_PREDECESSORS" in
+      snoc tops (cudaMacroDef defPrecomputePredsId "")
+    else tops
 
   sem computeMaxPredecessors : [Set Int] -> [ConstraintRepr] -> Int
   sem computeMaxPredecessors constraintGroups =
@@ -188,13 +202,17 @@ lang TrellisCudaModelMacros = TrellisCudaCompileBase + TrellisCudaPrettyPrint
             TTable {args = [], ret = tyTExpr e, info = infoTExpr e})
           syntheticTables
       in
-      mapFoldWithKey addTableParameter s synTableTypes
+      let s = mapFoldWithKey addTableParameter s synTableTypes in
+      if env.precomputedPredecessors then
+        concat s ", state_t *predecessor_table"
+      else s
     in
     let argsStr =
-      let args =
-        map nameGetStr (concat (mapKeys model.tables) (mapKeys syntheticTables))
-      in
-      strJoin ", " args
+      let args = join [mapKeys model.tables, mapKeys syntheticTables] in
+      let s = strJoin ", " (map nameGetStr args) in
+      if env.precomputedPredecessors then
+        concat s ", predecessor_table"
+      else s
     in
     [ cudaMacroDef hmmDeclParamsId paramsStr
     , cudaMacroDef hmmCallArgsId argsStr ]
@@ -339,6 +357,8 @@ lang TrellisCudaProbabilityFunction =
     let initFun = generateProbabilityFunction initProbFunId initParams init.cases in
     let outParams = [(stateTy, out.x), (obsTy, out.o)] in
     let outFun = generateProbabilityFunction outProbFunId outParams out.cases in
+    let transParams = [(stateTy, trans.x), (stateTy, trans.y)] in
+    let transFun = generateProbabilityFunction transProbFunId transParams trans.cases in
 
     -- NOTE(larshum, 2024-04-26): We generate a separate transition probability
     -- function containing the body of each case so we can refer to them
@@ -347,7 +367,7 @@ lang TrellisCudaProbabilityFunction =
     match unzip (map (generateTransitionCaseProbabilityFunction transParams) trans.cases)
     with (funNames, transFuns) in
     let env = {env with transFunNames = funNames} in
-    (env, concat [initFun, outFun] transFuns)
+    (env, concat [initFun, outFun, transFun] transFuns)
 
   sem generateTransitionCaseProbabilityFunction : [(CType, Name)] -> Case -> (Name, CuTop)
   sem generateTransitionCaseProbabilityFunction params =
@@ -1098,27 +1118,41 @@ end
 lang TrellisCudaCompile =
   TrellisCudaCompileTypeDefs + TrellisCudaConstantDefs + TrellisCudaModelMacros +
   TrellisCudaProbabilityFunction + TrellisCudaHMM + TrellisEncode +
-  TrellisModelMergeSubsequentOperations + TrellisGroupConstraints
+  TrellisModelMergeSubsequentOperations + TrellisGroupConstraints +
+  TrellisCudaComputePredecessors
+
+  -- NOTE(larshum, 2024-04-26): We assume the type of the state was declared
+  -- as a tuple, or that it has been transformed to one by the compiler.
+  sem extractStateComponentTypes : TType -> [TType]
+  sem extractStateComponentTypes =
+  | TTuple {tys = tys} -> tys
+  | _ -> error "Internal compiler error: state type is not a tuple"
 
   sem compileToCuda : TrellisOptions -> Map Name TExpr -> TModel
-                   -> Option [ConstraintRepr] -> CuProgram
+                   -> Option [ConstraintRepr] -> (CuCompileEnv, CuProgram)
   sem compileToCuda options syntheticTables model =
-  | None _ ->
-    error "CUDA code generation does not yet support compilation without a successful predecessor analysis"
-  | Some constraints ->
-    -- NOTE(larshum, 2024-04-26): We assume the type of the state was declared
-    -- as a tuple, or that it has been transformed to one by the compiler.
-    let stateTy =
-      match model.stateType with TTuple {tys = tys} then tys
-      else error "Internal compiler error: state type is not a tuple"
-    in
-
+  | optRepr ->
     let env : CuCompileEnv = {
-      constraints = constraints, constraintGroups = [], transFunNames = [],
-      tables = model.tables, opts = options, stateType = stateTy
+      constraints = [], constraintGroups = [], transFunNames = [],
+      tables = model.tables, opts = options, numPreds = 0,
+      stateType = extractStateComponentTypes model.stateType,
+      precomputedPredecessors = optionIsNone optRepr
     } in
 
-    let env = groupMutuallyExclusiveConstraints env in
+    let env =
+      match optRepr with Some constraints then
+        let env = {env with constraints = constraints} in
+
+        -- Group constraints that are disjoint but cover all to-states to enable
+        -- optimizations later on in the compiler.
+        let env = groupMutuallyExclusiveConstraints env in
+
+        -- Compute the maximum number of predecessors based on how the constraints
+        -- were grouped.
+        {env with numPreds = computeMaxPredecessors env.constraintGroups env.constraints}
+      else
+        {env with numPreds = computePredecessors env model}
+    in
 
     -- Merges operations on subseqent components of the same state or output
     -- among the conditions of a set constraint.
@@ -1147,9 +1181,12 @@ lang TrellisCudaCompile =
     match generateProbabilityFunctions env model.initial model.output model.transition
     with (env, probFunDefs) in
 
-    -- Generates algorithm-specific functions for the Forward and Viterbi
-    -- algorithms that make use of our detailed knowledge of predecessors.
-    let predFunDefs = generatePredecessorFunctions env in
+    if env.precomputedPredecessors then
+      (env, {tops = join [tyDefs, constDefs, modelMacroDefs, probFunDefs]})
+    else
+      -- Generates algorithm-specific functions for the Forward and Viterbi
+      -- algorithms that make use of our detailed knowledge of predecessors.
+      let predFunDefs = generatePredecessorFunctions env in
 
-    {tops = join [tyDefs, constDefs, modelMacroDefs, probFunDefs, predFunDefs]}
+      (env, {tops = join [tyDefs, constDefs, modelMacroDefs, probFunDefs, predFunDefs]})
 end

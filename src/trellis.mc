@@ -72,11 +72,11 @@ match result with ParseOK r then
     -- Compiles the provided model with the constraints to CUDA code, using
     -- different approaches depending on whether the predecessor constraints
     -- are supported or not.
-    let cuProg = compileToCuda options tableEnv modelAst constraints in
+    match compileToCuda options tableEnv modelAst constraints with (env, cuProg) in
 
     -- Produces a simple Python library which performs runtime compilation of
     -- the CUDA code and calls it.
-    buildPythonLibrary options tableEnv modelAst cuProg
+    buildPythonLibrary options tableEnv modelAst cuProg env
 else
   argPrintError result;
   exit 1

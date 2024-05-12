@@ -97,7 +97,7 @@ void compute_predecessors(
     // Compute the predecessors and fill in the given 'preds' array. We use the
     // first non-predecessor state as a padding element in the array, in case a
     // state has fewer than the maximum number of predecessors.
-    uint32_t predc = 0;
+    uint32_t predc = dst * max_preds[0];
     uint32_t pad_elem = -1;
     for (uint32_t src = 0; src < NUM_STATES; ++src) {
       if (is_predecessor(src, dst)) {
@@ -106,7 +106,7 @@ void compute_predecessors(
         pad_elem = src;
       }
     }
-    while (predc < *max_preds) {
+    while (predc < (dst + 1) * max_preds[0]) {
       preds[predc++] = pad_elem;
     }
   }

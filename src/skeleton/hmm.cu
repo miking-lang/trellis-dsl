@@ -3,6 +3,35 @@
 // GENERAL IMPLEMENTATIONS //
 /////////////////////////////
 
+#ifdef PRECOMPUTE_PREDECESSORS
+__device__
+void forward_prob_predecessors(
+    const prob_t *alpha_prev, int instance, state_t state, prob_t *probs,
+    HMM_DECL_PARAMS) {
+  state_t *predecessors = predecessor_table + instance * NUM_STATES * NUM_PREDS + state;
+  for (state_t i = 0; i < NUM_PREDS; i++) {
+    state_t pred = predecessors[i * NUM_STATES];
+    probs[i] =
+      alpha_prev[instance * NUM_STATES + pred] + transition_prob(pred, state, HMM_CALL_ARGS);
+  }
+}
+
+__device__
+void viterbi_max_predecessor(
+    const prob_t *chi_prev, int instance, state_t state, state_t *maxs,
+    prob_t *maxp, HMM_DECL_PARAMS) {
+  state_t *predecessors = predecessor_table + instance * NUM_STATES + state;
+  for (state_t i = 0; i < NUM_PREDS; i++) {
+    state_t pred = predecessors[i * NUM_STATES];
+    prob_t p = chi_prev[instance * NUM_STATES + pred] + transition_prob(pred, state, HMM_CALL_ARGS);
+    if (p > *maxp) {
+      *maxs = pred;
+      *maxp = p;
+    }
+  }
+}
+#endif
+
 const prob_t inf = 1.0 / 0.0;
 
 extern "C"
@@ -25,6 +54,7 @@ prob_t log_sum_exp(const prob_t* probs) {
   for (int i = 1; i < NUM_PREDS; i++) {
     if (probs[i] > maxp) maxp = probs[i];
   }
+  if (maxp == -inf) return maxp;
   prob_t sum = 0.0;
   for (int i = 0; i < NUM_PREDS; i++) {
     sum += expf(probs[i] - maxp);
@@ -36,16 +66,25 @@ extern "C"
 __global__ void forward_step(
     const obs_t* __restrict__ obs, const int* __restrict__ obs_lens, int maxlen,
     const prob_t* __restrict__ alpha_prev, prob_t* __restrict__ alpha_curr,
+#ifdef PRECOMPUTE_PREDECESSORS
+    int t, prob_t* __restrict__ probs_table, HMM_DECL_PARAMS) {
+#else
     int t, HMM_DECL_PARAMS) {
+#endif
   state_t state = blockIdx.x * blockDim.x + threadIdx.x;
   unsigned int instance = blockIdx.y;
   if (state < NUM_STATES) {
     size_t idx = instance * NUM_STATES + state;
     if (t < obs_lens[instance]) {
       obs_t x = obs[instance * maxlen + t];
+#ifdef PRECOMPUTE_PREDECESSORS
+      prob_t *probs = probs_table + instance * NUM_STATES * NUM_PREDS + state;
+      forward_prob_predecessors(alpha_prev, instance, state, probs, HMM_CALL_ARGS);
+#else
       prob_t probs[NUM_PREDS];
       int pidx = forward_prob_predecessors(alpha_prev, instance, state, probs, HMM_CALL_ARGS);
       while (pidx < NUM_PREDS) probs[pidx++] = -inf;
+#endif
       alpha_curr[idx] = log_sum_exp(probs) + output_prob(state, x, HMM_CALL_ARGS);
     } else if (t == obs_lens[instance]) {
       // We only need to copy the alpha data once - past this point, both alpha
@@ -86,8 +125,12 @@ void forward_max(
   unsigned int lo = instance * NUM_STATES;
 
   __shared__ prob_t maxp[512];
-  maxp[idx] = alpha[lo + idx];
-  for (int i = lo + idx; i < lo + NUM_STATES; i += 512) {
+  if (idx < NUM_STATES) {
+    maxp[idx] = alpha[lo + idx];
+  } else {
+    maxp[idx] = -inf;
+  }
+  for (int i = lo + idx + 512; i < lo + NUM_STATES; i += 512) {
     if (alpha[i] > maxp[idx]) {
       maxp[idx] = alpha[i];
     }
@@ -142,8 +185,12 @@ void forward_log_sum_exp(
   prob_t maxp = result[instance];
 
   __shared__ prob_t psum[512];
-  psum[idx] = expf(alpha[lo + idx] - maxp);
-  for (int i = lo + idx; i < lo + NUM_STATES; i += 512) {
+  if (idx < NUM_STATES) {
+    psum[idx] = expf(alpha[lo + idx] - maxp);
+  } else {
+    psum[idx] = 0.0;
+  }
+  for (int i = lo + idx + 512; i < lo + NUM_STATES; i += 512) {
     psum[idx] = psum[idx] + expf(alpha[i] - maxp);
   }
   __syncthreads();
@@ -277,8 +324,12 @@ void viterbi_backward(
   __shared__ state_t maxs[512];
   __shared__ prob_t maxp[512];
   maxs[idx] = idx;
-  maxp[idx] = chi[lo + idx];
-  for (int i = lo + idx; i < lo + NUM_STATES; i += 512) {
+  if (idx < NUM_STATES) {
+    maxp[idx] = chi[lo + idx];
+  } else {
+    maxp[idx] = -inf;
+  }
+  for (int i = lo + idx + 512; i < lo + NUM_STATES; i += 512) {
     if (chi[i] > maxp[idx]) {
       maxp[idx] = chi[i];
       maxs[idx] = i - lo;

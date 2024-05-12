@@ -4,9 +4,12 @@ include "src-loc.mc"
 include "trellis-arg.mc"
 include "model/encode.mc"
 include "./cuda/ast.mc"
+include "./cuda/compile.mc"
 include "./cuda/pprint.mc"
 
-lang TrellisGeneratePython = TrellisTypeCardinality + TrellisTypeBitwidth
+lang TrellisGeneratePython =
+  TrellisTypeCardinality + TrellisTypeBitwidth + TrellisCudaCompileBase
+
   sem indent : Int -> String
   sem indent =
   | n -> create (muli n 4) (lam. ' ')
@@ -21,9 +24,10 @@ lang TrellisGeneratePython = TrellisTypeCardinality + TrellisTypeBitwidth
     else if lti n 64 then "np.uint64"
     else errorSingle [infoTTy ty] "Type bitwidth too large for a 64-bit value"
 
-  sem generatePythonWrapper : TrellisOptions -> Map Name TExpr -> TModel -> String
-  sem generatePythonWrapper options syntheticTables =
-  | model ->
+  sem generatePythonWrapper : TrellisOptions -> Map Name TExpr -> TModel
+                           -> CuCompileEnv -> String
+  sem generatePythonWrapper options syntheticTables model =
+  | env ->
     let numStates = cardinalityType model.stateType in
     let pyStateType = numpyTypeSize model.stateType in
     let pyObsType = numpyTypeSize model.outType in
@@ -31,9 +35,15 @@ lang TrellisGeneratePython = TrellisTypeCardinality + TrellisTypeBitwidth
       if options.useDoublePrecisionFloats then "np.float64"
       else "np.float32"
     in
+    let precompPred =
+      if env.precomputedPredecessors then "True"
+      else "False"
+    in
     strJoin "\n" [
       join [indent 1, "def __init__(self, args):"],
+      join [indent 2, "self.precompute_predecessors = ", precompPred],
       join [indent 2, "self.num_states = ", int2string numStates],
+      join [indent 2, "self.num_preds = ", int2string env.numPreds],
       join [indent 2, "self.batch_size = ", int2string options.batchSize],
       join [indent 2, "self.batch_overlap = ", int2string options.batchOverlap],
       join [indent 2, "self.state_type = ", pyStateType],
@@ -41,6 +51,7 @@ lang TrellisGeneratePython = TrellisTypeCardinality + TrellisTypeBitwidth
       join [indent 2, "self.obs_type = ", pyObsType],
       join [indent 2, "self.compile_cuda('hmm.cu')"],
       join [indent 2, "self.copy_args(args)"],
+      "",
       join [indent 1, "def __del__(self):"],
       generateFreeTables model,
       join [indent 2, "if hasattr(self, 'module'):"],
@@ -49,8 +60,9 @@ lang TrellisGeneratePython = TrellisTypeCardinality + TrellisTypeBitwidth
       join [indent 2, "if hasattr(self, 'ctx'):"],
       join [indent 3, "err, = cuda.cuCtxDestroy(self.ctx)"],
       join [indent 3, "cuda_check(err)"],
+      "",
       join [indent 1, "def copy_args(self, args):"],
-      generateCopyToGpuTables syntheticTables model
+      generateCopyToGpuTables syntheticTables env model
     ]
 
   sem getTableField : Name -> String
@@ -99,8 +111,8 @@ lang TrellisGeneratePython = TrellisTypeCardinality + TrellisTypeBitwidth
 
   -- Generate code to copy the data of all tables of the given model to the
   -- GPU.
-  sem generateCopyToGpuTables : Map Name TExpr -> TModel -> String
-  sem generateCopyToGpuTables syntheticTables =
+  sem generateCopyToGpuTables : Map Name TExpr -> CuCompileEnv -> TModel -> String
+  sem generateCopyToGpuTables syntheticTables env =
   | {tables = tables} ->
     -- Code for flattening tables and copying them to the GPU. Single element
     -- tables are converted to NumPy arrays instead.
@@ -133,6 +145,16 @@ lang TrellisGeneratePython = TrellisTypeCardinality + TrellisTypeBitwidth
               ", dtype=self.prob_type)" ]))
           [] syntheticTables)
     in
+    let predecessorsStr =
+      if env.precomputedPredecessors then
+        join [
+          indent 2, "self.predecessors = ",
+          "np.load(f'./predecessors.npy').transpose().flatten()\n",
+          indent 2, "self.predecessors = ",
+          "self.copy_to_gpu(np.array(self.predecessors, dtype=self.state_type), 0)"
+        ]
+      else ""
+    in
     -- Construct the list of table pointers which are passed to CUDA kernels
     -- when launching them.
     let tablePtrs =
@@ -155,13 +177,18 @@ lang TrellisGeneratePython = TrellisTypeCardinality + TrellisTypeBitwidth
             snoc acc (join [indent 3, "self.", tid, ","]))
           tablePtrsStr syntheticTables
       in
+      let tablePtrsStr =
+        if env.precomputedPredecessors then
+          concat tablePtrsStr ["np.array([int(self.predecessors)], dtype=np.uint64)"]
+        else tablePtrsStr
+      in
       strJoin "\n" [
         join [indent 2, "self.table_ptrs = ["],
         strJoin "\n" tablePtrsStr,
         join [indent 2, "]"]
       ]
     in
-    join [copies, "\n", syntheticTablesStr, "\n", tablePtrs]
+    join [copies, "\n", syntheticTablesStr, "\n", predecessorsStr, "\n", tablePtrs]
 
   sem exprToPythonString : TExpr -> String
   sem exprToPythonString =
@@ -220,9 +247,9 @@ end
 
 lang TrellisBuild = TrellisCudaPrettyPrint + TrellisGeneratePython
   sem buildPythonLibrary : TrellisOptions -> Map Name TExpr -> TModel
-                        -> CuProgram -> ()
-  sem buildPythonLibrary options syntheticTables model =
-  | cuProg ->
+                        -> CuProgram -> CuCompileEnv -> ()
+  sem buildPythonLibrary options syntheticTables model cuProg =
+  | env ->
     let absPath = lam file. join [options.outputDir, "/", file] in
 
     -- 1. Read the pre-defined CUDA skeleton containing efficient
@@ -241,10 +268,6 @@ lang TrellisBuild = TrellisCudaPrettyPrint + TrellisGeneratePython
     -- 4. Generate the model-specific Python wrapper code and combine it with
     -- the skeleton code to produce a simple Python library in 'trellis.py'
     -- usable from other files.
-    writeFile (absPath "trellis.py")
-      (concat wrapStr (generatePythonWrapper options syntheticTables model));
-
-    -- 5. Create an empty file '__init__.py' to allow calling the generated
-    -- Python library from another directory.
-    writeFile (absPath "__init__.py") ""
+    let trailStr = generatePythonWrapper options syntheticTables model env in
+    writeFile (absPath "trellis.py") (concat wrapStr trailStr)
 end
