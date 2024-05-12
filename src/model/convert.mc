@@ -594,10 +594,26 @@ lang TrellisModelAdjustRanges = TrellisModelAst
   | ty -> smapTTypeTType adjustIntRangesType ty
 end
 
+-- This language fragment defines a function for rewriting the state of the
+-- model such that if it has a literal (non-tuple) type, it is rewritten as a
+-- singleton tuple.
+lang TrellisModelTupleTypes = TrellisModelAst
+  sem rewriteModelStateTypeAsTuple : TModel -> TModel
+  sem rewriteModelStateTypeAsTuple =
+  | model -> rewriteModelStateTypeAsTupleH model model.stateType
+
+  sem rewriteModelStateTypeAsTupleH : TModel -> TType -> TModel
+  sem rewriteModelStateTypeAsTupleH model =
+  | TTuple _ -> model
+  | ty & (TBool _ | TInt _ | TProb _) ->
+    {model with stateType = TTuple {tys = ty, info = infoTTy ty}}
+end
+
 lang TrellisModelConvert =
   TrellisModelConvertType + TrellisModelConvertExpr + TrellisModelConvertSet +
   TrellisResolveDeclarations + TrellisModelFlatten +
-  TrellisModelEliminateSlices + TrellisModelAdjustRanges
+  TrellisModelEliminateSlices + TrellisModelAdjustRanges +
+  TrellisModelTupleTypes
 
   sem constructTrellisModelRepresentation : TrellisProgram -> TModel
   sem constructTrellisModelRepresentation =
@@ -607,7 +623,8 @@ lang TrellisModelConvert =
     let m = convertToModelRepresentation info inModelDecls in
     let m = flattenTrellisModelSlices m in
     let m = eliminateModelSlices m in
-    adjustIntRangesModel m
+    let m = adjustIntRangesModel m in
+    rewriteModelStateTypeAsTuple m
 
   sem convertToModelRepresentation : Info -> [InModelDecl] -> TModel
   sem convertToModelRepresentation info =
