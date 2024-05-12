@@ -61,13 +61,13 @@ def copy_from_gpu(gpu_data, n, ty):
     cuda_check(err)
     return result
 
-if len(sys.argv) != 4:
+if len(sys.argv) != 3:
     print("Invalid number of command-line arguments")
     print("Expected temporary directory path, the number of states, and the state type")
     exit(1)
-outfile = sys.argv[2]
+outfile = sys.argv[1]
 nstates = int(sys.argv[2])
-state_type = np.dtype(sys.argv[3])
+state_type = np.dtype(np.uint32)
 
 ctx, module = compile_cuda("preds.cu")
 init_preds = load_cuda_function(module, b"init_predecessors")
@@ -80,10 +80,9 @@ err, pred_count = cuda.cuMemAlloc(nstates * state_type.itemsize)
 args = [np.array([int(pred_count)])]
 args = np.array([arg.ctypes.data for arg in args], dtype=np.uint64)
 tpb = 256
-blocks = nstates // tpb
+blocks = (nstates + tpb - 1) // tpb
 err, = cuda.cuLaunchKernel(init_preds, blocks, 1, 1, tpb, 1, 1, 0, 0, args.ctypes.data, 0)
 cuda_check(err)
-blocks = nstates // tpb
 err, = cuda.cuLaunchKernel(count_preds, blocks, 1, 1, tpb, 1, 1, 0, 0, args.ctypes.data, 0)
 cuda_check(err)
 
@@ -102,8 +101,6 @@ cuda_check(err)
 
 # 3. Compute the predecessors of each state.
 err, preds = cuda.cuMemAlloc(nstates * maxp[0] * state_type.itemsize)
-tpb = 256
-blocks = nstates // tpb
 args = [np.array([int(preds)])]
 args = np.array([arg.ctypes.data for arg in args], dtype=np.uint64)
 err, = cuda.cuLaunchKernel(compute_predecessors, blocks, 1, 1, tpb, 1, 1, 0, 0, args.ctypes.data, 0)

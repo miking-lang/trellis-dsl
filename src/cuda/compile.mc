@@ -1068,11 +1068,10 @@ lang TrellisCudaComputePredecessors =
   sem runProgram options tempDir =
   | model ->
     let nstates = int2string (cardinalityType model.stateType) in
-    let npType = numpyType (bitwidthType model.stateType) in
     let outfile = join [options.outputDir, "/predecessors"] in
     let pythonRunner = concat trellisSrcLoc "skeleton/pred-run.py" in
     let r =
-      sysRunCommand ["python3", pythonRunner, outfile, nstates, npType] "" tempDir
+      sysRunCommand ["python3", pythonRunner, outfile, nstates] "" tempDir
     in
     if eqi r.returncode 0 then string2int (strTrim r.stdout)
     else

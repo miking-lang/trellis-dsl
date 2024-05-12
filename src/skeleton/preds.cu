@@ -1,13 +1,13 @@
 
 __device__
-bool is_predecessor(state_t src, state_t dst) {
+bool is_predecessor(uint32_t src, uint32_t dst) {
   return transition_prob(src, dst, 0) == 0.0;
 }
 
 extern "C"
 __global__
-void init_predecessors(state_t *pred_count) {
-  state_t s = blockIdx.x * blockDim.x + threadIdx.x;
+void init_predecessors(uint32_t *pred_count) {
+  uint32_t s = blockIdx.x * blockDim.x + threadIdx.x;
   if (s < NUM_STATES) {
     pred_count[s] = 0;
   }
@@ -15,10 +15,10 @@ void init_predecessors(state_t *pred_count) {
 
 extern "C"
 __global__
-void count_predecessors(state_t *pred_count) {
-  state_t dst = blockIdx.x * blockDim.x + threadIdx.x;
+void count_predecessors(uint32_t *pred_count) {
+  uint32_t dst = blockIdx.x * blockDim.x + threadIdx.x;
   if (dst < NUM_STATES) {
-    for (state_t src = 0; src < NUM_STATES; src++) {
+    for (uint32_t src = 0; src < NUM_STATES; src++) {
       if (is_predecessor(src, dst)) {
         atomicInc(pred_count + dst, NUM_STATES);
       }
@@ -27,7 +27,7 @@ void count_predecessors(state_t *pred_count) {
 }
 
 __device__
-void max_warp_reduce(volatile state_t *maxs, unsigned int tid) {
+void max_warp_reduce(volatile uint32_t *maxs, unsigned int tid) {
   if (maxs[tid + 32] > maxs[tid]) {
     maxs[tid] = maxs[tid + 32];
   }
@@ -51,12 +51,12 @@ void max_warp_reduce(volatile state_t *maxs, unsigned int tid) {
 extern "C"
 __global__
 void max_pred_count(
-    const state_t* __restrict__ pred_count, state_t* __restrict__ result) {
-  state_t idx = threadIdx.x;
+    const uint32_t* __restrict__ pred_count, uint32_t* __restrict__ result) {
+  uint32_t idx = threadIdx.x;
 
-  __shared__ state_t maxs[512];
+  __shared__ uint32_t maxs[512];
   maxs[idx] = pred_count[idx];
-  for (state_t i = idx; i < NUM_STATES; i += 512) {
+  for (uint32_t i = idx; i < NUM_STATES; i += 512) {
     if (pred_count[i] > maxs[idx]) {
       maxs[idx] = pred_count[i];
     }
@@ -90,11 +90,11 @@ void max_pred_count(
 
 extern "C"
 __global__
-void compute_predecessors(state_t *preds) {
-  state_t dst = blockIdx.x * blockDim.x + threadIdx.x;
+void compute_predecessors(uint32_t *preds) {
+  uint32_t dst = blockIdx.x * blockDim.x + threadIdx.x;
   if (dst < NUM_STATES) {
-    state_t predc = 0;
-    for (state_t src = 0; src < NUM_STATES; ++src) {
+    uint32_t predc = 0;
+    for (uint32_t src = 0; src < NUM_STATES; ++src) {
       if (is_predecessor(src, dst)) preds[predc++] = src;
     }
   }
