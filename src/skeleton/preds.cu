@@ -90,12 +90,24 @@ void max_pred_count(
 
 extern "C"
 __global__
-void compute_predecessors(uint32_t *preds) {
+void compute_predecessors(
+    uint32_t* __restrict__ preds, const uint32_t* __restrict__ max_preds) {
   uint32_t dst = blockIdx.x * blockDim.x + threadIdx.x;
   if (dst < NUM_STATES) {
+    // Compute the predecessors and fill in the given 'preds' array. We use the
+    // first non-predecessor state as a padding element in the array, in case a
+    // state has fewer than the maximum number of predecessors.
     uint32_t predc = 0;
+    uint32_t pad_elem = -1;
     for (uint32_t src = 0; src < NUM_STATES; ++src) {
-      if (is_predecessor(src, dst)) preds[predc++] = src;
+      if (is_predecessor(src, dst)) {
+        preds[predc++] = src;
+      } else {
+        pad_elem = src;
+      }
+    }
+    while (predc < *max_preds) {
+      preds[predc++] = pad_elem;
     }
   }
 }

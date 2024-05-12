@@ -61,12 +61,10 @@ def copy_from_gpu(gpu_data, n, ty):
     cuda_check(err)
     return result
 
-if len(sys.argv) != 3:
+if len(sys.argv) != 2:
     print("Invalid number of command-line arguments")
-    print("Expected temporary directory path, the number of states, and the state type")
     exit(1)
-outfile = sys.argv[1]
-nstates = int(sys.argv[2])
+nstates = int(sys.argv[1])
 state_type = np.dtype(np.uint32)
 
 ctx, module = compile_cuda("preds.cu")
@@ -101,15 +99,15 @@ cuda_check(err)
 
 # 3. Compute the predecessors of each state.
 err, preds = cuda.cuMemAlloc(nstates * maxp[0] * state_type.itemsize)
-args = [np.array([int(preds)])]
+args = [np.array([int(preds)]), np.array([int(maxpreds)])]
 args = np.array([arg.ctypes.data for arg in args], dtype=np.uint64)
 err, = cuda.cuLaunchKernel(compute_predecessors, blocks, 1, 1, tpb, 1, 1, 0, 0, args.ctypes.data, 0)
 cuda_check(err)
-predecessors = np.zeros(nstates * maxp[0], dtype=state_type)
+predecessors = np.zeros((nstates, maxp[0]), dtype=state_type)
 err, = cuda.cuMemcpyDtoH(predecessors, preds, nstates * maxp[0] * predecessors.itemsize)
 cuda_check(err)
 
 # 4. Write the predecessor result to the requested output file and print the
 # maximum number of predecessors to standard out.
-np.save(outfile, predecessors)
+np.save("predecessors", predecessors)
 print(maxp[0])

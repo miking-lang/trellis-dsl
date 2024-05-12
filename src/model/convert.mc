@@ -606,7 +606,7 @@ lang TrellisModelTupleTypes = TrellisModelAst
   sem rewriteModelStateTypeAsTupleH model =
   | TTuple _ -> model
   | ty & (TBool _ | TInt _ | TProb _) ->
-    {model with stateType = TTuple {tys = ty, info = infoTTy ty}}
+    {model with stateType = TTuple {tys = [ty], info = infoTTy ty}}
 end
 
 lang TrellisModelConvert =

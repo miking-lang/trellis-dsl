@@ -1068,12 +1068,15 @@ lang TrellisCudaComputePredecessors =
   sem runProgram options tempDir =
   | model ->
     let nstates = int2string (cardinalityType model.stateType) in
-    let outfile = join [options.outputDir, "/predecessors"] in
     let pythonRunner = concat trellisSrcLoc "skeleton/pred-run.py" in
     let r =
-      sysRunCommand ["python3", pythonRunner, outfile, nstates] "" tempDir
+      sysRunCommand ["python3", pythonRunner, nstates] "" tempDir
     in
-    if eqi r.returncode 0 then string2int (strTrim r.stdout)
+    if eqi r.returncode 0 then
+      let predsSrc = join [tempDir, "/predecessors.npy"] in
+      let predsDst = join [options.outputDir, "/predecessors.npy"] in
+      sysMoveFile predsSrc predsDst;
+      string2int (strTrim r.stdout)
     else
       let msg = join [
         "Internal error: Failed when pre-computing the predecessors\n",
