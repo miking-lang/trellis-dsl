@@ -74,6 +74,8 @@ match result with ParseOK r then
     -- are supported or not.
     let cuProg = compileToCuda options tableEnv modelAst constraints in
 
+    -- Produces a simple Python library which performs runtime compilation of
+    -- the CUDA code and calls it.
     buildPythonLibrary options tableEnv modelAst cuProg
 else
   argPrintError result;

@@ -3,6 +3,7 @@
 include "graph.mc"
 include "mexpr/info.mc"
 
+include "../src-loc.mc"
 include "../trellis-arg.mc"
 include "../constraints/predecessors.mc"
 include "../model/ast.mc"
@@ -33,6 +34,7 @@ let hmmCallArgsId = nameSym "HMM_CALL_ARGS"
 -- Identifiers of functions used by the pre-defined parts of the code.
 let initProbFunId = nameSym "init_prob"
 let outProbFunId = nameSym "output_prob"
+let transProbFunId = nameSym "transition_prob"
 let forwProbPredsFunId = nameSym "forward_prob_predecessors"
 let viterbiMaxPredsFunId = nameSym "viterbi_max_predecessor"
 
@@ -981,6 +983,114 @@ lang TrellisGroupConstraints = TrellisModelPredecessorAnalysis
       printError msg;
       exit 1
     end
+end
+
+-- Computes the predecessors of each state of a given model.
+lang TrellisCudaComputePredecessors =
+  TrellisCudaCompileTypeDefs + TrellisCudaProbabilityFunction +
+  TrellisCudaPrettyPrint
+
+  sem computePredecessors : CuCompileEnv -> TModel -> Int
+  sem computePredecessors env =
+  | model ->
+    -- Read the template implementation for the predecessor computation.
+    let skeletonCode = readFile (concat trellisSrcLoc "skeleton/preds.cu") in
+
+    -- Generate code for the header, where we define a customized transition
+    -- probability function and the minimal amount of declarations needed for
+    -- computing the maximum number of predecessors.
+    let header = generateHeaderCode env model in
+
+    -- Pretty-print the header and combine it with the pre-defined skeleton
+    -- code.
+    let program = concat (printCudaProgram header) skeletonCode in
+
+    -- Construct the required program files and run it to compute the
+    -- predecessors, store them in a file, and finally, return the maximum
+    -- number of predecessors.
+    let tempDir = buildProgram program in
+    runProgram env.opts tempDir model
+
+  sem generateHeaderCode : CuCompileEnv -> TModel -> CuProgram
+  sem generateHeaderCode env =
+  | model ->
+    -- Generate the minimal amount of declarations needed for the predecessor
+    -- computation.
+    let numStatesDef =
+      let v = int2string (cardinalityType model.stateType) in
+      {annotations = [], top = CTMacroDefine {id = numStatesId, value = v}}
+    in
+    let hmmDeclParams =
+      let v = "int ignored" in
+      {annotations = [], top = CTMacroDefine {id = hmmDeclParamsId, value = v}}
+    in
+    let tyDefs = generateTypeDefines env model in
+
+    -- Generate a version of the transition probability function where the body
+    -- of each case returns zero. We use the zero to determine whether a case
+    -- in the transition probability function was taken or if it went through
+    -- to the default value.
+    let zModel = modelWithZeroTransitionBodies model in
+    let transp = generateTransitionProbabilityFunction zModel in
+
+    {tops = join [tyDefs, [numStatesDef, hmmDeclParams, transp]]}
+
+  sem modelWithZeroTransitionBodies : TModel -> TModel
+  sem modelWithZeroTransitionBodies =
+  | model & {transition = t} ->
+    let setCaseBodyToZero : Case -> Case = lam c.
+      -- NOTE(larshum, 2024-05-12): Probabilities are represented in
+      -- logarithmic scale. We use 1.0 here as it becomes zero in logscale.
+      let i = infoTExpr c.body in
+      {c with body = EProb {p = 1.0, ty = TProb {info = i}, info = i}}
+    in
+    {model with transition = {t with cases = map setCaseBodyToZero t.cases}}
+
+  sem generateTransitionProbabilityFunction : TModel -> CuTop
+  sem generateTransitionProbabilityFunction =
+  | model & ({transition = t}) ->
+    let stateTy = CTyVar {id = stateTyId} in
+    let transParams = [(stateTy, t.x), (stateTy, t.y)] in
+    generateProbabilityFunction transProbFunId transParams t.cases
+
+  sem buildProgram : String -> String
+  sem buildProgram =
+  | cuCode ->
+    let tempDir = sysTempDirMake () in
+
+    -- Write the complete CUDA program to a file.
+    let srcPath = join [tempDir, "/preds.cu"] in
+    writeFile srcPath cuCode;
+
+    tempDir
+
+  sem runProgram : TrellisOptions -> String -> TModel -> Int
+  sem runProgram options tempDir =
+  | model ->
+    let nstates = int2string (cardinalityType model.stateType) in
+    let npType = numpyType (bitwidthType model.stateType) in
+    let outfile = join [options.outputDir, "/predecessors"] in
+    let pythonRunner = concat trellisSrcLoc "skeleton/pred-run.py" in
+    let r =
+      sysRunCommand ["python3", pythonRunner, outfile, nstates, npType] "" tempDir
+    in
+    if eqi r.returncode 0 then string2int (strTrim r.stdout)
+    else
+      let msg = join [
+        "Internal error: Failed when pre-computing the predecessors\n",
+        "  stdout: ", r.stdout, "\n",
+        "  stderr: ", r.stderr
+      ] in
+      error msg
+
+  sem numpyType : Int -> String
+  sem numpyType =
+  | bitwidth ->
+    if lti bitwidth 8 then "u1"
+    else if lti bitwidth 16 then "u2"
+    else if lti bitwidth 32 then "u4"
+    else if lti bitwidth 64 then "u8"
+    else error "Bitwise representation of state requires at least 64 bits"
 end
 
 lang TrellisCudaCompile =
