@@ -8,7 +8,7 @@ __device__
 void forward_prob_predecessors(
     const prob_t *alpha_prev, int instance, state_t state, prob_t *probs,
     HMM_DECL_PARAMS) {
-  state_t *predecessors = predecessor_table + instance * NUM_STATES * NUM_PREDS + state;
+  state_t *predecessors = predecessor_table + state;
   for (state_t i = 0; i < NUM_PREDS; i++) {
     state_t pred = predecessors[i * NUM_STATES];
     probs[i] =
@@ -20,7 +20,7 @@ __device__
 void viterbi_max_predecessor(
     const prob_t *chi_prev, int instance, state_t state, state_t *maxs,
     prob_t *maxp, HMM_DECL_PARAMS) {
-  state_t *predecessors = predecessor_table + instance * NUM_STATES + state;
+  state_t *predecessors = predecessor_table + state;
   for (state_t i = 0; i < NUM_PREDS; i++) {
     state_t pred = predecessors[i * NUM_STATES];
     prob_t p = chi_prev[instance * NUM_STATES + pred] + transition_prob(pred, state, HMM_CALL_ARGS);
@@ -78,7 +78,7 @@ __global__ void forward_step(
     if (t < obs_lens[instance]) {
       obs_t x = obs[instance * maxlen + t];
 #ifdef PRECOMPUTE_PREDECESSORS
-      prob_t *probs = probs_table + instance * NUM_STATES * NUM_PREDS + state;
+      prob_t *probs = probs_table + instance * NUM_STATES * NUM_PREDS + state * NUM_PREDS;
       forward_prob_predecessors(alpha_prev, instance, state, probs, HMM_CALL_ARGS);
 #else
       prob_t probs[NUM_PREDS];

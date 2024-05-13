@@ -1151,7 +1151,7 @@ lang TrellisCudaCompile =
         -- were grouped.
         {env with numPreds = computeMaxPredecessors env.constraintGroups env.constraints}
       else
-        {env with numPreds = computePredecessors env model}
+        env
     in
 
     -- Merges operations on subseqent components of the same state or output
@@ -1161,6 +1161,12 @@ lang TrellisCudaCompile =
     -- Converts all references to components of a state or output to their
     -- corresponding operations on the encoded integer representation.
     let model = encodeStateOperations env.opts model in
+
+    let env =
+      if env.precomputedPredecessors then
+        {env with numPreds = computePredecessors env model}
+      else env
+    in
 
     -- Generate type definitions for sized integer types and the sizes of
     -- integers used to encode states, probabilities, and observations, based
