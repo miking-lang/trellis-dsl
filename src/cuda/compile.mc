@@ -1096,6 +1096,7 @@ lang TrellisCudaComputePredecessors =
       let predsSrc = join [tempDir, "/predecessors.npy"] in
       let predsDst = join [options.outputDir, "/predecessors.npy"] in
       sysMoveFile predsSrc predsDst;
+      sysDeleteDir tempDir;
       string2int (strTrim r.stdout)
     else
       let msg = join [
