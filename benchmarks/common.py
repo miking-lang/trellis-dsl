@@ -33,6 +33,17 @@ def generate_init_probs(k):
             init_probs[layer][kmer] = -inf
     return init_probs
 
+def reverse_index(i, k):
+    return sum([(i // 4**x) % 4 * (4**(k-x-1)) for x in range(k)])
+
+def transform_output_probs(obs, k):
+    output_probs = np.zeros((4**k, 101), dtype=np.float32)
+    for i in range(4**k):
+        idx = reverse_index(i, k)
+        for j in range(101):
+            output_probs[i][j] = obs[j][idx]
+    return output_probs.transpose()
+
 def read_kmer_inputs_trellis(model_path, signals_path):
     with h5py.File(model_path, "r") as f:
         with np.errstate(divide="ignore"):
@@ -43,7 +54,7 @@ def read_kmer_inputs_trellis(model_path, signals_path):
         k = f['Parameters'].attrs['KMerLength']
         init_probs = generate_init_probs(k)
         trans1 = trans1.reshape(4, 4**k).transpose(1, 0).flatten()
-        out_prob = obs.flatten()
+        out_prob = transform_output_probs(obs, k).flatten()
     with h5py.File(signals_path, "r") as f:
         keys = list(f.keys())
         signals = [f[k]['Raw']['Signal'][:].tolist() for k in keys]
