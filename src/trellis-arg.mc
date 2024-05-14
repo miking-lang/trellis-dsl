@@ -13,6 +13,7 @@ type TrellisOptions = {
   skipPredecessors : Bool,
   warnPredecessorAnalysis : Bool,
   errorPredecessorAnalysis : Bool,
+  forcePrecomputePredecessors : Bool,
   printParse : Bool,
   printModel : Bool,
   outputDir : String
@@ -26,6 +27,7 @@ let trellisDefaultOptions = {
   skipPredecessors = false,
   warnPredecessorAnalysis = false,
   errorPredecessorAnalysis = false,
+  forcePrecomputePredecessors = false,
   printParse = false,
   printModel = false,
   outputDir = "."
@@ -71,6 +73,11 @@ let config = [
       "If enabled, the compiler reports errors and exits with return code 1 if the predecessor analysis fails.",
     lam p.
       let o = p.options in {o with errorPredecessorAnalysis = true}),
+  ([("--force-precompute-predecessors", "", "")],
+    defaultStr (bool2string trellisDefaultOptions.forcePrecomputePredecessors)
+      "If enabled, the compiler will always skip the predecessor analysis and precompute the predecessors at compile-time.",
+    lam p.
+      let o = p.options in {o with forcePrecomputePredecessors = true}),
   ([("--print-parse", "", "")],
     "Pretty-prints the initial AST after parsing.",
     lam p.

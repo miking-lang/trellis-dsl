@@ -66,8 +66,12 @@ match result with ParseOK r then
     -- Produces an abstract representation of the predecessor constraints
     -- imposed by each case of the transition probability function. The result
     -- is an option; should the cases include conditions of unsupported shape,
-    -- the result is None.
-    let constraints = performPredecessorAnalysis options modelAst in
+    -- the result is None. This step is always skipped and None is returned if
+    -- a compiler flag is set.
+    let constraints =
+      if options.forcePrecomputePredecessors then None ()
+      else performPredecessorAnalysis options modelAst
+    in
 
     -- Compiles the provided model with the constraints to CUDA code, using
     -- different approaches depending on whether the predecessor constraints
