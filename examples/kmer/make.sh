@@ -5,7 +5,7 @@ SIGNAL_PATH=../../benchmarks/signals/kmer.hdf5
 
 case $1 in
   build)
-    trellis kmer.trellis
+    trellis --error-predecessor-analysis kmer.trellis
     ;;
   run)
     python3 runner.py $MODEL_PATH $SIGNAL_PATH
