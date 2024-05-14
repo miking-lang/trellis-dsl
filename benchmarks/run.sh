@@ -31,15 +31,11 @@ bench_pomegranate() {
 }
 
 bench_trellis_forward() {
-  if [ $1 -eq 0 ]
-  then
-    TARGET_ID="tc"
-  else
-    TARGET_ID="tg"
-  fi
-  CMD="python3 forward/trellis/run.py $1 >> $(pwd)/out/${TARGET_ID}-$2-forward.txt"
-  OUT_PATH="$(pwd)/out/${TARGET_ID}-$2-forward.json"
+  CMD="python3 run.py >> $(pwd)/out/tg-$1-forward.txt"
+  OUT_PATH="$(pwd)/out/tg-$1-forward.json"
+  cd forward/trellis
   bench_program "$CMD" "$OUT_PATH"
+  cd ../..
 }
 
 bench_stochhmm() {
@@ -74,52 +70,36 @@ bench_cuda() {
 }
 
 bench_trellis_viterbi() {
-  if [ $1 -eq 0 ]
+  if [ -z ${2+x} ]
   then
-    TARGET_ID="tc"
+    TEST_ID="$1"
   else
-    TARGET_ID="tg"
-  fi
-  if [ -z ${4+x} ]
-  then
-    TEST_ID="$2"
-  else
-    if [ $4 -eq 1024 ]
+    if [ $3 -eq 1024 ]
     then
-      TEST_ID="$2-batch"
-    elif [ $4 -eq 8885 ]
+      TEST_ID="$1-batch"
+    elif [ $3 -eq 8885 ]
     then
-      TEST_ID="$2-nobatch"
+      TEST_ID="$1-nobatch"
     fi
   fi
-  CMD="python3 viterbi/trellis/run.py $1 $3 >> out/$TARGET_ID-$TEST_ID-viterbi.txt"
-  OUT_PATH="$(pwd)/out/$TARGET_ID-$TEST_ID-viterbi.json"
+  CMD="python3 run.py $2 >> $(pwd)/out/tg-${TEST_ID}-viterbi.txt"
+  OUT_PATH="$(pwd)/out/tg-${TEST_ID}-viterbi.json"
+  cd viterbi/trellis
   bench_program "$CMD" "$OUT_PATH"
+  cd ../..
 }
 
 bench_compile_trellis() {
-  if [ $1 == "multicore" ]
-  then
-    TARGET_ID="tc"
-  else
-    TARGET_ID="tg"
-  fi
-  CMD="trellis $2 --futhark-target $TARGET $3.trellis"
-  OUT_PATH="$(pwd)/out/${TARGET_ID}-compile-$4-$3.json"
+  CMD="trellis $3 $1.trellis"
+  OUT_PATH="$(pwd)/out/tg-compile-$2-$1.json"
   cd viterbi/trellis
   bench_program "$CMD" "$OUT_PATH"
   cd ../..
 }
 
 compile_trellis() {
-  if [ $1 -eq 0 ]
-  then
-    TARGET="multicore"
-  else
-    TARGET="cuda"
-  fi
-  cd $2/trellis
-  trellis "$3" "$4.trellis"
+  cd $1/trellis
+  trellis $3 "$2.trellis"
   cd ../..
 }
 
@@ -154,10 +134,8 @@ export SIGNALS_PATH="$(pwd)/signals/weather.hdf5"
 bench_ziphmm "weather"
 bench_pomegranate 0 "weather"
 bench_pomegranate 1 "weather"
-compile_trellis 0 "forward" "--precompute-tables" "weather"
-bench_trellis_forward 0 "weather"
-compile_trellis 1 "forward" "--precompute-tables" "weather"
-bench_trellis_forward 1 "weather"
+compile_trellis "forward" "weather"
+bench_trellis_forward "weather"
 
 echo "##############"
 echo "# KMER MODEL #"
@@ -170,10 +148,8 @@ export SIGNALS_PATH="$(pwd)/signals/kmer.hdf5"
 bench_ziphmm "3mer"
 bench_pomegranate 0 "3mer"
 bench_pomegranate 1 "3mer"
-compile_trellis 0 "forward" "--precompute-tables" "3mer"
-bench_trellis_forward 0 "3mer"
-compile_trellis 1 "forward" "--precompute-tables" "3mer"
-bench_trellis_forward 1 "3mer"
+compile_trellis "forward" "3mer"
+bench_trellis_forward "3mer"
 
 echo "#####################"
 echo "# VITERBI ALGORITHM #"
@@ -186,10 +162,8 @@ unset MODEL_PATH
 export SIGNALS_PATH="$(pwd)/signals/weather.fasta"
 bench_stochhmm "weather"
 export SIGNALS_PATH="$(pwd)/signals/weather.hdf5"
-compile_trellis 0 "viterbi" "--precompute-tables" "weather"
-bench_trellis_viterbi 0 "weather"
-compile_trellis 1 "viterbi" "--precompute-tables" "weather"
-bench_trellis_viterbi 1 "weather"
+compile_trellis "viterbi" "weather"
+bench_trellis_viterbi "weather"
 
 echo "############################"
 echo "# KMER MODEL (NO BATCHING) #"
@@ -199,16 +173,14 @@ echo "############################"
 # approach is faster, regardless)
 BATCH_SIZE=8885
 BATCH_OVERLAP=0
-TRELLIS_BATCH="--batch-size 8885 --batch-overlap 0"
+TRELLIS_BATCH="--batch-size $BATCH_SIZE --batch-overlap $BATCH_OVERLAP"
 export MODEL_PATH=${KMER_MODELS[0]}
 export SIGNALS_PATH="$(pwd)/signals/kmer.fasta"
 bench_stochhmm "3mer"
 export SIGNALS_PATH="$(pwd)/signals/kmer.hdf5"
 bench_cuda 3 $BATCH_SIZE
-compile_trellis 0 "viterbi" "--precompute-tables $TRELLIS_BATCH" "weather"
-bench_trellis_viterbi 0 "3mer" 3 $BATCH_SIZE
-compile_trellis 1 "viterbi" "--precompute-tables $TRELLIS_BATCH" "weather"
-bench_trellis_viterbi 1 "3mer" 3 $BATCH_SIZE
+compile_trellis "viterbi" "3mer" "$TRELLIS_BATCH"
+bench_trellis_viterbi "3mer" 3 $BATCH_SIZE
 
 echo "#########################"
 echo "# KMER MODEL (BATCHING) #"
@@ -222,45 +194,34 @@ for i in $(seq 0 2)
 do
   export MODEL_PATH=${KMER_MODELS[i]}
   K=${KMER_LENGTH[i]}
-  if [ $K -eq 3 ]
-  then
-    TRELLIS_EXTRA_ARGS="--precompute-tables"
-  else
-    TRELLIS_EXTRA_ARGS=""
-  fi
   bench_cuda $K $BATCH_SIZE
-  compile_trellis 0 "viterbi" "$TRELLIS_EXTRA_ARGS $TRELLIS_BATCH" "${K}mer"
-  bench_trellis_viterbi 0 "${K}mer" $K $BATCH_SIZE
-  compile_trellis 1 "viterbi" "$TRELLIS_EXTRA_ARGS $TRELLIS_BATCH" "${K}mer"
-  bench_trellis_viterbi 1 "${K}mer" $K $BATCH_SIZE
+  compile_trellis "viterbi" "${K}mer" "$TRELLIS_BATCH"
+  bench_trellis_viterbi "${K}mer" $K $BATCH_SIZE
 done
 
 echo "##########################"
 echo "# COMPILATION BENCHMARKS #"
 echo "##########################"
-# Benchmarks specifically for the Trellis compilation performance. For these
-# benchmarks, we inform the compiler about the maximum number of predecessors
-# to skip that computation entirely.
+# Benchmarks specifically for the Trellis compilation performance. We both run
+# the compiler normally and with a flag that forces it to precompute all
+# predecessors at compile-time.
 
-TRELLIS_COMPILE_ARGS=("$TRELLIS_BATCH" "$TRELLIS_BATCH --skip-predecessors --maxpreds 5")
+TRELLIS_COMPILE_ARGS=("" "--force-precompute-predecessors")
 # Measure with and without predecessor computations and using either CPU or GPU
 # as the target.
 for i in 0 1
 do
   ARGS=${TRELLIS_COMPILE_ARGS[i]}
-  for TARGET in "multicore" "cuda"
-  do
-    if [ $i -eq 0 ]
-    then
-      TEST_ID="preds"
-    else
-      TEST_ID="nopreds"
-    fi
-    bench_compile_trellis "$TARGET" "$ARGS" "weather" "$TEST_ID"
-    bench_compile_trellis "$TARGET" "$ARGS" "3mer" "$TEST_ID"
-    bench_compile_trellis "$TARGET" "$ARGS" "5mer" "$TEST_ID"
-    bench_compile_trellis "$TARGET" "$ARGS" "7mer" "$TEST_ID"
-  done
+  if [ $i -eq 0 ]
+  then
+    TEST_ID="preds"
+  else
+    TEST_ID="nopreds"
+  fi
+  bench_compile_trellis "weather" "$TEST_ID" "${ARGS}"
+  bench_compile_trellis "3mer" "$TEST_ID" "${ARGS}"
+  bench_compile_trellis "5mer" "$TEST_ID" "${ARGS}"
+  bench_compile_trellis "7mer" "$TEST_ID" "${ARGS}"
 done
 
 echo "####################"
@@ -279,7 +240,7 @@ python3 scripts/plot-kmer.py
 echo "###########"
 echo "# CLEANUP #"
 echo "###########"
-TRELLIS_CLEAN="_generated* generated* __init__.py predecessors.txt __pycache__ trellis.py"
+TRELLIS_CLEAN="hmm.cu predecessors.npy trellis.py __pycache__"
 
 rm -f signals/weather.hdf5 signals/weather.fasta signals/kmer.fasta
 

@@ -25,7 +25,7 @@ def load_alg_exec_time_label(label, alg):
         return 0.0, 0.0
 
 # Plot Forward algorithm results
-labels = [ "zc", "pc", "pg", "tc", "tg" ]
+labels = [ "zc", "pc", "pg", "tg" ]
 x = np.arange(len(labels))
 
 fig, axs = plt.subplots(layout="constrained")
@@ -47,7 +47,7 @@ axs.legend(loc="upper right", ncols=2)
 fig.savefig("weather-forward.pdf", bbox_inches="tight")
 
 # Plot Viterbi algorithm results
-labels = [ "sc", "tc", "tg" ]
+labels = [ "sc", "tg" ]
 x = np.arange(len(labels))
 
 fig, axs = plt.subplots(layout="constrained")

@@ -21,18 +21,14 @@ x = np.arange(len(labels))
 
 fig, axs = plt.subplots(layout="constrained")
 axs.grid(which="both", zorder=0)
-width = 0.3
-
-avgs, errs = zip(*[load_data(label, "tc", "preds") for label in labels])
-bars = axs.bar(x, avgs, width, yerr=errs, label="TC", color=colors[0])
-axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
+width = 0.4
 
 avgs, errs = zip(*[load_data(label, "tg", "preds") for label in labels])
-bars = axs.bar(x + width, avgs, width, yerr=errs, label="TG", color=colors[1])
+bars = axs.bar(x, avgs, width, yerr=errs, label="TG", color=colors[1])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_data(label, "tg", "nopreds") for label in labels])
-bars = axs.bar(x + 2*width, avgs, width, yerr=errs, label="TG-NP", color=colors[2])
+bars = axs.bar(x + width, avgs, width, yerr=errs, label="TG-NP", color=colors[2])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x + width, labels)

@@ -26,16 +26,19 @@ for i in range(len(transp)):
     for j in range(len(transp[i])):
         trans[i, j] = transp[i][j]
 
-with tempfile.TemporaryDirectory() as tmpdir:
-    for i, s in enumerate(signals):
+p = []
+t = 0.0
+for i, s in enumerate(signals):
+    with tempfile.TemporaryDirectory() as tmpdir:
         with open(f"{tmpdir}/{i}.seq", "w+") as f:
             f.write(f"{' '.join([str(x) for x in s])}")
 
-    fwd = Forwarder.fromSequenceDirectory(tmpdir, alphabetSize = len(outp[0]), nStatesSave = [len(outp)])
-    t0 = time.time()
-    prob = fwd.ptforward(init, trans, out)
-    t1 = time.time()
-    print(t1-t0)
+        fwd = Forwarder.fromSequenceDirectory(tmpdir, alphabetSize = len(outp[0]), nStatesSave = [len(outp)])
+        t0 = time.time()
+        p.append(fwd.ptforward(init, trans, out))
+        t1 = time.time()
+        t += t1-t0
+print(t)
 
 # Explicitly delete zipHMM objects here to avoid error on exit
 del fwd

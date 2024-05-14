@@ -25,7 +25,7 @@ def load_alg_exec_time_label(label, conf, k):
         return 0.0, 0.0
 
 # Plot Forward algorithm results for kmer model
-labels = [ "zc", "pc", "pg", "tc", "tg" ]
+labels = [ "zc", "pc", "pg", "tg" ]
 x = np.arange(len(labels))
 
 fig, axs = plt.subplots(layout="constrained")
