@@ -42,7 +42,7 @@ axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 axs.set_xticks(x+0.5*width, [l.upper() for l in labels])
 axs.set_yscale("log")
 axs.set_ylabel("Execution time (s)")
-axs.legend(loc="upper right", ncols=2)
+axs.legend(loc="upper left")
 
 fig.savefig("weather-forward.pdf", bbox_inches="tight")
 
@@ -63,7 +63,7 @@ axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 axs.set_xticks(x + 0.5*width, [l.upper() for l in labels])
 axs.set_yscale("log")
 axs.set_ylabel("Execution time (s)")
-axs.legend(loc="upper right", ncols=2)
+axs.legend(loc="upper left")
 
 fig.savefig("weather-viterbi.pdf", bbox_inches="tight")
 

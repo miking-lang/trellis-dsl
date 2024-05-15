@@ -20,26 +20,27 @@ labels = [ "weather", "3mer", "5mer", "7mer" ]
 x = np.arange(len(labels))
 
 fig, axs = plt.subplots(layout="constrained")
-axs.grid(which="both", zorder=0)
 width = 0.4
 
-avgs, errs = zip(*[load_data(label, "tg", "preds") for label in labels])
-bars = axs.bar(x, avgs, width, yerr=errs, label="TG", color=colors[1])
+avgs1, errs = zip(*[load_data(label, "tg", "preds") for label in labels])
+bars = axs.bar(x, avgs1, width, yerr=errs, label="Predecessor analysis", color=colors[1])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
-avgs, errs = zip(*[load_data(label, "tg", "nopreds") for label in labels])
-bars = axs.bar(x + width, avgs, width, yerr=errs, label="TG-NP", color=colors[2])
+avgs2, errs = zip(*[load_data(label, "tg", "nopreds") for label in labels])
+bars = axs.bar(x + width, avgs2, width, yerr=errs, label="Precomputing predecessors", color=colors[2])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
-axs.set_xticks(x + width, labels)
+axs.set_xticks(x + 0.5*width, labels)
 axs.set_yscale("log")
 axs.set_ylabel("Compilation time (s)")
-axs.legend(loc="upper left", ncols=2)
+axs.legend(loc="upper left")
 
-avgs = avgs1 + avgs2 + avgs3
+avgs = avgs1 + avgs2
 ticks = np.arange(10, max(avgs), 10)
 fmt = axs.yaxis.get_major_formatter()
 labels = [fmt(x) for x in ticks]
 axs.yaxis.set_ticks(ticks, labels=labels)
+axs.grid(which="both")
+axs.set_axisbelow(True)
 
 fig.savefig("compilation.pdf", bbox_inches="tight")
