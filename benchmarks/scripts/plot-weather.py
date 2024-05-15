@@ -30,6 +30,8 @@ x = np.arange(len(labels))
 
 fig, axs = plt.subplots(layout="constrained")
 width = 0.4
+axs.grid(which="both")
+axs.set_axisbelow(True)
 
 avgs, errs = zip(*[load_full_time_label(label, "forward") for label in labels])
 bars = axs.bar(x, avgs, width, yerr=errs, label="Full", color=colors[0])
@@ -51,6 +53,8 @@ labels = [ "sc", "tg" ]
 x = np.arange(len(labels))
 
 fig, axs = plt.subplots(layout="constrained")
+axs.grid(which="both")
+axs.set_axisbelow(True)
 
 avgs, errs = zip(*[load_full_time_label(label, "viterbi") for label in labels])
 bars = axs.bar(x, avgs, width, yerr=errs, label="Full", color=colors[0])
@@ -61,7 +65,7 @@ bars = axs.bar(x + width, avgs, width, yerr=errs, label="Viterbi", color=colors[
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x + 0.5*width, [l.upper() for l in labels])
-axs.set_yscale("log")
+#axs.set_yscale("log")
 axs.set_ylabel("Execution time (s)")
 axs.legend(loc="upper left")
 
