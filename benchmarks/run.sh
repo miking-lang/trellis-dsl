@@ -47,7 +47,7 @@ bench_stochhmm() {
   else
     OUT_ID="$1"
   fi
-  CMD="stochhmm -model $1.hmm -seq $SIGNALS_PATH -viterbi"
+  CMD="stochhmm -model $1.hmm -seq $SIGNALS_PATH -viterbi -gff"
   OUT_PATH="$(pwd)/out/sc-$OUT_ID-viterbi.json"
   cd viterbi/stoch-hmm
   bench_program "$CMD" "$OUT_PATH"
