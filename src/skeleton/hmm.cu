@@ -37,11 +37,7 @@ extern "C"
 __global__ void forward_step(
     const obs_t* __restrict__ obs, const int* __restrict__ obs_lens, int maxlen,
     const prob_t* __restrict__ alpha_prev, prob_t* __restrict__ alpha_curr,
-#ifdef PRECOMPUTE_PREDECESSORS
-    int t, prob_t* __restrict__ probs_table, HMM_DECL_PARAMS) {
-#else
     int t, HMM_DECL_PARAMS) {
-#endif
   state_t state = blockIdx.x * blockDim.x + threadIdx.x;
   unsigned int instance = blockIdx.y;
   if (state < NUM_STATES) {
