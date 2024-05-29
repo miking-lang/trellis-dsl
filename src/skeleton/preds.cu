@@ -112,11 +112,11 @@ void compute_predecessors(
     for (uint32_t src = threadIdx.x; src < NUM_STATES; src += 32) {
       uint32_t c = count_preds_warp(src, dst, i);
       if (c != 0 && threadIdx.x == 0) {
-        for (int i = 0; i < 8 * sizeof(uint32_t); i++) {
-          if ((c >> i) & 1) {
-            p[predc++] = src + i;
-          }
-        }
+        do {
+          uint32_t i = __ffs(c) - 1;
+          p[predc++] = src + i;
+          c = c & ~(1U << i);
+        } while (c != 0);
       }
     }
     if (threadIdx.x == 0) {
