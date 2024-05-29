@@ -61,10 +61,11 @@ def copy_from_gpu(gpu_data, n, ty):
     cuda_check(err)
     return result
 
-if len(sys.argv) != 2:
+if len(sys.argv) != 3:
     print("Invalid number of command-line arguments")
     exit(1)
 nstates = int(sys.argv[1])
+ncases = int(sys.argv[2])
 state_type = np.dtype(np.uint32)
 
 ctx, module = compile_cuda("preds.cu")
@@ -73,41 +74,54 @@ count_preds = load_cuda_function(module, b"count_predecessors")
 max_predc = load_cuda_function(module, b"max_pred_count")
 compute_predecessors = load_cuda_function(module, b"compute_predecessors")
 
-# 1. Fill 'pred_count' with the number of predecessors for each state.
-err, pred_count = cuda.cuMemAlloc(nstates * state_type.itemsize)
+# 1. Fill 'pred_count' with the number of predecessors for each state and every
+# case.
+err, pred_count = cuda.cuMemAlloc(ncases * nstates * state_type.itemsize)
 args = [np.array([int(pred_count)])]
 args = np.array([arg.ctypes.data for arg in args], dtype=np.uint64)
 tpb = 256
 blocks = (nstates + tpb - 1) // tpb
-err, = cuda.cuLaunchKernel(init_preds, blocks, 1, 1, tpb, 1, 1, 0, 0, args.ctypes.data, 0)
+err, = cuda.cuLaunchKernel(init_preds, blocks, ncases, 1, tpb, 1, 1, 0, 0, args.ctypes.data, 0)
 cuda_check(err)
-err, = cuda.cuLaunchKernel(count_preds, blocks, 1, 1, tpb, 1, 1, 0, 0, args.ctypes.data, 0)
+tpb = 32
+err, = cuda.cuLaunchKernel(count_preds, nstates, ncases, 1, tpb, 1, 1, 0, 0, args.ctypes.data, 0)
 cuda_check(err)
 
 # 2. Compute the maximum number of predecessors by reducing the result from the
 # previous kernel down to a single value. Finally, copy that value back to the
-# CPU so we can compute how much memory to allocate for the final step.
-err, maxpreds = cuda.cuMemAlloc(state_type.itemsize)
+# CPU so we can compute how much memory to allocate for the final step. We do
+# this for all cases in parallel.
+err, maxpreds = cuda.cuMemAlloc(ncases * state_type.itemsize)
 args = [np.array([int(pred_count)]), np.array([int(maxpreds)])]
 args = np.array([arg.ctypes.data for arg in args], dtype=np.uint64)
 cuda_check(err)
-err, = cuda.cuLaunchKernel(max_predc, 1, 1, 1, 512, 1, 1, 0, 0, args.ctypes.data, 0)
+err, = cuda.cuLaunchKernel(max_predc, ncases, 1, 1, 512, 1, 1, 0, 0, args.ctypes.data, 0)
 cuda_check(err)
-maxp = np.zeros(1, dtype=state_type)
-err, = cuda.cuMemcpyDtoH(maxp.ctypes.data, maxpreds, maxp.itemsize)
+maxp = np.zeros(ncases, dtype=state_type)
+err, = cuda.cuMemcpyDtoH(maxp.ctypes.data, maxpreds, ncases * maxp.itemsize)
+cuda_check(err)
+err, = cuda.cuCtxSynchronize()
 cuda_check(err)
 
-# 3. Compute the predecessors of each state.
-err, preds = cuda.cuMemAlloc(nstates * maxp[0] * state_type.itemsize)
+# 3. Put the maximum number of predecessors of any case at the first index.
+maxp_cpu = np.array(max(maxp), dtype=np.uint32)
+err, = cuda.cuMemcpyHtoD(maxpreds, maxp_cpu.ctypes.data, maxp_cpu.itemsize)
+cuda_check(err)
+
+# 4. Compute the predecessors of each state for every case.
+err, preds = cuda.cuMemAlloc(ncases * nstates * maxp_cpu * state_type.itemsize)
+tpb = 32
 args = [np.array([int(preds)]), np.array([int(maxpreds)])]
 args = np.array([arg.ctypes.data for arg in args], dtype=np.uint64)
-err, = cuda.cuLaunchKernel(compute_predecessors, blocks, 1, 1, tpb, 1, 1, 0, 0, args.ctypes.data, 0)
+err, = cuda.cuLaunchKernel(compute_predecessors, nstates, ncases, 1, tpb, 1, 1, 0, 0, args.ctypes.data, 0)
 cuda_check(err)
-predecessors = np.zeros((nstates, maxp[0]), dtype=state_type)
-err, = cuda.cuMemcpyDtoH(predecessors, preds, nstates * maxp[0] * predecessors.itemsize)
+predecessors = np.zeros((ncases, nstates, maxp_cpu), dtype=state_type)
+err, = cuda.cuMemcpyDtoH(predecessors, preds, ncases * nstates * maxp_cpu * predecessors.itemsize)
 cuda_check(err)
 
-# 4. Write the predecessor result to the requested output file and print the
-# maximum number of predecessors to standard out.
-np.save("predecessors", predecessors)
-print(maxp[0])
+# 5. For each case, write the predecessor result to a file and print the
+# maximum number of predecessors for that case.
+for i in range(ncases):
+    p = predecessors[i].transpose()[:maxp[i]]
+    np.save(f"pred{i}", p)
+    print(maxp[i])

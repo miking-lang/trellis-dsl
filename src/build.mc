@@ -43,7 +43,7 @@ lang TrellisGeneratePython =
       join [indent 1, "def __init__(self, args):"],
       join [indent 2, "self.precompute_predecessors = ", precompPred],
       join [indent 2, "self.num_states = ", int2string numStates],
-      join [indent 2, "self.num_preds = ", int2string env.numPreds],
+      join [indent 2, "self.num_preds = ", int2string (foldl addi 0 env.numPreds)],
       join [indent 2, "self.batch_size = ", int2string options.batchSize],
       join [indent 2, "self.batch_overlap = ", int2string options.batchOverlap],
       join [indent 2, "self.state_type = ", pyStateType],
@@ -53,7 +53,7 @@ lang TrellisGeneratePython =
       join [indent 2, "self.copy_args(args)"],
       "",
       join [indent 1, "def __del__(self):"],
-      generateFreeTables model,
+      generateFreeTables env model,
       join [indent 2, "if hasattr(self, 'module'):"],
       join [indent 3, "err, = cuda.cuModuleUnload(self.module)"],
       join [indent 3, "cuda_check(err)"],
@@ -70,10 +70,9 @@ lang TrellisGeneratePython =
   | tableId -> concat "tables_" (nameGetStr tableId)
 
   -- Generates code for deallocating a table field in the Python wrapper.
-  sem deallocTable : Name -> String
+  sem deallocTable : String -> String
   sem deallocTable =
-  | tableId ->
-    let tid = getTableField tableId in
+  | tid ->
     strJoin "\n" [
       join [indent 2, "if hasattr(self, '", tid, "'):"],
       join [indent 3, "err, = cuda.cuMemFree(self.", tid, ")"],
@@ -81,16 +80,25 @@ lang TrellisGeneratePython =
     ]
 
   -- Generate code to deallocate the GPU data of all tables of the given model.
-  sem generateFreeTables : TModel -> String
-  sem generateFreeTables =
+  sem generateFreeTables : CuCompileEnv -> TModel -> String
+  sem generateFreeTables env =
   | {tables = tables} ->
     let frees =
       mapFoldWithKey
         (lam acc. lam id. lam ty.
           match ty with TTable {args = !([]) & args} then
-            snoc acc (deallocTable id)
+            let tid = getTableField id in
+            snoc acc (deallocTable tid)
           else acc)
         [] tables
+    in
+    let frees =
+      if env.precomputedPredecessors then
+        let predTableIds =
+          mapi (lam i. lam. concat "pred" (int2string i)) env.numPreds
+        in
+        concat frees (map deallocTable predTableIds)
+      else frees
     in
     strJoin "\n" frees
 
@@ -147,12 +155,16 @@ lang TrellisGeneratePython =
     in
     let predecessorsStr =
       if env.precomputedPredecessors then
-        join [
-          indent 2, "self.predecessors = ",
-          "np.load(f'./predecessors.npy').transpose().flatten()\n",
-          indent 2, "self.predecessors = ",
-          "self.copy_to_gpu(np.array(self.predecessors, dtype=self.state_type), 0)"
-        ]
+        strJoin "\n"
+          (mapi
+            (lam i. lam.
+              let id = concat "pred" (int2string i) in
+              join [
+                indent 2, "self.", id, " = ",
+                  "np.load(f'./", id, ".npy').flatten()\n",
+                indent 2, "self.", id, " = ",
+                  "self.copy_to_gpu(np.array(self.", id, ", dtype=self.state_type), 0)"])
+            env.numPreds)
       else ""
     in
     -- Construct the list of table pointers which are passed to CUDA kernels
@@ -179,7 +191,14 @@ lang TrellisGeneratePython =
       in
       let tablePtrsStr =
         if env.precomputedPredecessors then
-          concat tablePtrsStr ["np.array([int(self.predecessors)], dtype=np.uint64)"]
+          let predTables =
+            mapi
+              (lam i. lam.
+                let id = concat "pred" (int2string i) in
+                join [indent 3, "np.array([int(self.", id, ")], dtype=np.uint64),"])
+              env.numPreds
+          in
+          concat tablePtrsStr predTables
         else tablePtrsStr
       in
       strJoin "\n" [

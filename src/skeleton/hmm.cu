@@ -3,35 +3,6 @@
 // GENERAL IMPLEMENTATIONS //
 /////////////////////////////
 
-#ifdef PRECOMPUTE_PREDECESSORS
-__device__
-void forward_prob_predecessors(
-    const prob_t *alpha_prev, int instance, state_t state, prob_t *probs,
-    HMM_DECL_PARAMS) {
-  state_t *predecessors = predecessor_table + state;
-  for (state_t i = 0; i < NUM_PREDS; i++) {
-    state_t pred = predecessors[i * NUM_STATES];
-    probs[i] =
-      alpha_prev[instance * NUM_STATES + pred] + transition_prob(pred, state, HMM_CALL_ARGS);
-  }
-}
-
-__device__
-void viterbi_max_predecessor(
-    const prob_t *chi_prev, int instance, state_t state, state_t *maxs,
-    prob_t *maxp, HMM_DECL_PARAMS) {
-  state_t *predecessors = predecessor_table + state;
-  for (state_t i = 0; i < NUM_PREDS; i++) {
-    state_t pred = predecessors[i * NUM_STATES];
-    prob_t p = chi_prev[instance * NUM_STATES + pred] + transition_prob(pred, state, HMM_CALL_ARGS);
-    if (p > *maxp) {
-      *maxs = pred;
-      *maxp = p;
-    }
-  }
-}
-#endif
-
 const prob_t inf = 1.0 / 0.0;
 
 extern "C"
@@ -77,14 +48,9 @@ __global__ void forward_step(
     size_t idx = instance * NUM_STATES + state;
     if (t < obs_lens[instance]) {
       obs_t x = obs[instance * maxlen + t];
-#ifdef PRECOMPUTE_PREDECESSORS
-      prob_t *probs = probs_table + instance * NUM_STATES * NUM_PREDS + state * NUM_PREDS;
-      forward_prob_predecessors(alpha_prev, instance, state, probs, HMM_CALL_ARGS);
-#else
       prob_t probs[NUM_PREDS];
       int pidx = forward_prob_predecessors(alpha_prev, instance, state, probs, HMM_CALL_ARGS);
       while (pidx < NUM_PREDS) probs[pidx++] = -inf;
-#endif
       alpha_curr[idx] = log_sum_exp(probs) + output_prob(state, x, HMM_CALL_ARGS);
     } else if (t == obs_lens[instance]) {
       // We only need to copy the alpha data once - past this point, both alpha

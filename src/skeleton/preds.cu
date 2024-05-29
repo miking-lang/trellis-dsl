@@ -1,26 +1,37 @@
 
 __device__
-bool is_predecessor(uint32_t src, uint32_t dst) {
-  return transition_prob(src, dst, 0) == 0.0;
+uint32_t count_preds_warp(uint32_t src, uint32_t dst, int i) {
+  // Update the count to 1 if the source state (src) of the current thread is a
+  // predecessor of the target state (dst). Finally, we combine the results of
+  // all threads using '__balloc_sync', which sets the bit of the threads with
+  // non-zero count to 1, and the rest to 0.
+  int count = 0;
+  if (src < NUM_STATES && is_predecessor(src, dst, i)) {
+    count = 1;
+  }
+  return __ballot_sync(0xFFFFFFFF, count);
 }
 
 extern "C"
 __global__
 void init_predecessors(uint32_t *pred_count) {
   uint32_t s = blockIdx.x * blockDim.x + threadIdx.x;
+  int i = blockIdx.y;
   if (s < NUM_STATES) {
-    pred_count[s] = 0;
+    pred_count[i * NUM_STATES + s] = 0;
   }
 }
 
 extern "C"
 __global__
 void count_predecessors(uint32_t *pred_count) {
-  uint32_t dst = blockIdx.x * blockDim.x + threadIdx.x;
+  uint32_t dst = blockIdx.x;
+  int i = blockIdx.y;
   if (dst < NUM_STATES) {
-    for (uint32_t src = 0; src < NUM_STATES; src++) {
-      if (is_predecessor(src, dst)) {
-        atomicInc(pred_count + dst, NUM_STATES);
+    for (uint32_t src = threadIdx.x; src < NUM_STATES; src += 32) {
+      unsigned int c = count_preds_warp(src, dst, i);
+      if (c != 0 && threadIdx.x == 0) {
+        pred_count[i * NUM_STATES + dst] += __popc(c);
       }
     }
   }
@@ -55,10 +66,11 @@ void max_pred_count(
   uint32_t idx = threadIdx.x;
 
   __shared__ uint32_t maxs[512];
-  maxs[idx] = pred_count[idx];
+  const uint32_t *pc = pred_count + blockIdx.x * NUM_STATES;
+  maxs[idx] = pc[idx];
   for (uint32_t i = idx; i < NUM_STATES; i += 512) {
-    if (pred_count[i] > maxs[idx]) {
-      maxs[idx] = pred_count[i];
+    if (pc[i] > maxs[idx]) {
+      maxs[idx] = pc[i];
     }
   }
   __syncthreads();
@@ -84,7 +96,7 @@ void max_pred_count(
   if (idx < 32) max_warp_reduce(maxs, idx);
 
   if (idx == 0) {
-    result[0] = maxs[0];
+    result[blockIdx.x] = maxs[0];
   }
 }
 
@@ -92,22 +104,25 @@ extern "C"
 __global__
 void compute_predecessors(
     uint32_t* __restrict__ preds, const uint32_t* __restrict__ max_preds) {
-  uint32_t dst = blockIdx.x * blockDim.x + threadIdx.x;
+  uint32_t dst = blockIdx.x;
+  int i = blockIdx.y;
   if (dst < NUM_STATES) {
-    // Compute the predecessors and fill in the given 'preds' array. We use the
-    // first non-predecessor state as a padding element in the array, in case a
-    // state has fewer than the maximum number of predecessors.
-    uint32_t predc = dst * max_preds[0];
-    uint32_t pad_elem = -1;
-    for (uint32_t src = 0; src < NUM_STATES; ++src) {
-      if (is_predecessor(src, dst)) {
-        preds[predc++] = src;
-      } else {
-        pad_elem = src;
+    uint32_t *p = preds + i * NUM_STATES * max_preds[0] + dst * max_preds[0];
+    uint32_t predc = 0;
+    for (uint32_t src = threadIdx.x; src < NUM_STATES; src += 32) {
+      uint32_t c = count_preds_warp(src, dst, i);
+      if (c != 0 && threadIdx.x == 0) {
+        for (int i = 0; i < 8 * sizeof(uint32_t); i++) {
+          if ((c >> i) & 1) {
+            p[predc++] = src + i;
+          }
+        }
       }
     }
-    while (predc < (dst + 1) * max_preds[0]) {
-      preds[predc++] = pad_elem;
+    if (threadIdx.x == 0) {
+      while (predc < max_preds[0]) {
+        p[predc++] = NUM_STATES;
+      }
     }
   }
 }

@@ -77,8 +77,12 @@ lang TrellisCudaCompileBase =
     -- Options passed to the compiler.
     opts : TrellisOptions,
 
-    -- The maximum number of predecessors of any state in the model.
-    numPreds : Int,
+    -- The maximum number of predecessors of any state in the model. When using
+    -- the predecessor analysis, the sequence should contain a single element
+    -- representing the total number of predecessors. Otherwise, when
+    -- precomputing the predecessors, it contains the max number of
+    -- predecessors of each case in the transition probability function.
+    numPreds : [Int],
 
     -- Determines whether predecessors are precomputed at compile-time or if
     -- they are handled through the predecessor analysis.
@@ -169,11 +173,18 @@ lang TrellisCudaConstantDefs = TrellisCudaCompileBase + TrellisTypeCardinality
       , cudaIntMacroDef batchOverlapId env.opts.batchOverlap
       , cudaIntMacroDef numStatesId numStates
       , cudaIntMacroDef numObsId numObs
-      , cudaIntMacroDef numPredsId env.numPreds ]
+      , cudaIntMacroDef numPredsId (foldl addi 0 env.numPreds) ]
     in
     if env.precomputedPredecessors then
       let defPrecomputePredsId = nameNoSym "PRECOMPUTE_PREDECESSORS" in
-      snoc tops (cudaMacroDef defPrecomputePredsId "")
+      let extraDefs =
+        foldli
+          (lam acc. lam i. lam c.
+            let predsId = concat (nameGetStr numPredsId) (int2string i) in
+            snoc acc (cudaIntMacroDef (nameNoSym predsId) c))
+          [cudaMacroDef defPrecomputePredsId ""] env.numPreds
+      in
+      concat tops extraDefs
     else tops
 
   sem computeMaxPredecessors : [Set Int] -> [ConstraintRepr] -> Int
@@ -194,6 +205,9 @@ lang TrellisCudaModelMacros = TrellisCudaCompileBase + TrellisCudaPrettyPrint
                                    -> [CuTop]
   sem generateModelMacroDefinitions env syntheticTables =
   | model ->
+    let predTableId = lam i. lam .
+      concat "pt" (int2string i)
+    in
     let paramsStr =
       let s = mapFoldWithKey addTableParameter "" model.tables in
       let synTableTypes =
@@ -204,14 +218,16 @@ lang TrellisCudaModelMacros = TrellisCudaCompileBase + TrellisCudaPrettyPrint
       in
       let s = mapFoldWithKey addTableParameter s synTableTypes in
       if env.precomputedPredecessors then
-        concat s ", state_t *predecessor_table"
+        let predTableIds = mapi predTableId env.numPreds in
+        join [s, ", ", strJoin ", " (map (concat "const state_t *") predTableIds)]
       else s
     in
     let argsStr =
       let args = join [mapKeys model.tables, mapKeys syntheticTables] in
       let s = strJoin ", " (map nameGetStr args) in
       if env.precomputedPredecessors then
-        concat s ", predecessor_table"
+        let predTableIds = mapi predTableId env.numPreds in
+        join [s, ", ", strJoin ", " predTableIds]
       else s
     in
     [ cudaMacroDef hmmDeclParamsId paramsStr
@@ -357,8 +373,6 @@ lang TrellisCudaProbabilityFunction =
     let initFun = generateProbabilityFunction initProbFunId initParams init.cases in
     let outParams = [(stateTy, out.x), (obsTy, out.o)] in
     let outFun = generateProbabilityFunction outProbFunId outParams out.cases in
-    let transParams = [(stateTy, trans.x), (stateTy, trans.y)] in
-    let transFun = generateProbabilityFunction transProbFunId transParams trans.cases in
 
     -- NOTE(larshum, 2024-04-26): We generate a separate transition probability
     -- function containing the body of each case so we can refer to them
@@ -367,12 +381,12 @@ lang TrellisCudaProbabilityFunction =
     match unzip (map (generateTransitionCaseProbabilityFunction transParams) trans.cases)
     with (funNames, transFuns) in
     let env = {env with transFunNames = funNames} in
-    (env, concat [initFun, outFun, transFun] transFuns)
+    (env, concat [initFun, outFun] transFuns)
 
   sem generateTransitionCaseProbabilityFunction : [(CType, Name)] -> Case -> (Name, CuTop)
   sem generateTransitionCaseProbabilityFunction params =
   | {cond = _, body = body} ->
-    let id = nameSym "transp" in
+    let id = nameSym "transp_fun" in
     let singleCase = {cond = SAll {info = cinfo}, body = body} in
     (id, generateProbabilityFunction id params [singleCase])
 
@@ -655,20 +669,41 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
   sem generatePredecessorFunctions : CuCompileEnv -> [CuTop]
   sem generatePredecessorFunctions =
   | env ->
-    -- Convert the constraint representation to another intermediate
-    -- representation which abstractly represents how we need to compute the
-    -- value of each component of a predecessor.
-    let transitionCases =
-      mapi (lam i. lam c.
-        let id = get env.transFunNames i in
-        toTransitionCase env id c)
-        env.constraints
-    in
-
-    -- Group together transition cases based on the result of our earlier
-    -- analysis.
     let groups =
-      map (lam g. map (get transitionCases) (setToSeq g)) env.constraintGroups
+      if env.precomputedPredecessors then
+        -- If we are precomputing the predecessors, we still store the
+        -- identifier of the transition probability function of each case. The
+        -- other parts are unused, so we give them default values.
+        let i = NoInfo () in
+        let emptyRepr = {
+          state = [0], x = mapEmpty subi, y = mapEmpty subi, info = i
+        } in
+        let emptyExpr =
+          EInt {i = 0, ty = TInt {bounds = None (), info = i}, info = i}
+        in
+        map
+          (lam id.
+            [{ toStateCond = emptyExpr
+             , predecessorExpr = emptyExpr
+             , predecessorComponents = []
+             , probFunName = id
+             , constraints = emptyRepr }])
+          env.transFunNames
+      else
+        -- Convert the constraint representation to another intermediate
+        -- representation which abstractly represents how we need to compute the
+        -- value of each component of a predecessor.
+        let transitionCases =
+          mapi
+            (lam i. lam c.
+              let id = get env.transFunNames i in
+              toTransitionCase env id c)
+            env.constraints
+        in
+
+        -- Group together transition cases based on the result of our earlier
+        -- analysis.
+        map (lam g. map (get transitionCases) (setToSeq g)) env.constraintGroups
     in
 
     -- Generate CUDA code for each algorithm, considering each group of cases
@@ -716,7 +751,12 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
             (bop (COAdd ()) (var pidx) (CEInt {i = 1})) }
       ]
     } in
-    let stmts = map (generatePredecessorsCases env forwardCode) caseGroups in
+    let stmts =
+      if env.precomputedPredecessors then
+        mapi (lookupPredecessorsCase env forwardCode) caseGroups
+      else
+        map (generatePredecessorsCases env forwardCode) caseGroups
+    in
     let top = CTFun {
       ret = CTyInt (), id = forwProbPredsFunId, params = params,
       body = join [[
@@ -782,7 +822,12 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
           els = [] }
       ]
     } in
-    let stmts = map (generatePredecessorsCases env viterbiCode) caseGroups in
+    let stmts =
+      if env.precomputedPredecessors then
+        mapi (lookupPredecessorsCase env viterbiCode) caseGroups
+      else
+        map (generatePredecessorsCases env viterbiCode) caseGroups
+    in
     let top = CTFun {
       ret = CTyVoid (), id = viterbiMaxPredsFunId, params = params,
       body = concat [
@@ -795,6 +840,54 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
       ] stmts
     } in
     { annotations = [CuADevice ()], top = top }
+
+  -- Generates a statement looking up the predecessors of the provided case in
+  -- a table provided at runtime by the Python wrapper.
+  sem lookupPredecessorsCase : CuCompileEnv -> CStmt -> Int -> [TransitionCase] -> CStmt
+  sem lookupPredecessorsCase env tailStmt idx =
+  | [{probFunName = probFunId}] ->
+    let stateTy = CTyVar {id = stateTyId} in
+    let tablePtrId = nameNoSym (concat "pt" (int2string idx)) in
+    let id = nameSym "i" in
+    -- NOTE(larshum, 2024-05-29): We represent a non-existent predecessor
+    -- with a state value beyond the upper bound (NUM_STATES or greater) in
+    -- the predecessor lookup tables.
+    let innerStmts = CSComp {stmts = [
+      -- pred = <table>[i * NUM_STATES + state];
+      CSExpr {expr =
+        bop (COAssign ()) (var predId)
+          (bop (COSubScript ()) (var tablePtrId)
+            (bop (COAdd ())
+              (bop (COMul ()) (var id) (var numStatesId))
+              (var stateId)))},
+      -- if (pred < NUM_STATES)
+      CSIf {
+        cond = bop (COLt ()) (var predId) (var numStatesId),
+        thn = [
+          -- p = <transp_fun>(pred, state, HMM_CALL_ARGS);
+          CSExpr {expr =
+            bop (COAssign ()) (var probId)
+              (CEApp {
+                fun = probFunId,
+                args = [var predId, var stateId, var hmmCallArgsId]})},
+          tailStmt
+        ],
+        els = [] }
+    ]} in
+    let upperBoundId = concat (nameGetStr numPredsId) (int2string idx) in
+    CSComp {stmts = [
+      CSDef {
+        ty = CTyVar {id = stateTyId}, id = Some id,
+        init = Some (CIExpr {expr = CEInt {i = 0}}) },
+      CSWhile {
+        cond = bop (COLt ()) (var id) (var (nameNoSym upperBoundId)),
+        body = [
+          innerStmts,
+          CSExpr {expr =
+            bop (COAssign ()) (var id) (bop (COAdd ()) (var id) (CEInt {i = 1})) }
+        ]}
+    ]}
+  | _ -> error "Invalid argument of lookupPredecessorsCase"
 
   -- Generates a statement computing the predecessors of all provided cases. If
   -- only one case is provided, we insert the tail statement inside the code
@@ -1010,7 +1103,7 @@ lang TrellisCudaComputePredecessors =
   TrellisCudaCompileTypeDefs + TrellisCudaProbabilityFunction +
   TrellisCudaPrettyPrint
 
-  sem computePredecessors : CuCompileEnv -> TModel -> Int
+  sem computePredecessors : CuCompileEnv -> TModel -> [Int]
   sem computePredecessors env =
   | model ->
     -- Read the template implementation for the predecessor computation.
@@ -1019,7 +1112,7 @@ lang TrellisCudaComputePredecessors =
     -- Generate code for the header, where we define a customized transition
     -- probability function and the minimal amount of declarations needed for
     -- computing the maximum number of predecessors.
-    let header = generateHeaderCode env model in
+    let header = generatePredecessorHeaderCode env model in
 
     -- Pretty-print the header and combine it with the pre-defined skeleton
     -- code.
@@ -1028,12 +1121,21 @@ lang TrellisCudaComputePredecessors =
     -- Construct the required program files and run it to compute the
     -- predecessors, store them in a file, and finally, return the maximum
     -- number of predecessors.
-    let tempDir = buildProgram program in
-    runProgram env.opts tempDir model
+    let tempDir = buildPredecessorProgram program in
+    runPredecessorProgram env.opts tempDir model
 
-  sem generateHeaderCode : CuCompileEnv -> TModel -> CuProgram
-  sem generateHeaderCode env =
+  sem generatePredecessorHeaderCode : CuCompileEnv -> TModel -> CuProgram
+  sem generatePredecessorHeaderCode env =
   | model ->
+    -- NOTE(larshum, 2024-05-29): Inform users early about a limitation in the
+    -- current implementation of the predecessor computation.
+    (if geqi (cardinalityType model.stateType) (slli 1 32) then
+      error (join [
+        "Trellis does not yet support precomputing predecessors of models ",
+        "with 2^32 states or more."
+      ])
+    else ());
+
     -- Generate the minimal amount of declarations needed for the predecessor
     -- computation.
     let numStatesDef =
@@ -1051,9 +1153,10 @@ lang TrellisCudaComputePredecessors =
     -- in the transition probability function was taken or if it went through
     -- to the default value.
     let zModel = modelWithZeroTransitionBodies model in
-    let transp = generateTransitionProbabilityFunction zModel in
+    match generateTransProbFunCases zModel with (funNames, transFuns) in
+    let isPredecessorFun = generateIsPredecessorFun funNames in
 
-    {tops = join [tyDefs, [numStatesDef, hmmDeclParams, transp]]}
+    {tops = join [tyDefs, [numStatesDef, hmmDeclParams], transFuns, [isPredecessorFun]]}
 
   sem modelWithZeroTransitionBodies : TModel -> TModel
   sem modelWithZeroTransitionBodies =
@@ -1066,38 +1169,78 @@ lang TrellisCudaComputePredecessors =
     in
     {model with transition = {t with cases = map setCaseBodyToZero t.cases}}
 
-  sem generateTransitionProbabilityFunction : TModel -> CuTop
-  sem generateTransitionProbabilityFunction =
-  | model & ({transition = t}) ->
-    let stateTy = CTyVar {id = stateTyId} in
+  -- Generate a custom transition probability function for each case, where the
+  -- return value is zero if the given source state is a predecessor of the
+  -- given target state, and one otherwise (floating-point values).
+  sem generateTransProbFunCases : TModel -> ([Name], [CuTop])
+  sem generateTransProbFunCases =
+  | model & {transition = t} ->
+    let stateTy = CTyVar {id = uint32} in
     let transParams = [(stateTy, t.x), (stateTy, t.y)] in
-    generateProbabilityFunction transProbFunId transParams t.cases
+    let bound = setOfSeq nameCmp [t.x, t.y] in
+    let generateFunctionCase = lam c.
+      let id = nameSym "transp_fun" in
+      let baseStmt = CSRet {val = Some (CEFloat {f = 1.0})} in
+      let body = generateProbabilityFunctionBody bound baseStmt c in
+      let top = CTFun {
+        ret = CTyVar {id = probTyId}, id = id, params = transParams, body = [body]
+      } in
+      (id, {annotations = [CuADevice ()], top = top})
+    in
+    unzip (map generateFunctionCase t.cases)
 
-  sem buildProgram : String -> String
-  sem buildProgram =
+  sem generateIsPredecessorFun : [Name] -> CuTop
+  sem generateIsPredecessorFun =
+  | transpNames ->
+    let srcId = nameSym "src" in
+    let dstId = nameSym "dst" in
+    let iId = nameSym "i" in
+    let transpApp = lam id.
+      CEApp {fun = id, args = [CEVar {id = srcId}, CEVar {id = dstId}]}
+    in
+    let body =
+      foldli
+        (lam acc. lam i. lam id.
+          CSIf {
+            cond = bop (COEq ()) (var iId) (CEInt {i = i}),
+            thn = [CSRet {val = Some (bop (COEq ()) (transpApp id) (CEFloat {f = 0.0}))}],
+            els = [acc] })
+        (CSRet {val = Some (CEInt {i = 0})}) transpNames
+    in
+    let stateTy = CTyVar {id = uint32} in
+    let top = CTFun {
+      ret = CTyInt (), id = nameNoSym "is_predecessor",
+      params = [(stateTy, srcId), (stateTy, dstId), (CTyInt (), iId)],
+      body = [body]
+    } in
+    {annotations = [CuADevice ()], top = top}
+
+  sem buildPredecessorProgram : String -> String
+  sem buildPredecessorProgram =
   | cuCode ->
     let tempDir = sysTempDirMake () in
-
     -- Write the complete CUDA program to a file.
     let srcPath = join [tempDir, "/preds.cu"] in
     writeFile srcPath cuCode;
-
     tempDir
 
-  sem runProgram : TrellisOptions -> String -> TModel -> Int
-  sem runProgram options tempDir =
+  sem runPredecessorProgram : TrellisOptions -> String -> TModel -> [Int]
+  sem runPredecessorProgram options tempDir =
   | model ->
     let nstates = int2string (cardinalityType model.stateType) in
+    let ncases = int2string (length model.transition.cases) in
     let pythonRunner = concat trellisSrcLoc "skeleton/pred-run.py" in
     let r =
-      sysRunCommand ["python3", pythonRunner, nstates] "" tempDir
+      sysRunCommand ["python3", pythonRunner, nstates, ncases] "" tempDir
     in
     if eqi r.returncode 0 then
-      let predsSrc = join [tempDir, "/predecessors.npy"] in
-      let predsDst = join [options.outputDir, "/predecessors.npy"] in
-      sysMoveFile predsSrc predsDst;
+      let predsSrc = join [tempDir, "/pred*.npy"] in
+      let predsDstDir = options.outputDir in
+      sysMoveFile predsSrc predsDstDir;
       sysDeleteDir tempDir;
-      string2int (strTrim r.stdout)
+      map
+        (lam s. string2int (strTrim s))
+        (strSplit "\n" (strTrim r.stdout))
     else
       let msg = join [
         "Internal error: Failed when pre-computing the predecessors\n",
@@ -1105,15 +1248,6 @@ lang TrellisCudaComputePredecessors =
         "  stderr: ", r.stderr
       ] in
       error msg
-
-  sem numpyType : Int -> String
-  sem numpyType =
-  | bitwidth ->
-    if lti bitwidth 8 then "u1"
-    else if lti bitwidth 16 then "u2"
-    else if lti bitwidth 32 then "u4"
-    else if lti bitwidth 64 then "u8"
-    else error "Bitwise representation of state requires at least 64 bits"
 end
 
 lang TrellisCudaCompile =
@@ -1135,7 +1269,7 @@ lang TrellisCudaCompile =
   | optRepr ->
     let env : CuCompileEnv = {
       constraints = [], constraintGroups = [], transFunNames = [],
-      tables = model.tables, opts = options, numPreds = 0,
+      tables = model.tables, opts = options, numPreds = [],
       stateType = extractStateComponentTypes model.stateType,
       precomputedPredecessors = optionIsNone optRepr
     } in
@@ -1150,7 +1284,7 @@ lang TrellisCudaCompile =
 
         -- Compute the maximum number of predecessors based on how the constraints
         -- were grouped.
-        {env with numPreds = computeMaxPredecessors env.constraintGroups env.constraints}
+        {env with numPreds = [computeMaxPredecessors env.constraintGroups env.constraints]}
       else
         env
     in
@@ -1188,12 +1322,10 @@ lang TrellisCudaCompile =
     match generateProbabilityFunctions env model.initial model.output model.transition
     with (env, probFunDefs) in
 
-    if env.precomputedPredecessors then
-      (env, {tops = join [tyDefs, constDefs, modelMacroDefs, probFunDefs]})
-    else
-      -- Generates algorithm-specific functions for the Forward and Viterbi
-      -- algorithms that make use of our detailed knowledge of predecessors.
-      let predFunDefs = generatePredecessorFunctions env in
+    -- Generates algorithm-specific functions for the Forward and Viterbi
+    -- algorithms, either using the predecessor analysis results or by
+    -- performing lookups in arrays if precomputing the predecessors.
+    let predFunDefs = generatePredecessorFunctions env in
 
-      (env, {tops = join [tyDefs, constDefs, modelMacroDefs, probFunDefs, predFunDefs]})
+    (env, {tops = join [tyDefs, constDefs, modelMacroDefs, probFunDefs, predFunDefs]})
 end

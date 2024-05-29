@@ -94,11 +94,6 @@ class HMM:
         result_sz = num_instances * np.dtype(self.prob_type).itemsize
         err, cu_result = cuda.cuMemAllocAsync(result_sz, 0)
         cuda_check(err)
-        if self.precompute_predecessors:
-            itemsz = np.dtype(self.prob_type).itemsize
-            probs_table_sz = num_instances * self.num_states * self.num_preds * itemsz
-            err, probs_table = cuda.cuMemAllocAsync(probs_table_sz, 0)
-            cuda_check(err)
 
         # Perform the Forward algorithm using the CUDA kernels
         tpb = 256
@@ -124,8 +119,6 @@ class HMM:
                 np.array([int(alpha_dst)], dtype=np.uint64),
                 np.array(t, dtype=np.int32),
             ]
-            if self.precompute_predecessors:
-                args = args + [np.array(int(probs_table))]
             args = args + self.table_ptrs
             self.run_kernel(forward_step, blockdim, threaddim, 0, args)
             alpha_src, alpha_dst = alpha_dst, alpha_src
@@ -158,9 +151,6 @@ class HMM:
         cuda_check(err)
         err, = cuda.cuMemFreeAsync(cu_result, 0)
         cuda_check(err)
-        if self.precompute_predecessors:
-            err, = cuda.cuMemFreeAsync(probs_table, 0)
-            cuda_check(err)
 
         err, = cuda.cuCtxSynchronize()
         cuda_check(err)
