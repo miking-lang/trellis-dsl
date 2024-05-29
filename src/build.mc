@@ -218,10 +218,6 @@ lang TrellisGeneratePython =
     join ["args['", nameGetStr table, "']"]
   | ETableAccess {table = table, args = [a]} ->
     join ["args['", nameGetStr table, "'][", exprToPythonString a, "]"]
-  | EIf t ->
-    join [
-      exprToPythonString t.thn, " if ", exprToPythonString t.cond, " else ",
-      exprToPythonString t.els ]
   | EBinOp (t & {op = OAdd _ | OSub _ | OMul _ | ODiv _}) ->
     arithOpToPythonString t
   | EBinOp t ->

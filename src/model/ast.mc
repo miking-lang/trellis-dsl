@@ -84,8 +84,11 @@ lang TrellisModelExprAst = TrellisModelTypeAst
   | EProb {p : Float, ty : TType, info : Info}
   | ESlice {target : TExpr, lo : Int, hi : Int, ty : TType, info : Info}
   | ETableAccess {table : Name, args : [TExpr], ty : TType, info : Info}
-  | EIf {cond : TExpr, thn : TExpr, els : TExpr, ty : TType, info : Info}
+  | EUnOp {op : UOp, target : TExpr, ty : TType, info : Info}
   | EBinOp {op : BOp, lhs : TExpr, rhs : TExpr, ty : TType, info : Info}
+
+  syn UOp =
+  | ONot ()
 
   syn BOp =
   | OAdd ()
@@ -110,7 +113,7 @@ lang TrellisModelExprAst = TrellisModelTypeAst
   | EProb t -> t.info
   | ESlice t -> t.info
   | ETableAccess t -> t.info
-  | EIf t -> t.info
+  | EUnOp t -> t.info
   | EBinOp t -> t.info
 
   sem tyTExpr : TExpr -> TType
@@ -121,7 +124,7 @@ lang TrellisModelExprAst = TrellisModelTypeAst
   | EProb t -> t.ty
   | ESlice t -> t.ty
   | ETableAccess t -> t.ty
-  | EIf t -> t.ty
+  | EUnOp t -> t.ty
   | EBinOp t -> t.ty
 
   sem withTyTExpr : TType -> TExpr -> TExpr
@@ -132,7 +135,7 @@ lang TrellisModelExprAst = TrellisModelTypeAst
   | EProb t -> EProb {t with ty = ty}
   | ESlice t -> ESlice {t with ty = ty}
   | ETableAccess t -> ETableAccess {t with ty = ty}
-  | EIf t -> EIf {t with ty = ty}
+  | EUnOp t -> EUnOp {t with ty = ty}
   | EBinOp t -> EBinOp {t with ty = ty}
 
   sem smapAccumLTExprTExpr : all a. (a -> TExpr -> (a, TExpr)) -> a -> TExpr -> (a, TExpr)
@@ -147,11 +150,9 @@ lang TrellisModelExprAst = TrellisModelTypeAst
   | ETableAccess t ->
     match mapAccumL f acc t.args with (acc, args) in
     (acc, ETableAccess {t with args = args})
-  | EIf t ->
-    match f acc t.cond with (acc, cond) in
-    match f acc t.thn with (acc, thn) in
-    match f acc t.els with (acc, els) in
-    (acc, EIf {t with cond = cond, thn = thn, els = els})
+  | EUnOp t ->
+    match f acc t.target with (acc, target) in
+    (acc, EUnOp {t with target = target})
   | EBinOp t ->
     match f acc t.lhs with (acc, lhs) in
     match f acc t.rhs with (acc, rhs) in

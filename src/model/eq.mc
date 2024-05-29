@@ -73,11 +73,9 @@ lang TrellisModelExprEq = TrellisModelExprAst + TrellisModelTypeEq
     if nameEq l.table r.table then
       allEqual (lam t. eqExpr options t.0 t.1) l.args r.args
     else false
-  | (EIf l, EIf r) ->
-    if eqExpr options l.cond r.cond then
-      if eqExpr options l.thn r.thn then
-        eqExpr options l.els r.els
-      else false
+  | (EUnOp l, EUnOp r) ->
+    if eqUnOp l.op r.op then
+      eqExpr options l.target r.target
     else false
   | (EBinOp l, EBinOp r) ->
     if eqBinOp l.op r.op then
@@ -86,6 +84,10 @@ lang TrellisModelExprEq = TrellisModelExprAst + TrellisModelTypeEq
       else false
     else false
   | _ -> false
+
+  sem eqUnOp : UOp -> UOp -> Bool
+  sem eqUnOp lhs =
+  | rhs -> eqi (constructorTag lhs) (constructorTag rhs)
 
   sem eqBinOp : BOp -> BOp -> Bool
   sem eqBinOp lhs =
@@ -289,30 +291,22 @@ utest eqExpr o2 e15 e16 with false in
 utest eqExpr o e16 e17 with false in
 utest e16 with e17 using eqExpr o2 else ppExprs in
 
-let e18 = EIf {cond = e1, thn = e6, els = e8, ty = ty2, info = i} in
-let e19 = EIf {cond = e2, thn = e6, els = e8, ty = ty2, info = i} in
-let e20 = EIf {cond = e1, thn = e7, els = e8, ty = ty2, info = i} in
-let e21 = EIf {cond = e2, thn = e8, els = e6, ty = ty2, info = i} in
+let e18 = EUnOp {op = ONot (), target = e1, ty = ty1, info = i} in
+let e19 = EUnOp {op = ONot (), target = e2, ty = ty1, info = i} in
 utest e18 with e18 using eqExpr o else ppExprs in
 utest e19 with e19 using eqExpr o else ppExprs in
+utest eqExpr o e18 e19 with false in
+
+let e20 = EBinOp {op = OAdd (), lhs = e7, rhs = e7, ty = ty2, info = i} in
+let e21 = EBinOp {op = OSub (), lhs = e7, rhs = e7, ty = ty2, info = i} in
+let e22 = EBinOp {op = OAdd (), lhs = e6, rhs = e7, ty = ty2, info = i} in
 utest e20 with e20 using eqExpr o else ppExprs in
 utest e21 with e21 using eqExpr o else ppExprs in
-utest eqExpr o e18 e19 with false in
-utest eqExpr o e18 e20 with false in
-utest eqExpr o e19 e20 with false in
-utest eqExpr o e18 e21 with false in
-utest e18 with e20 using eqExpr o2 else ppExprs in
-
-let e22 = EBinOp {op = OAdd (), lhs = e7, rhs = e7, ty = ty2, info = i} in
-let e23 = EBinOp {op = OSub (), lhs = e7, rhs = e7, ty = ty2, info = i} in
-let e24 = EBinOp {op = OAdd (), lhs = e6, rhs = e7, ty = ty2, info = i} in
 utest e22 with e22 using eqExpr o else ppExprs in
-utest e23 with e23 using eqExpr o else ppExprs in
-utest e24 with e24 using eqExpr o else ppExprs in
-utest eqExpr o e22 e23 with false in
-utest eqExpr o e22 e24 with false in
-utest eqExpr o e23 e24 with false in
-utest e22 with e24 using eqExpr o2 else ppExprs in
+utest eqExpr o e20 e21 with false in
+utest eqExpr o e20 e22 with false in
+utest eqExpr o e21 e22 with false in
+utest e20 with e22 using eqExpr o2 else ppExprs in
 
 -- Sets
 let x = nameNoSym "x" in

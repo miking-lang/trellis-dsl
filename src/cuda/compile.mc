@@ -272,11 +272,9 @@ lang TrellisCudaCompileExpr = TrellisCudaCompileBase + TrellisModelTypePrettyPri
       rhs = cudaCompileTrellisExpr bound arg }
   | ETableAccess {args = [_, _] ++ _, info = info} ->
     errorSingle [info] "Internal error: Expected table access to have zero or one arguments after transformations"
-  | EIf {cond = cond, thn = thn, els = els} ->
-    CETernary {
-      cond = cudaCompileTrellisExpr bound cond,
-      thn = cudaCompileTrellisExpr bound thn,
-      els = cudaCompileTrellisExpr bound els }
+  | EUnOp {op = ONot _, target = target} ->
+    let cond = cudaCompileTrellisExpr bound target in
+    CETernary {cond = cond, thn = CEInt {i = 0}, els = CEInt {i = 1}}
   | EBinOp ({op = OAdd _ | OSub _ | OMul _ | ODiv _ | OMod _} & t) ->
     compileArithmeticOperation bound t
   | EBinOp t ->

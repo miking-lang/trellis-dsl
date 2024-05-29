@@ -81,7 +81,6 @@ lang TrellisModelReplaceNonTrivialBody = TrellisModelAst
     match t.args with [] then false
     else match t.args with [a] then dependsOnBoundVariables boundVars a
     else errorSingle [t.info] "Internal error: Found multi-dimensional table"
-  | EIf t -> any (dependsOnBoundVariables boundVars) [t.cond, t.thn, t.els]
   | EBinOp t ->
     let f = dependsOnBoundVariables boundVars in
     or (f t.lhs) (f t.rhs)
@@ -123,15 +122,5 @@ utest dependsOnBoundVariables b1 e3 with false in
 utest dependsOnBoundVariables b2 e3 with false in
 utest dependsOnBoundVariables b3 e3 with true in
 utest dependsOnBoundVariables b4 e3 with true in
-
-let bool = lam b. EBool {b = b, ty = ty, info = NoInfo ()} in
-let e4 = EIf {
-  cond = bool true, thn = bool false, els = bool true, ty = ty, info = NoInfo ()
-} in
-utest dependsOnBoundVariables b1 e4 with false in
-utest dependsOnBoundVariables b2 e4 with false in
-utest dependsOnBoundVariables b3 e4 with false in
-utest dependsOnBoundVariables b4 e4 with false in
-
 
 ()

@@ -45,15 +45,17 @@ lang TrellisModelExprPrettyPrint =
     match pprintVarName env table with (env, table) in
     match mapAccumL pprintTrellisExpr env args with (env, args) in
     (env, join [table, "(", strJoin ", " args, ")"])
-  | EIf {cond = cond, thn = thn, els = els} ->
-    match pprintTrellisExpr env cond with (env, cond) in
-    match pprintTrellisExpr env thn with (env, thn) in
-    match pprintTrellisExpr env els with (env, els) in
-    (env, join ["if ", cond, " then ", thn, " else ", els])
+  | EUnOp {op = op, target = target} ->
+    match pprintTrellisExpr env target with (env, target) in
+    (env, join ["(", pprintUnOp op, " ", target, ")"])
   | EBinOp {op = op, lhs = lhs, rhs = rhs} ->
     match pprintTrellisExpr env lhs with (env, lhs) in
     match pprintTrellisExpr env rhs with (env, rhs) in
     (env, join ["(", lhs, " ", pprintBinOp op, " ", rhs, ")"])
+
+  sem pprintUnOp : UOp -> String
+  sem pprintUnOp =
+  | ONot _ -> "!"
 
   sem pprintBinOp : BOp -> String
   sem pprintBinOp =

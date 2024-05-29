@@ -43,11 +43,6 @@ lang TrellisExprPrettyPrint = TrellisPrettyPrintBase
     match pprintTrellisExpr env left with (env, left) in
     match mapAccumL pprintTrellisExpr env e with (env, e) in
     (env, join [left, "(", strJoin ", " e, ")"])
-  | IfTrellisExpr {c = c, thn = thn, right = right} ->
-    match pprintTrellisExpr env c with (env, c) in
-    match pprintTrellisExpr env thn with (env, thn) in
-    match pprintTrellisExpr env right with (env, right) in
-    (env, join ["if ", c, " then ", thn, " else ", right])
   | AddTrellisExpr {left = left, right = right} ->
     pprintOp env left right "+"
   | SubTrellisExpr {left = left, right = right} ->
@@ -410,29 +405,24 @@ let arithExpr = AddTrellisExpr {
       left = VarTrellisExpr {id = {i = i, v = y}, info = i},
       idx = {i = i, v = 2}, info = i
     },
-    right = IfTrellisExpr {
-      c = EqTrellisExpr {
-        left = TrueTrellisExpr {info = i},
-        right = OrTrellisExpr {
-          left = FalseTrellisExpr {info = i},
-          right = LeqTrellisExpr {
-            left = VarTrellisExpr {id = {i = i, v = x}, info = i},
-            right = IntTrellisExpr {i = {i = i, v = 2}, info = i},
-            info = i
-          },
+    right = EqTrellisExpr {
+      left = TrueTrellisExpr {info = i},
+      right = OrTrellisExpr {
+        left = FalseTrellisExpr {info = i},
+        right = LeqTrellisExpr {
+          left = VarTrellisExpr {id = {i = i, v = x}, info = i},
+          right = IntTrellisExpr {i = {i = i, v = 2}, info = i},
           info = i
         },
         info = i
       },
-      thn = IntTrellisExpr {i = {i = i, v = 1}, info = i},
-      right = IntTrellisExpr {i = {i = i, v = 2}, info = i},
       info = i
     },
     info = i
   },
   info = i
 } in
-utest pprintExpr arithExpr with "((x * 5) + (y[2] - if (true == (false || (x <= 2))) then 1 else 2))" using eqString else ppStrings in
+utest pprintExpr arithExpr with "((x * 5) + (y[2] - (true == (false || (x <= 2)))))" using eqString else ppStrings in
 
 -- Sets
 let pprintSet = lam s.

@@ -139,7 +139,6 @@ prod Int : TrellisExpr = i:Integer
 prod Prob : TrellisExpr = p:Probability
 postfix Proj : TrellisExpr = "[" idx:Integer "]"
 postfix TableAccess : TrellisExpr = "(" (e:TrellisExpr ("," e:TrellisExpr)*)? ")"
-prefix If : TrellisExpr = "if" c:TrellisExpr "then" thn:TrellisExpr "else"
 infix left Add : TrellisExpr = "+"
 infix left Sub : TrellisExpr = "-"
 infix left Mul : TrellisExpr = "*"
@@ -159,7 +158,6 @@ precedence {
   Add Sub;
   ~ Eq Neq Lt Gt Leq Geq;
   And Or;
-  If;
 } except {
   Mul ? Div;
   And ? Or;
@@ -167,7 +165,7 @@ precedence {
 
 precedence {
   ~ Proj TableAccess;
-  ~ If And Or;
+  ~ And Or;
 } except {
-  Proj TableAccess ? If And Or;
+  Proj TableAccess ? And Or;
 }

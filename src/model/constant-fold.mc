@@ -10,23 +10,28 @@ include "pprint.mc"
 include "../trellis-common.mc"
 
 lang TrellisConstantFoldExpr = TrellisModelAst + TrellisEncode
-  type OpRec = {lhs : TExpr, rhs : TExpr, op : BOp, ty : TType, info : Info}
+  type UnOpRec = {op : UOp, target : TExpr, ty : TType, info : Info}
+  type BinOpRec = {lhs : TExpr, rhs : TExpr, op : BOp, ty : TType, info : Info}
 
   sem constantFold : TExpr -> TExpr
   sem constantFold =
-  | EIf t ->
-    let cond = constantFold t.cond in
-    let thn = constantFold t.thn in
-    let els = constantFold t.els in
-    match cond with EBool {b = b} then
-      if b then thn else els
-    else
-      EIf {t with cond = cond, thn = thn, els = els}
-  | EBinOp t -> constantFoldOperation t
+  | EUnOp t -> constantFoldUnaryOperation t
+  | EBinOp t -> constantFoldBinaryOperation t
   | e -> smapTExprTExpr constantFold e
 
-  sem constantFoldOperation : OpRec -> TExpr
-  sem constantFoldOperation =
+  sem constantFoldUnaryOperation : UnOpRec -> TExpr
+  sem constantFoldUnaryOperation =
+  | t ->
+    let target = constantFold t.target in
+    switch t.op
+    case ONot _ then
+      match target with EBool tt then
+        EBool {tt with b = not tt.b}
+      else EUnOp {t with target = target}
+    end
+
+  sem constantFoldBinaryOperation : BinOpRec -> TExpr
+  sem constantFoldBinaryOperation =
   | t ->
     let lhs = constantFold t.lhs in
     let rhs = constantFold t.rhs in
@@ -38,7 +43,7 @@ lang TrellisConstantFoldExpr = TrellisModelAst + TrellisEncode
     case OAnd _ | OOr _ then
       constantFoldBooleanOperation t (lhs, rhs)
     case _ then
-      EBinOp t
+      EBinOp {t with lhs = lhs, rhs = rhs}
     end
 
   -- NOTE(larshum, 2024-04-22): In our lifting of constant values, we return
@@ -75,7 +80,7 @@ lang TrellisConstantFoldExpr = TrellisModelAst + TrellisEncode
     and (onlyPerformsAddSub lhs) (onlyPerformsAddSub rhs)
   | _ -> false
 
-  sem constantFoldArithmeticOperation : OpRec -> (TExpr, TExpr) -> TExpr
+  sem constantFoldArithmeticOperation : BinOpRec -> (TExpr, TExpr) -> TExpr
   sem constantFoldArithmeticOperation t =
   | (EInt {i = li}, EInt {i = ri}) ->
     EInt {i = intOperation t.op li ri, ty = t.ty, info = t.info}
@@ -108,7 +113,7 @@ lang TrellisConstantFoldExpr = TrellisModelAst + TrellisEncode
   | ODiv _ -> lam. lam l. lam r. exp (subf (log l) (log r))
   | OMod _ -> lam i. errorSingle [i] "Modulo not supported on probabilities"
 
-  sem constantFoldComparisonOperation : OpRec -> (TExpr, TExpr) -> TExpr
+  sem constantFoldComparisonOperation : BinOpRec -> (TExpr, TExpr) -> TExpr
   sem constantFoldComparisonOperation t =
   | (lhs, rhs) ->
     let intExpr = lam n.
@@ -141,7 +146,7 @@ lang TrellisConstantFoldExpr = TrellisModelAst + TrellisEncode
       constantFoldBooleanOperation t (lhs, rhs)
     else constantFoldBooleanOperation t (lhs, rhs)
 
-  sem constantFoldBooleanOperation : OpRec -> (TExpr, TExpr) -> TExpr
+  sem constantFoldBooleanOperation : BinOpRec -> (TExpr, TExpr) -> TExpr
   sem constantFoldBooleanOperation t =
   | (EBool {b = lb}, EBool {b = rb}) ->
     EBool {b = boolOperation t.op lb rb, ty = t.ty, info = t.info}
@@ -233,14 +238,14 @@ let bop = lam o. lam l. lam r. lam ty.
 in
 
 -- Booleans
-let ifexpr = lam c. lam t. lam e.
-  EIf {cond = c, thn = t, els = e, ty = tbool, info = i}
+let notexpr = lam b.
+  EUnOp {op = ONot (), target = b, ty = tbool, info = i}
 in
 utest constantFold (bool false) with bool false using eqExpr else ppExprs in
 utest constantFold (bool true) with bool true using eqExpr else ppExprs in
-utest constantFold (ifexpr (bool false) (int 1) (int 2)) with int 2
+utest constantFold (notexpr (bool false)) with bool true
 using eqExpr else ppExprs in
-utest constantFold (ifexpr (bool true) (int 1) (int 2)) with int 1
+utest constantFold (notexpr (bool true)) with bool false
 using eqExpr else ppExprs in
 
 utest constantFold (bop (OEq ()) (bool true) (bool true) tbool) with bool true

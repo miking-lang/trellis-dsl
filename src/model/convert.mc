@@ -75,17 +75,6 @@ lang TrellisModelConvertExpr =
         else errorSingle [info] "Table has invalid type"
       else errorSingle [info] "Could not find type of table"
     else errorSingle [info] "Table access must use a valid table name"
-  | IfTrellisExpr {c = c, thn = thn, right = right, info = info} ->
-    let cond = convertTrellisExpr tyEnv c in
-    let thn = convertTrellisExpr tyEnv thn in
-    let els = convertTrellisExpr tyEnv right in
-    match checkTType (tyTExpr cond) (TBool {info = info}) with Some _ then
-      match checkTType (tyTExpr thn) (tyTExpr els) with Some ty then
-        let thn = withTyTExpr ty thn in
-        let els = withTyTExpr ty els in
-        EIf {cond = cond, thn = thn, els = els, ty = ty, info = info}
-      else errorSingle [info] "Mismatching types of conditional branches"
-    else errorSingle [info] "Condition has non-boolean type"
   | AddTrellisExpr {left = left, right = right, info = info} ->
     buildOverloadedBinOp tyEnv left right info (OAdd ())
   | SubTrellisExpr {left = left, right = right, info = info} ->
@@ -274,13 +263,10 @@ lang TrellisModelConvertSet = TrellisModelConvertExpr
       (binds, snoc constraints target)
     else errorSingle [info] "Boolean pattern type mismatch"
   | FalsePTrellisPat {info = info} ->
-    let boolExpr = lam b.
-      EBool {b = b, ty = TBool {info = info}, info = info}
-    in
     match tyTExpr target with TBool _ then
-      let c = EIf {
-        cond = target, thn = boolExpr false, els = boolExpr true,
-        ty = TBool {info = info}, info = info
+      let c = EUnOp {
+        op = ONot (), target = target, ty = TBool {info = info},
+        info = info
       } in
       (binds, snoc constraints c)
     else errorSingle [info] "Boolean pattern type mismatch"
