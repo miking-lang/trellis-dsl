@@ -5,9 +5,10 @@ import math
 # We always observe exactly two or exactly three walls
 outp = [ [0.0, 1.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [0.0, 1.0] ]
 
-tables = {
-    'outp' : np.log(np.array(outp)),
-}
+with np.errstate(divide='ignore'):
+    tables = {
+        'outp' : np.log(np.array(outp)),
+    }
 
 # Observations represent the number of walls we see at a particular state of
 # a corridor, and it is deterministic.
