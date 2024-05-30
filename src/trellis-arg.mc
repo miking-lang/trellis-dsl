@@ -7,15 +7,25 @@ let defaultStr = lam defaultOptStr. lam msg.
 
 type TrellisOptions = {
   help : Bool,
+
+  -- Configuration of batching used in the Viterbi algorithm.
   batchSize : Int,
   batchOverlap : Int,
+
+  -- Options for trade-offs between performance and accuracy.
   useDoublePrecisionFloats : Bool,
-  skipPredecessors : Bool,
+  useFastMath : Bool,
+
+  -- Controlling the predecessor analysis and whether to precompute the
+  -- predecessors instead.
   warnPredecessorAnalysis : Bool,
   errorPredecessorAnalysis : Bool,
   forcePrecomputePredecessors : Bool,
+
+  -- Debug parameters.
   printParse : Bool,
   printModel : Bool,
+
   outputDir : String
 }
 
@@ -24,7 +34,7 @@ let trellisDefaultOptions = {
   batchSize = 1024,
   batchOverlap = 128,
   useDoublePrecisionFloats = false,
-  skipPredecessors = false,
+  useFastMath = false,
   warnPredecessorAnalysis = false,
   errorPredecessorAnalysis = false,
   forcePrecomputePredecessors = false,
@@ -60,9 +70,14 @@ let config = [
       let o = p.options in {o with batchOverlap = argToIntMin p 0}),
   ([("--use-double-precision", "", "")],
     defaultStr (bool2string trellisDefaultOptions.useDoublePrecisionFloats)
-      "Use double-precision floating point numbers.",
+      "Use double-precision (64-bit) floating point numbers.",
     lam p.
       let o = p.options in {o with useDoublePrecisionFloats = true}),
+  ([("--use-fast-math", "", "")],
+    defaultStr (bool2string trellisDefaultOptions.useFastMath)
+      "Compiles the CUDA code with the '--use_fast_math' flag, to improve performance at the cost of losing accuracy.",
+    lam p.
+      let o = p.options in {o with useFastMath = true}),
   ([("--warn-predecessor-analysis", "", "")],
     defaultStr (bool2string trellisDefaultOptions.warnPredecessorAnalysis)
       "If enabled, the compiler warns if the predecessor analysis fails and prints the reason(s) why.",

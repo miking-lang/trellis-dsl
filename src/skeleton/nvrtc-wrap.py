@@ -21,6 +21,8 @@ class HMM:
         cuda_check(err)
 
         opts = [b"-default-device", b"-lineinfo"]
+        if self.use_fast_math:
+            opts = opts + [b"-use_fast_math"]
         err, = nvrtc.nvrtcCompileProgram(prog, len(opts), opts)
         cuda_check(err)
 

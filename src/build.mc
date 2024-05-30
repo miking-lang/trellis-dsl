@@ -24,6 +24,11 @@ lang TrellisGeneratePython =
     else if lti n 64 then "np.uint64"
     else errorSingle [infoTTy ty] "Type bitwidth too large for a 64-bit value"
 
+  sem pythonBool : Bool -> String
+  sem pythonBool =
+  | true -> "True"
+  | false -> "False"
+
   sem generatePythonWrapper : TrellisOptions -> Map Name TExpr -> TModel
                            -> CuCompileEnv -> String
   sem generatePythonWrapper options syntheticTables model =
@@ -35,10 +40,7 @@ lang TrellisGeneratePython =
       if options.useDoublePrecisionFloats then "np.float64"
       else "np.float32"
     in
-    let precompPred =
-      if env.precomputedPredecessors then "True"
-      else "False"
-    in
+    let precompPred = pythonBool env.precomputedPredecessors in
     strJoin "\n" [
       join [indent 1, "def __init__(self, args):"],
       join [indent 2, "self.precompute_predecessors = ", precompPred],
@@ -46,6 +48,7 @@ lang TrellisGeneratePython =
       join [indent 2, "self.num_preds = ", int2string (foldl addi 0 env.numPreds)],
       join [indent 2, "self.batch_size = ", int2string options.batchSize],
       join [indent 2, "self.batch_overlap = ", int2string options.batchOverlap],
+      join [indent 2, "self.use_fast_math = ", pythonBool options.useFastMath],
       join [indent 2, "self.state_type = ", pyStateType],
       join [indent 2, "self.prob_type = ", pyProbType],
       join [indent 2, "self.obs_type = ", pyObsType],
