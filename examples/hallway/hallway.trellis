@@ -20,7 +20,7 @@ model {
   -- state is unchanged (in these cases, the probability of staying is 0.75).
   P(transition x y) = {
     | { a -> b | a == b, a == 1 || a == 5 } => 0.75
-    | { a -> b | a == b } => 0.5
+    | { a -> b | a == b, a != 1, a != 5 } => 0.5
     | { a -> b | a == b-1 || a == b+1 } => 0.25
   }
 }
