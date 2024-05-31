@@ -457,7 +457,7 @@ lang TrellisCudaCompileTransitionCase =
     -- A conditional expression determining whether this case is applicable for
     -- a given to-state. This is computed based on the constraints on the
     -- components of the to-state.
-    toStateCond : TExpr,
+    targetStateCond : TExpr,
 
     -- The encoded representation of the predecessor as an integer.
     predecessorExpr : TExpr,
@@ -489,7 +489,7 @@ lang TrellisCudaCompileTransitionCase =
       joinAdd 1 (map encodeStateOperationsExpr (foldl mergeSubsequentOperations [] exprs))
     in
     match predecessorCondition env repr with (exprs, components) in
-    { toStateCond = combineTransitionConds (transitionCondition env repr)
+    { targetStateCond = combineTransitionConds (transitionCondition env repr)
     , predecessorExpr = combinePredecessorConds exprs
     , predecessorComponents = components
     , probFunName = id
@@ -681,7 +681,7 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
         in
         map
           (lam id.
-            [{ toStateCond = emptyExpr
+            [{ targetStateCond = emptyExpr
              , predecessorExpr = emptyExpr
              , predecessorComponents = []
              , probFunName = id
@@ -912,7 +912,7 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
 
   sem generatePredecessorCase : CuCompileEnv -> CStmt -> TransitionCase -> CStmt
   sem generatePredecessorCase env tailStmt =
-  | { toStateCond = toStateCond, predecessorExpr = predecessorExpr
+  | { targetStateCond = targetStateCond, predecessorExpr = predecessorExpr
      , predecessorComponents = comps, probFunName = probFunId } ->
     let bound =
       setOfSeq nameCmp (concat [stateId, predId] (map (lam c. c.id) comps))
@@ -931,10 +931,10 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
       tailStmt
     ]} in
     let stmt = foldl (generatePredecessorComponent env) innerStmts comps in
-    match toStateCond with EBool {b = true} then stmt
+    match targetStateCond with EBool {b = true} then stmt
     else
       CSIf {
-        cond = cudaCompileTrellisExpr bound toStateCond,
+        cond = cudaCompileTrellisExpr bound targetStateCond,
         thn = [stmt], els = [] }
 
   -- Generates code for initializing a particular component, and ensuring that
@@ -997,7 +997,7 @@ lang TrellisGroupConstraints = TrellisModelPredecessorAnalysis
           foldli
             (lam g. lam j. lam c2.
               if gti i j then
-                addEdgeIfDisjointToStateConstraints g (i, c1) (j, c2)
+                addEdgeIfDisjointTargetStateConstraints g (i, c1) (j, c2)
               else
                 g)
             g env.constraints)
@@ -1061,7 +1061,7 @@ lang TrellisGroupConstraints = TrellisModelPredecessorAnalysis
       -- merging cases that produce exactly one predecessor, as other cases
       -- would require some kind of unrolling.
       if any (lam x. gti (countPredecessors x) 1) c then acc else
-      switch result.consume (checkCoversAllToStates c)
+      switch result.consume (checkCoversAllTargetStates c)
       case (_, Right true) then
         ( setSubtract remainingVertices cliqueSet
         , cons cliqueSet constraintGroups )
@@ -1077,12 +1077,12 @@ lang TrellisGroupConstraints = TrellisModelPredecessorAnalysis
       end
     else acc
 
-  sem addEdgeIfDisjointToStateConstraints
+  sem addEdgeIfDisjointTargetStateConstraints
     : Graph Int () -> (Int, ConstraintRepr) -> (Int, ConstraintRepr) -> Graph Int ()
-  sem addEdgeIfDisjointToStateConstraints g x =
+  sem addEdgeIfDisjointTargetStateConstraints g x =
   | (j, c2) ->
     match x with (i, c1) in
-    switch result.consume (disjointToStateConstraints c1 c2)
+    switch result.consume (disjointTargetStateConstraints c1 c2)
     case (_, Right true) then
       graphAddEdge i j () g
     case (_, Right false) then g

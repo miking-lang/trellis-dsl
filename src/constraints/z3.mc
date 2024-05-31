@@ -6,162 +6,118 @@ include "result.mc"
 include "sys.mc"
 
 include "repr.mc"
+include "../z3.mc"
 
-lang TrellisConstraintPrintZ3 = TrellisSetConstraintRepr
-  -- Print the declaration and inherent constraints from types for each state
-  -- with the given prefix.
-  sem z3InherentConstraints : [Int] -> String -> String
-  sem z3InherentConstraints stateBounds =
+lang TrellisConstraintToZ3 = TrellisSetConstraintRepr + TrellisZ3Ast
+  -- Declares the components of each component of a state and asserts the
+  -- bounds on its value based on the size of each component.
+  sem z3ImplicitConstraints : [Int] -> String -> Z3Program
+  sem z3ImplicitConstraints stateBounds =
   | prefix ->
     let n = length stateBounds in
+    let var = lam i. concat prefix (int2string i) in
 
     -- Declare the state components as constants in Z3.
-    let declConst = lam prefix. lam i.
-      let var = concat prefix (int2string i) in
-      join ["(declare-const ", var, " Int)"]
-    in
+    let declConst = lam i. ZDConst {id = var i, ty = ZTInt ()} in
 
-    -- Add assertions based on the inherent constraints imposed on each
-    -- component of the state based on its type.
-    let lowerBoundAssert = lam prefix. lam i.
-      let var = concat prefix (int2string i) in
-      join ["(assert (>= ", var, " 0))"]
+    -- Add assertions based on the bounds of each component based on the type.
+    let lowerBoundAssert = lam i.
+      ZDAssert {e = ZEBinOp {
+        op = ZBGe (), lhs = ZEVar {id = var i}, rhs = ZEInt {i = 0} }}
     in
-    let upperBoundAssert = lam prefix. lam i.
-      let var = concat prefix (int2string i) in
-      let ub = int2string (get stateBounds i) in
-      join ["(assert (< ", var, " ", ub, "))"]
+    let upperBoundAssert = lam i.
+      let ub = get stateBounds i in
+      ZDAssert {e = ZEBinOp {
+        op = ZBLt (), lhs = ZEVar {id = var i}, rhs = ZEInt {i = ub} }}
     in
-    let boundAsserts = lam prefix. lam i.
-      [lowerBoundAssert prefix i, upperBoundAssert prefix i]
+    let boundAsserts = lam i.
+      [lowerBoundAssert i, upperBoundAssert i]
     in
-    strJoin "\n"
-      (join [create n (declConst prefix), join (create n (boundAsserts prefix))])
+    join [create n declConst, join (create n boundAsserts)]
 
-  -- Produces a sequence of string representing Z3 expressions corresponding to
-  -- the provided predecessor constraints.
-  sem z3ComponentConstraints : Map Int (Set PredConstraint) -> String -> [String]
+  -- Produces a sequence of Z3 expressions representing the given predecessor
+  -- constraints.
+  sem z3ComponentConstraints : Map Int (Set PredConstraint) -> String -> [Z3Expr]
   sem z3ComponentConstraints compConstraints =
   | prefix ->
-    let toZ3Constraint = lam idx. lam c.
-      let var = concat prefix (int2string idx) in
+    let toZ3Constraint = lam i. lam c.
+      let var = ZEVar {id = concat prefix (int2string i)} in
       map (constraintToZ3Expression var) (setToSeq c)
     in
     join (mapValues (mapMapWithKey toZ3Constraint compConstraints))
 
-  sem constraintToZ3Expression : String -> PredConstraint -> String
+  sem constraintToZ3Expression : Z3Expr -> PredConstraint -> Z3Expr
   sem constraintToZ3Expression lhs =
-  | EqNum (n, _) -> join ["(= ", lhs, " ", int2string n, ")"]
-  | NeqNum (n, _) -> join ["(not (= ", lhs, " ", int2string n, "))"]
+  | EqNum (n, _) ->
+    ZEBinOp {op = ZBEq (), lhs = lhs, rhs = ZEInt {i = n}}
+  | NeqNum (n, _) ->
+    ZEUnOp {
+      op = ZUNot (),
+      target = ZEBinOp {op = ZBEq (), lhs = lhs, rhs = ZEInt {i = n}}}
   | EqYPlusNum (yidx, n, _) ->
-    let rhsVar = concat "y" (int2string yidx) in
-    join ["(= ", lhs, " (+ ", rhsVar, " ", int2string n, "))"]
+    let rhsVar = ZEVar {id = concat "y" (int2string yidx)} in
+    ZEBinOp {
+      op = ZBEq (), lhs = lhs,
+      rhs = ZEBinOp {op = ZBAdd (), lhs = rhsVar, rhs = ZEInt {i = n}}}
 
-  sem z3And : String -> String -> String
-  sem z3And l =
-  | r -> join ["(and ", l, " ", r, ")"]
+  sem z3And : Z3Expr -> Z3Expr -> Z3Expr
+  sem z3And lhs =
+  | rhs -> ZEBinOp {op = ZBAnd (), lhs = lhs, rhs = rhs}
 
-  -- Converts the given set constraints in the Trellis model to a
-  -- satisfiability problem in Z3. This problem has a solution iff the set
-  -- constraint is non-empty.
-  sem printZ3NonEmpty : ConstraintRepr -> String
-  sem printZ3NonEmpty =
+  -- Converts the given set constraint to a satisfiability problem in Z3,
+  -- which is satisfiable when the constraint is non-empty.
+  sem z3NonEmptyProblem : ConstraintRepr -> Z3Program
+  sem z3NonEmptyProblem =
   | {state = state, x = x, y = y} ->
-    -- Declare the state component types and introduce their inherent
+    -- Declare the state component types and introduce their implicit
     -- constraints based on their types.
-    let x1 = z3InherentConstraints state "x" in
-    let y1 = z3InherentConstraints state "y" in
+    let x1 = z3ImplicitConstraints state "x" in
+    let y1 = z3ImplicitConstraints state "y" in
 
-    -- Convert the explicit constraints imposed on the components of the states
-    -- in the provided constraint representation. We assert that the
-    -- conjunction of these holds. This is true when there exists at least one
-    -- pair of states in the set described by the provided constraints (i.e.,
-    -- the formula is satisfiable iff the set is non-empty).
+    -- Convert the explicit constraints to an Z3 assertion that the conjunction
+    -- of these formulas hold.
     let x2 = z3ComponentConstraints x "x" in
     let y2 = z3ComponentConstraints y "y" in
     let c = concat x2 y2 in
-    let assert =
-      if null c then ""
-      else join ["(assert ", foldl1 z3And c, ")"]
+    let assertExpr =
+      if null c then ZETrue ()
+      else foldl1 z3And c
     in
+    let assertion = ZDAssert {e = assertExpr} in
+    join [x1, y1, [assertion, ZDCheckSat ()]]
 
-    -- Build a string from all the above.
-    strJoin "\n" [x1, y1, assert, "(check-sat)"]
-
-  -- Converts the given sequence of constraints to a satisfiability problem in
-  -- Z3 which has a satisfying solution if there is a to-state not included in
-  -- any of the given constraint representations.
-  sem printZ3DoesNotCoverAllToStates : [ConstraintRepr] -> String
-  sem printZ3DoesNotCoverAllToStates =
+  -- Converts the given set constraints to a satisfiability problem in Z3,
+  -- which is satisfiable when there exists a target state not included in any
+  -- of the given set constraint representations.
+  sem z3DoesNotCoverAllTargetStatesProblem : [ConstraintRepr] -> Z3Program
+  sem z3DoesNotCoverAllTargetStatesProblem =
   | ([{state = state}] ++ _) & constraintsSeq ->
-    -- Add the inherent constraints on the to-state components.
-    let inherent= z3InherentConstraints state "y" in
+    let base = z3ImplicitConstraints state "y" in
 
-    -- Convert the explicit constraints on the to-state components of each
-    -- separate constraint instance to a sequence of Z3 expressions.
+    -- Convert the explicit constraints on the target state components of each
+    -- constraint instance to a Z3 program.
     let c = map (lam c. z3ComponentConstraints c.y "y") constraintsSeq in
 
-    -- Assert that none of the provided constraint instances hold (i.e., assert
-    -- the negation of their combined Z3 expressions). If Z3 can find a
-    -- to-state which is not included in any of the provided constraint
-    -- instances, this means they do not cover all to-states.
+    -- Assert that none of the constraint instances hold, and attempt to find a
+    -- target state for which this is true. If Z3 can find such a target state,
+    -- we know the given constraints do not cover all target states.
     let asserts =
       map
         (lam x.
-          -- NOTE(larshum, 2024-05-09): If we have no constraints for a
-          -- component, we add a false assertion since it implicitly includes
-          -- all possible to-states.
-          if null x then "(assert false)"
-          else join ["(assert (not ", foldl1 z3And x, "))"])
+          -- If a constraint representation has no constraints, this means it
+          -- includes all to states. In this case, we know there can be no such
+          -- state, so we assert false.
+          let assertExpr =
+            if null x then ZEFalse ()
+            else ZEUnOp {op = ZUNot (), target = foldl1 z3And x}
+          in
+          ZDAssert {e = assertExpr})
         c
     in
-
-    strJoin "\n" [inherent, strJoin "\n" asserts, "(check-sat)"]
+    join [base, asserts, [ZDCheckSat ()]]
 end
 
-lang TrellisConstraintZ3 = TrellisConstraintPrintZ3
-  syn Z3Error =
-  | UnknownOutput {program : String, stdout : String, stderr : String}
-  | NonZeroReturnCode {program : String, stdout : String, stderr : String, code : Int}
-
-  sem printZ3Error : Z3Error -> String
-  sem printZ3Error =
-  | UnknownOutput t ->
-    join [
-      "Received unknown output when running z3 on the following program:\n",
-      t.program, "\n\nstdout:", t.stdout, "\nstderr:\n", t.stderr ]
-  | NonZeroReturnCode t ->
-    join [
-      "Got return code ", int2string t.code, " from z3 on following program:\n",
-      t.program, "\n\nstdout:", t.stdout, "\nstderr:\n", t.stderr ]
-
-  sem eqZ3Error : Z3Error -> Z3Error -> Bool
-  sem eqZ3Error l =
-  | r ->
-    if eqi (constructorTag l) (constructorTag r) then
-      eqZ3ErrorH (l, r)
-    else false
-
-  sem eqZ3ErrorH : (Z3Error, Z3Error) -> Bool
-  sem eqZ3ErrorH =
-  | (UnknownOutput l, UnknownOutput r) ->
-    if eqString l.program r.program then
-      if eqString l.stdout r.stdout then
-        eqString l.stderr r.stderr
-      else false
-    else false
-  | (NonZeroReturnCode l, NonZeroReturnCode r) ->
-    if eqi l.code r.code then
-      if eqString l.program r.program then
-        if eqString l.stdout r.stdout then
-          eqString l.stderr r.stderr
-        else false
-      else false
-    else false
-
-  sem checkZ3Installed : () -> Bool
-  sem checkZ3Installed =
-  | _ -> sysCommandExists "z3"
+lang TrellisConstraintZ3 = TrellisConstraintToZ3 + TrellisZ3Run
 
   -- Checks whether the provided constraint representation describing a set of
   -- transitions between pairs of states is empty. We do this by having Z3 find
@@ -170,37 +126,14 @@ lang TrellisConstraintZ3 = TrellisConstraintPrintZ3
   sem checkEmpty : ConstraintRepr -> Result () Z3Error Bool
   sem checkEmpty =
   | constraints ->
-    let str = printZ3NonEmpty constraints in
-    runZ3Program str
+    result.map not (runZ3SatProgram (z3NonEmptyProblem constraints))
 
   -- Verifies that the given constraints cover all possible values of
-  -- to-states.
-  sem checkCoversAllToStates : [ConstraintRepr] -> Result () Z3Error Bool
-  sem checkCoversAllToStates =
+  -- target states.
+  sem checkCoversAllTargetStates : [ConstraintRepr] -> Result () Z3Error Bool
+  sem checkCoversAllTargetStates =
   | constraints ->
-    let str = printZ3DoesNotCoverAllToStates constraints in
-    runZ3Program str
-
-  sem runZ3Program : String -> Result () Z3Error Bool
-  sem runZ3Program =
-  | z3Program ->
-    let path = sysTempFileMake () in
-    writeFile path z3Program;
-    let r = sysRunCommand ["z3", path] "" "." in
-    deleteFile path;
-    if eqi r.returncode 0 then
-      switch strTrim r.stdout
-      case "sat" then result.ok false
-      case "unsat" then result.ok true
-      case _ then
-        result.err
-          (UnknownOutput {program = z3Program, stdout = r.stdout, stderr = r.stderr})
-      end
-    else
-      result.err (NonZeroReturnCode {
-        program = z3Program, stdout = r.stdout, stderr = r.stderr,
-        code = r.returncode
-      })
+    result.map not (runZ3SatProgram (z3DoesNotCoverAllTargetStatesProblem constraints))
 end
 
 mexpr
@@ -316,14 +249,14 @@ let q8 = {
 utest checkEmpty q8 with result.ok true using eqCheck in
 
 -- Tests for the to-state completeness check
-utest checkCoversAllToStates [q3] with result.ok true using eqCheck in
-utest checkCoversAllToStates [q4] with result.ok true using eqCheck in
-utest checkCoversAllToStates [q3, q4] with result.ok true using eqCheck in
-utest checkCoversAllToStates [q5] with result.ok false using eqCheck in
-utest checkCoversAllToStates [q4, q5] with result.ok true using eqCheck in
-utest checkCoversAllToStates [q6] with result.ok false using eqCheck in
-utest checkCoversAllToStates [q5, q6] with result.ok false using eqCheck in
-utest checkCoversAllToStates [q5, q6, q8] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [q3] with result.ok true using eqCheck in
+utest checkCoversAllTargetStates [q4] with result.ok true using eqCheck in
+utest checkCoversAllTargetStates [q3, q4] with result.ok true using eqCheck in
+utest checkCoversAllTargetStates [q5] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [q4, q5] with result.ok true using eqCheck in
+utest checkCoversAllTargetStates [q6] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [q5, q6] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [q5, q6, q8] with result.ok false using eqCheck in
 
 let a = {
   empty with y = mapFromSeq subi [(3, pc [eqn_ 15])]
@@ -334,13 +267,13 @@ let b = {
 let c = {
   empty with y = mapFromSeq subi [(3, pc [neqn_ 14, neqn_ 15])]
 } in
-utest checkCoversAllToStates [a] with result.ok false using eqCheck in
-utest checkCoversAllToStates [b] with result.ok false using eqCheck in
-utest checkCoversAllToStates [c] with result.ok false using eqCheck in
-utest checkCoversAllToStates [a, b] with result.ok false using eqCheck in
-utest checkCoversAllToStates [a, c] with result.ok false using eqCheck in
-utest checkCoversAllToStates [b, c] with result.ok false using eqCheck in
-utest checkCoversAllToStates [a, b, c] with result.ok true using eqCheck in
+utest checkCoversAllTargetStates [a] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [b] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [c] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [a, b] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [a, c] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [b, c] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [a, b, c] with result.ok true using eqCheck in
 
 let a = {
   empty with y = mapFromSeq subi [(0, pc [eqn_ 0])]
@@ -351,12 +284,12 @@ let b = {
 let c = {
   empty with y = mapFromSeq subi [(0, pc [neqn_ 0]), (1, pc [eqn_ 3])]
 } in
-utest checkCoversAllToStates [a] with result.ok false using eqCheck in
-utest checkCoversAllToStates [b] with result.ok false using eqCheck in
-utest checkCoversAllToStates [c] with result.ok false using eqCheck in
-utest checkCoversAllToStates [a, b] with result.ok false using eqCheck in
-utest checkCoversAllToStates [a, c] with result.ok false using eqCheck in
-utest checkCoversAllToStates [b, c] with result.ok false using eqCheck in
-utest checkCoversAllToStates [a, b, c] with result.ok true using eqCheck in
+utest checkCoversAllTargetStates [a] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [b] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [c] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [a, b] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [a, c] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [b, c] with result.ok false using eqCheck in
+utest checkCoversAllTargetStates [a, b, c] with result.ok true using eqCheck in
 
 ()

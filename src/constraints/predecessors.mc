@@ -50,9 +50,7 @@ lang TrellisConstraintZ3Analysis =
         result.withAnnotations (result.err (z3Error errs)) acc
       end
     in
-    if checkZ3Installed () then
-      foldli checkNonempty (result.ok setConstraints) setConstraints
-    else result.err (Z3FailError "Could not find command 'z3'")
+    foldli checkNonempty (result.ok setConstraints) setConstraints
 
   -- Verifies that all pairs of set constraints are disjoint from each other.
   -- This is a prerequisite for the CUDA code generation.
@@ -70,15 +68,13 @@ lang TrellisConstraintZ3Analysis =
         result.withAnnotations (result.err (z3Error errs)) acc
       end
     in
-    if checkZ3Installed () then
-      foldli
-        (lam acc. lam idx. lam c1.
-          let rhs = subsequence constraints (addi idx 1) (length constraints) in
-          foldl
-            (lam acc. lam c2. checkDisjoint acc c1 c2)
-            acc rhs)
-        (result.ok constraints) constraints
-    else result.err (Z3FailError "Could not find command 'z3'")
+    foldli
+      (lam acc. lam idx. lam c1.
+        let rhs = subsequence constraints (addi idx 1) (length constraints) in
+        foldl
+          (lam acc. lam c2. checkDisjoint acc c1 c2)
+          acc rhs)
+      (result.ok constraints) constraints
 
   -- Determines whether two given environments containing constraints are
   -- disjoint, i.e., if they describe set constraints with no transitions in
@@ -99,8 +95,8 @@ lang TrellisConstraintZ3Analysis =
 
   -- As above, but considers only the constraints imposed on the to-states,
   -- meaning we treat the from-state as if it had no constraints.
-  sem disjointToStateConstraints : ConstraintRepr -> ConstraintRepr -> Result () Z3Error Bool
-  sem disjointToStateConstraints lhs =
+  sem disjointTargetStateConstraints : ConstraintRepr -> ConstraintRepr -> Result () Z3Error Bool
+  sem disjointTargetStateConstraints lhs =
   | rhs ->
     let c = {
       state = lhs.state,
