@@ -5,6 +5,7 @@ include "result.mc"
 include "utest.mc"
 include "mexpr/info.mc"
 
+include "../trellis-common.mc"
 include "../model/ast.mc"
 include "../model/eq.mc"
 include "repr.mc"
@@ -16,14 +17,6 @@ lang TrellisModelCompileSetConstraintError
   | UnsupportedSet Info
   | UnsupportedCondition Info
   | UnsupportedEquality Info
-
-  sem printSection : Bool -> [Info] -> String -> String
-  sem printSection warning infos =
-  | msg ->
-    let section = {errorDefault with msg = msg, infos = infos} in
-    match errorMsg [section] {single = "", multi = ""} with (i, msg) in
-    if warning then infoWarningString i msg
-    else infoErrorString i msg
 
   sem printConstraintErrorMessage : Bool -> ConstraintError -> String
   sem printConstraintErrorMessage warning =

@@ -24,12 +24,19 @@ lang TrellisZ3Ast
   | ZUNot ()
 
   syn Z3BOp =
-  | ZBGe ()
-  | ZBLt ()
   | ZBAdd ()
   | ZBSub ()
+  | ZBMul ()
+  | ZBDiv ()
+  | ZBMod ()
   | ZBEq ()
+  | ZBNe ()
+  | ZBLt ()
+  | ZBGt ()
+  | ZBLe ()
+  | ZBGe ()
   | ZBAnd ()
+  | ZBOr ()
 end
 
 lang TrellisZ3PrettyPrint = TrellisZ3Ast
@@ -62,6 +69,11 @@ lang TrellisZ3PrettyPrint = TrellisZ3Ast
   | ZEVar {id = id} -> id
   | ZEUnOp {op = uop, target = target} ->
     printZ3Parentheses [printUnOp uop, printZ3Expr target]
+  | ZEBinOp {op = ZBNe _, lhs = lhs, rhs = rhs} ->
+    -- NOTE(larshum, 2024-05-31): Special case treatment for boolean negation,
+    -- where we wrap equality in a negation as Z3 does not, as far as I know,
+    -- have an inequality operator.
+    printZ3Parentheses ["not", printZ3Parentheses ["=", printZ3Expr lhs, printZ3Expr rhs]]
   | ZEBinOp {op = bop, lhs = lhs, rhs = rhs} ->
     printZ3Parentheses [printBinOp bop, printZ3Expr lhs, printZ3Expr rhs]
 
@@ -71,12 +83,18 @@ lang TrellisZ3PrettyPrint = TrellisZ3Ast
 
   sem printBinOp : Z3BOp -> String
   sem printBinOp =
-  | ZBGe _ -> ">="
-  | ZBLt _ -> "<"
   | ZBAdd _ -> "+"
   | ZBSub _ -> "-"
+  | ZBMul _ -> "*"
+  | ZBDiv _ -> "div"
+  | ZBMod _ -> "mod"
   | ZBEq _ -> "="
+  | ZBLt _ -> "<"
+  | ZBGt _ -> ">"
+  | ZBLe _ -> "<="
+  | ZBGe _ -> ">="
   | ZBAnd _ -> "and"
+  | ZBOr _ -> "or"
 end
 
 lang TrellisZ3Error
@@ -184,6 +202,7 @@ in
 -- Skip running the tests if Z3 is not found in the path.
 if not (checkZ3Installed ()) then () else
 
+-- Basic tests using the constructs defined in the Z3 AST.
 let p = [
   ZDConst {id = "x", ty = ZTInt ()},
   ZDAssert {e = bop (ZBEq ()) (var "x") (int 0)},
@@ -191,13 +210,40 @@ let p = [
 ] in
 utest p with result.ok true using eqCheck else ppProgram in
 
-let p2 = [
+let p = [
   ZDConst {id = "x", ty = ZTInt ()},
   ZDAssert {e = bop (ZBEq ()) (var "x") (int 0)},
   ZDAssert {e = bop (ZBEq ()) (var "x") (int 1)},
   ZDCheckSat ()
 ] in
-utest p2 with result.ok false using eqCheck else ppProgram in
+utest p with result.ok false using eqCheck else ppProgram in
+
+let p = [
+  ZDConst {id = "x", ty = ZTInt ()},
+  ZDConst {id = "y", ty = ZTInt ()},
+  ZDAssert {e = bop (ZBEq ()) (bop (ZBMod ()) (var "x") (int 3)) (var "y")},
+  ZDAssert {e = bop (ZBEq ()) (bop (ZBDiv ()) (var "y") (int 2)) (int 0)},
+  ZDCheckSat ()
+] in
+utest p with result.ok true using eqCheck else ppProgram in
+
+let p = [
+  ZDConst {id = "x", ty = ZTInt ()},
+  ZDConst {id = "y", ty = ZTInt ()},
+  ZDAssert {e = bop (ZBEq ()) (var "x") (bop (ZBDiv ()) (var "y") (int 2))},
+  ZDAssert {e = bop (ZBOr ()) (bop (ZBEq ()) (var "x") (int 0)) (bop (ZBEq ()) (var "x") (int 1))},
+  ZDCheckSat ()
+] in
+utest p with result.ok true using eqCheck else ppProgram in
+
+let p = [
+  ZDConst {id = "x", ty = ZTInt ()},
+  ZDConst {id = "y", ty = ZTInt ()},
+  ZDAssert {e = bop (ZBEq ()) (bop (ZBMul ()) (var "x") (int 1)) (var "x")},
+  ZDAssert {e = bop (ZBAnd ()) (bop (ZBLt ()) (var "x") (var "y")) (bop (ZBGt ()) (var "x") (var "y"))},
+  ZDCheckSat ()
+] in
+utest p with result.ok false using eqCheck else ppProgram in
 
 -- Examples based on tests for the 
 let baseTypeConstraints = [
@@ -236,8 +282,8 @@ let fst = [
   ZDAssert {e = bop (ZBEq ()) (var "x2") (var "y1")},
   ZDAssert {e = bop (ZBEq ()) (var "x3") (var "y2")}
 ] in
-let p3 = join [baseTypeConstraints, fst, checkSat] in
-utest p3 with result.ok true using eqCheck else ppProgram in
+let p = join [baseTypeConstraints, fst, checkSat] in
+utest p with result.ok true using eqCheck else ppProgram in
 
 let kmerEq = [
   ZDAssert {e = bop (ZBEq ()) (var "x1") (var "y1")},
@@ -250,53 +296,53 @@ let snd = [
   ZDAssert {e = bop (ZBEq ()) (var "x0") (int 15)},
   ZDAssert {e = bop (ZBEq ()) (var "y0") (int 15)}
 ] in
-let p4 = join [baseTypeConstraints, kmerEq, snd, checkSat] in
-utest p4 with result.ok true using eqCheck else ppProgram in
+let p = join [baseTypeConstraints, kmerEq, snd, checkSat] in
+utest p with result.ok true using eqCheck else ppProgram in
 
 -- { (n1, x1) -> (n2, x2) | x1 == x2, n1 == 15, n2 == 14 }
 let trd = [
   ZDAssert {e = bop (ZBEq ()) (var "x0") (int 15)},
   ZDAssert {e = bop (ZBEq ()) (var "y0") (int 14)}
 ] in
-let p5 = join [baseTypeConstraints, kmerEq, trd, checkSat] in
-utest p5 with result.ok true using eqCheck else ppProgram in
+let p = join [baseTypeConstraints, kmerEq, trd, checkSat] in
+utest p with result.ok true using eqCheck else ppProgram in
 
 -- { (n1, x1) -> (n2, x2) | x1 == x2, n2 == n1 - 1, n2 != 14 }
 let fth = [
   ZDAssert {e = bop (ZBEq ()) (var "y0") (bop (ZBSub ()) (var "x0") (int 1))},
   ZDAssert {e = uop (ZUNot ()) (bop (ZBEq ()) (var "y0") (int 14))}
 ] in
-let p6 = join [baseTypeConstraints, kmerEq, fth, checkSat] in
-utest p6 with result.ok true using eqCheck else ppProgram in
+let p = join [baseTypeConstraints, kmerEq, fth, checkSat] in
+utest p with result.ok true using eqCheck else ppProgram in
 
 -- Verifying that all constraints are pairwise disjoint.
 
-let p7 = join [baseTypeConstraints, fst, snd, checkSat] in
-utest p7 with result.ok false using eqCheck else ppProgram in
+let p = join [baseTypeConstraints, fst, snd, checkSat] in
+utest p with result.ok false using eqCheck else ppProgram in
 
-let p8 = join [baseTypeConstraints, fst, trd, checkSat] in
-utest p8 with result.ok false using eqCheck else ppProgram in
+let p = join [baseTypeConstraints, fst, trd, checkSat] in
+utest p with result.ok false using eqCheck else ppProgram in
 
-let p9 = join [baseTypeConstraints, fst, fth, checkSat] in
-utest p9 with result.ok false using eqCheck else ppProgram in
+let p = join [baseTypeConstraints, fst, fth, checkSat] in
+utest p with result.ok false using eqCheck else ppProgram in
 
-let p10 = join [baseTypeConstraints, snd, trd, checkSat] in
-utest p10 with result.ok false using eqCheck else ppProgram in
+let p = join [baseTypeConstraints, snd, trd, checkSat] in
+utest p with result.ok false using eqCheck else ppProgram in
 
-let p11 = join [baseTypeConstraints, snd, fth, checkSat] in
-utest p11 with result.ok false using eqCheck else ppProgram in
+let p = join [baseTypeConstraints, snd, fth, checkSat] in
+utest p with result.ok false using eqCheck else ppProgram in
 
-let p12 = join [baseTypeConstraints, trd, fth, checkSat] in
-utest p12 with result.ok false using eqCheck else ppProgram in
+let p = join [baseTypeConstraints, trd, fth, checkSat] in
+utest p with result.ok false using eqCheck else ppProgram in
 
 -- If we skip the 'n2 != 14' of the fourth set constraint, we find that the
 -- third and fourth cases are overlapping.
-let p13 = join [
+let p = join [
   baseTypeConstraints, trd, [
     ZDAssert {e = bop (ZBEq ()) (var "y0") (bop (ZBSub ()) (var "x0") (int 1))}
   ],
   checkSat
 ] in
-utest p13 with result.ok true using eqCheck else ppProgram in
+utest p with result.ok true using eqCheck else ppProgram in
 
 ()

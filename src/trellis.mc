@@ -8,6 +8,7 @@ include "model/convert.mc"
 include "model/pprint.mc"
 include "model/reduce-tables.mc"
 include "model/table-opt.mc"
+include "model/validate.mc"
 include "constraints/predecessors.mc"
 include "./cuda/compile.mc"
 include "./cuda/pprint.mc"
@@ -17,7 +18,8 @@ include "trellis-arg.mc"
 lang Trellis =
   TrellisAst + TrellisModelAst + TrellisModelConvert + TrellisConstantFold +
   TrellisReduceTableDimensionality + TrellisModelReplaceNonTrivialBody +
-  TrellisModelPredecessorAnalysis + TrellisCudaCompile + TrellisBuild
+  TrellisModelValidate + TrellisModelPredecessorAnalysis + TrellisCudaCompile +
+  TrellisBuild
 end
 
 mexpr
@@ -62,6 +64,11 @@ match result with ParseOK r then
     -- tables.
     match replaceNonTrivialBodiesInProbabilityFunctions modelAst
     with (tableEnv, modelAst) in
+
+    -- Validates the set constraints of the model by ensuring they all describe
+    -- non-empty sets and that they are all pairwise disjoint (within each
+    -- probability function).
+    validateModelSetConstraints modelAst;
 
     -- Produces an abstract representation of the predecessor constraints
     -- imposed by each case of the transition probability function. The result
