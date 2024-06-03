@@ -98,7 +98,7 @@ lang TrellisConstraintPropagation = TrellisModelCompileSetConstraint
   | EqYPlusNum (yidx, n, info) ->
     let upperBound = get state yidx in
     let invalidValues =
-      if lti n 0 then create n (lam i. i)
+      if lti n 0 then create (negi n) (lam i. i)
       else create n (lam i. subi (subi upperBound i) 1)
     in
     let ineqConstraints = map (lam n. NeqNum (n, info)) invalidValues in
@@ -161,5 +161,13 @@ let expected = {
   yconstr4 with y = mapFromSeq subi [(0, pc [neqn_ 1, neqn_ 3])]
 } in
 utest propagateConstraints yconstr4 with expected using eqConstraints else printConstraints in
+
+let yconstr5 = {
+  empty with x = mapFromSeq subi [(0, pc [eqypn_ 0 -1])]
+} in
+let expected = {
+  yconstr5 with y = mapFromSeq subi [(0, pc [neqn_ 0])]
+} in
+utest propagateConstraints yconstr5 with expected using eqConstraints else printConstraints in
 
 ()
