@@ -3,8 +3,6 @@
 // GENERAL IMPLEMENTATIONS //
 /////////////////////////////
 
-const prob_t inf = 1.0 / 0.0;
-
 extern "C"
 __global__
 void forward_init(
@@ -20,12 +18,12 @@ void forward_init(
 }
 
 __device__
-prob_t log_sum_exp(const prob_t* probs) {
+prob_t log_sum_exp(const prob_t* probs, const prob_t neginf) {
   prob_t maxp = probs[0];
   for (int i = 1; i < NUM_PREDS; i++) {
     if (probs[i] > maxp) maxp = probs[i];
   }
-  if (maxp == -inf) return maxp;
+  if (maxp == neginf) return maxp;
   prob_t sum = 0.0;
   for (int i = 0; i < NUM_PREDS; i++) {
     sum += expf(probs[i] - maxp);
@@ -37,7 +35,7 @@ extern "C"
 __global__ void forward_step(
     const obs_t* __restrict__ obs, const int* __restrict__ obs_lens, int maxlen,
     const prob_t* __restrict__ alpha_prev, prob_t* __restrict__ alpha_curr,
-    int t, HMM_DECL_PARAMS) {
+    int t, const prob_t neginf, HMM_DECL_PARAMS) {
   state_t state = blockIdx.x * blockDim.x + threadIdx.x;
   unsigned int instance = blockIdx.y;
   if (state < NUM_STATES) {
@@ -46,8 +44,8 @@ __global__ void forward_step(
       obs_t x = obs[instance * maxlen + t];
       prob_t probs[NUM_PREDS];
       int pidx = forward_prob_predecessors(alpha_prev, instance, state, probs, HMM_CALL_ARGS);
-      while (pidx < NUM_PREDS) probs[pidx++] = -inf;
-      alpha_curr[idx] = log_sum_exp(probs) + output_prob(state, x, HMM_CALL_ARGS);
+      while (pidx < NUM_PREDS) probs[pidx++] = neginf;
+      alpha_curr[idx] = log_sum_exp(probs, neginf) + output_prob(state, x, HMM_CALL_ARGS);
     } else if (t == obs_lens[instance]) {
       // We only need to copy the alpha data once - past this point, both alpha
       // vectors will contain the same data.
@@ -81,7 +79,8 @@ void forward_max_warp_reduce(volatile prob_t *maxp, unsigned int tid) {
 extern "C"
 __global__
 void forward_max(
-    const prob_t* __restrict__ alpha, prob_t* __restrict__ result) {
+    const prob_t* __restrict__ alpha, prob_t* __restrict__ result,
+    const prob_t neginf) {
   unsigned int idx = threadIdx.x;
   unsigned int instance = blockIdx.x;
   unsigned int lo = instance * NUM_STATES;
@@ -90,7 +89,7 @@ void forward_max(
   if (idx < NUM_STATES) {
     maxp[idx] = alpha[lo + idx];
   } else {
-    maxp[idx] = -inf;
+    maxp[idx] = neginf;
   }
   for (int i = lo + idx + 512; i < lo + NUM_STATES; i += 512) {
     if (alpha[i] > maxp[idx]) {
@@ -191,7 +190,7 @@ __global__
 void viterbi_init_batch(
     const obs_t* __restrict__ obs, const int* __restrict__ obs_lens, int maxlen,
     const state_t* __restrict__ seq, prob_t* __restrict__ chi_zero, int t,
-    HMM_DECL_PARAMS) {
+    const prob_t neginf, HMM_DECL_PARAMS) {
   state_t state = blockIdx.x * blockDim.x + threadIdx.x;
   unsigned int instance = blockIdx.y;
   if (state < NUM_STATES) {
@@ -201,7 +200,7 @@ void viterbi_init_batch(
       if (state == last_state) {
         chi_zero[instance * NUM_STATES + state] = output_prob(state, x, HMM_CALL_ARGS);
       } else {
-        chi_zero[instance * NUM_STATES + state] = -inf;
+        chi_zero[instance * NUM_STATES + state] = neginf;
       }
     }
   }
@@ -212,7 +211,7 @@ __global__
 void viterbi_forward(
     const obs_t* __restrict__ obs, const int* __restrict__ obs_lens, int maxlen,
     prob_t* __restrict__ chi1, prob_t* __restrict__ chi2,
-    state_t* __restrict__ zeta, int t, int k, HMM_DECL_PARAMS) {
+    state_t* __restrict__ zeta, int t, int k, const prob_t neginf, HMM_DECL_PARAMS) {
   state_t state = blockIdx.x * blockDim.x + threadIdx.x;
   unsigned int instance = blockIdx.y;
   if (state < NUM_STATES) {
@@ -229,7 +228,7 @@ void viterbi_forward(
     if (t+k < obs_lens[instance]) {
       obs_t x = obs[instance * maxlen + t + k];
       state_t maxs;
-      prob_t maxp = -inf;
+      prob_t maxp = neginf;
       viterbi_max_predecessor(chi_prev, instance, state, &maxs, &maxp, HMM_CALL_ARGS);
       chi_curr[idx] = maxp + output_prob(state, x, HMM_CALL_ARGS);
       zeta[zeta_idx] = maxs;
@@ -278,7 +277,7 @@ extern "C"
 __global__
 void viterbi_backward(
     const prob_t* __restrict__ chi, const state_t* __restrict__ zeta,
-    state_t* __restrict__ out, int maxlen, int T) {
+    state_t* __restrict__ out, int maxlen, int T, const prob_t neginf) {
   size_t idx = threadIdx.x;
   size_t instance = blockIdx.x;
   size_t lo = instance * NUM_STATES;
@@ -289,7 +288,7 @@ void viterbi_backward(
   if (idx < NUM_STATES) {
     maxp[idx] = chi[lo + idx];
   } else {
-    maxp[idx] = -inf;
+    maxp[idx] = neginf;
   }
   for (int i = lo + idx + 512; i < lo + NUM_STATES; i += 512) {
     if (chi[i] > maxp[idx]) {

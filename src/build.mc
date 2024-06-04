@@ -52,6 +52,7 @@ lang TrellisGeneratePython =
       join [indent 2, "self.state_type = ", pyStateType],
       join [indent 2, "self.prob_type = ", pyProbType],
       join [indent 2, "self.obs_type = ", pyObsType],
+      join [indent 2, "self.neginf = np.array(-np.inf, dtype=self.prob_type)"],
       join [indent 2, "self.compile_cuda('hmm.cu')"],
       join [indent 2, "self.copy_args(args)"],
       "",

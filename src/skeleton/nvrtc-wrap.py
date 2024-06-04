@@ -120,6 +120,7 @@ class HMM:
                 np.array([int(alpha_src)], dtype=np.uint64),
                 np.array([int(alpha_dst)], dtype=np.uint64),
                 np.array(t, dtype=np.int32),
+                self.neginf,
             ]
             args = args + self.table_ptrs
             self.run_kernel(forward_step, blockdim, threaddim, 0, args)
@@ -130,7 +131,8 @@ class HMM:
         reduce_threaddim = (512, 1, 1)
         args = [
             np.array([int(alpha_src)], dtype=np.uint64),
-            np.array([int(cu_result)], dtype=np.uint64)
+            np.array([int(cu_result)], dtype=np.uint64),
+            self.neginf,
         ]
         self.run_kernel(forward_max, reduce_blockdim, reduce_threaddim, 0, args)
         args = [
@@ -250,6 +252,7 @@ class HMM:
                         np.array([int(cu_result)], dtype=np.uint64),
                         np.array([int(chi_src)], dtype=np.uint64),
                         np.array(t, dtype=np.int32),
+                        self.neginf,
                     ] + self.table_ptrs
                     self.run_kernel(viterbi_init_batch, blockdim, threaddim, 0, args)
 
@@ -263,6 +266,7 @@ class HMM:
                         np.array([int(zeta)], dtype=np.uint64),
                         t,
                         np.array(k, dtype=np.int32),
+                        self.neginf,
                     ] + self.table_ptrs
                     self.run_kernel(viterbi_forward, blockdim, threaddim, 0, args)
 
@@ -273,7 +277,8 @@ class HMM:
                     np.array([int(zeta)], dtype=np.uint64),
                     np.array([int(cu_result)], dtype=np.uint64),
                     maxlen,
-                    t
+                    t,
+                    self.neginf,
                 ]
                 self.run_kernel(viterbi_backward, backw_blockdim, backw_threaddim, 0, args)
 
