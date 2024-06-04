@@ -13,11 +13,11 @@ model {
   output = ObsType
 
   -- Declaration of tables containing data provided at runtime
-  table initialProb(Duration, Kmer) : Probability
-  table outputProb(ObsType, Kmer) : Probability
-  table trans1(Kmer, Nucleotide) : Probability
-  table trans2(Duration) : Probability
-  table gamma() : Probability
+  table initialProb(Duration, Kmer)
+  table outputProb(ObsType, Kmer)
+  table trans1(Kmer, Nucleotide)
+  table trans2(Duration)
+  table gamma()
 
   -- Definitions of the initial, output, and transition probability functions
   P(initial x) = initialProb(x[0], x[1])

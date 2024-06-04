@@ -652,9 +652,9 @@ lang TrellisModelConvert =
 
   sem extractTablesH : Map Name TType -> InModelDecl -> Map Name TType
   sem extractTablesH tables =
-  | TableInModelDecl {id = {v = id}, dim = dim, ty = ty, info = info} ->
+  | TableInModelDecl {id = {v = id}, dim = dim, info = info} ->
     let args = map convertTrellisType dim in
-    let ret = convertTrellisType ty in
+    let ret = TProb {info = info} in
     let tableTy = TTable {args = args, ret = ret, info = info} in
     mapInsert id tableTy tables
   | _ -> tables

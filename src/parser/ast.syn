@@ -69,7 +69,7 @@ prod StateProperty : InModelDecl = "state" "=" ty:TrellisType
 prod OutputProperty : InModelDecl = "output" "=" ty:TrellisType
 
 prod Table : InModelDecl =
-  "table" id:LName "(" (dim:TrellisType ("," dim:TrellisType)*)? ")" ":" ty:TrellisType
+  "table" id:LName "(" (dim:TrellisType ("," dim:TrellisType)*)? ")"
 
 prod ProbInModelDecl : InModelDecl =
   "P" "("

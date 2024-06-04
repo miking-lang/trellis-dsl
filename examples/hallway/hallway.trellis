@@ -7,7 +7,7 @@ model {
   state = HallwayState
   output = Obs
 
-  table outp(HallwayState, Obs) : Probability
+  table outp(HallwayState, Obs)
 
   -- We always start in state 3
   P(initial x) = {

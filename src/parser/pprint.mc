@@ -162,11 +162,10 @@ lang TrellisTableInModelDeclPrettyPrint =
   TrellisInModelDeclPrettyPrint + TrellisTypePrettyPrint
 
   sem pprintTrellisInModelDecl indent env =
-  | TableInModelDecl {id = {v = id}, dim = dim, ty = ty} ->
+  | TableInModelDecl {id = {v = id}, dim = dim} ->
     match pprintVarName env id with (env, id) in
     match mapAccumL pprintTrellisType env dim with (env, dim) in
-    match pprintTrellisType env ty with (env, ty) in
-    (env, join [pprintSpacing indent, "table ", id, "(", strJoin ", " dim, ") : ", ty])
+    (env, join [pprintSpacing indent, "table ", id, "(", strJoin ", " dim, ")"])
 end
 
 lang TrellisProbabilityInModelDeclPrettyPrint =

@@ -10,9 +10,9 @@ model {
   state = HealthState
   output = Obs
 
-  table initp(HealthState) : Probability
-  table outp(HealthState, Obs) : Probability
-  table transp(HealthState, HealthState) : Probability
+  table initp(HealthState)
+  table outp(HealthState, Obs)
+  table transp(HealthState, HealthState)
 
   P(initial x) = initp(x)
   P(output o | x) = outp(x, o)
