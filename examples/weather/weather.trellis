@@ -12,8 +12,8 @@ model {
   P(initial x) = 0.5
   P(output o | x) = outp(o, x)
   P(transition x y) = {
-    | @{Sunny -> Sunny}   => 0.75
-    | @{Sunny -> Rainy}   => 0.25
-    | {x -> y | x == Rainy} => 0.5
+    | {Sunny -> Sunny | true} => 0.75
+    | {Sunny -> Rainy | true} => 0.25
+    | {x -> y | x == Rainy}   => 0.5
   }
 }
