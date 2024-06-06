@@ -53,19 +53,8 @@ if use_gpu:
     model = model.cuda()
 model = build_model(model, initp, outp, transp)
 
-# Special-case when running kmer on GPU, because it cannot fit all data on the
-# GPU
-t = 0.0
-if model_path and use_gpu:
-    t0 = time.time()
-    p1 = forward(model, signals[:50])
-    p2 = forward(model, signals[50:])
-    t1 = time.time()
-    p = p1 + p2
-    t += t1-t0
-else:
-    t0 = time.time()
-    p = forward(model, signals)
-    t1 = time.time()
-    t = t1-t0
-print(t)
+t0 = time.time()
+p = forward(model, signals)
+t1 = time.time()
+print(t1-t0)
+sys.stderr.write(str(p))

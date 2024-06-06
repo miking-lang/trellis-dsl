@@ -28,3 +28,12 @@ t0 = time.time()
 output = hmm.viterbi(signals, bsz)
 t1 = time.time()
 print(t1-t0)
+
+outc = "ACGT"
+for i, signal in enumerate(output):
+    sys.stderr.write(f"Signal #{i+1}\n")
+    for s in signal:
+        if s // (4**k) == 0:
+            sys.stderr.write(outc[s % 4])
+    sys.stderr.write("\n")
+print(t1-t0)

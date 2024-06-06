@@ -24,4 +24,6 @@ if s.returncode == 0:
     print(m.group(1))
 else:
     print(f"Viterbicall failed: {s.stderr.decode()}")
+
+sys.stderr.write(s.stdout.decode())
 exit(s.returncode)

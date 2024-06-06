@@ -39,6 +39,7 @@ for i, s in enumerate(signals):
         t1 = time.time()
         t += t1-t0
 print(t)
+sys.stderr.write(str(p))
 
 # Explicitly delete zipHMM objects here to avoid error on exit
 del fwd
