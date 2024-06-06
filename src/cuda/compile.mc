@@ -34,7 +34,6 @@ let hmmCallArgsId = nameSym "HMM_CALL_ARGS"
 -- Identifiers of functions used by the pre-defined parts of the code.
 let initProbFunId = nameSym "init_prob"
 let outProbFunId = nameSym "output_prob"
-let transProbFunId = nameSym "transition_prob"
 let forwProbPredsFunId = nameSym "forward_prob_predecessors"
 let viterbiMaxPredsFunId = nameSym "viterbi_max_predecessor"
 
@@ -200,7 +199,9 @@ lang TrellisCudaConstantDefs = TrellisCudaCompileBase + TrellisTypeCardinality
     foldl addi 0 (map countMaxPredecessorsInGroup constraintGroups)
 end
 
-lang TrellisCudaModelMacros = TrellisCudaCompileBase + TrellisCudaPrettyPrint
+lang TrellisCudaModelMacros =
+  TrellisCudaCompileBase + TrellisCudaPrettyPrint + TrellisModelTypePrettyPrint
+
   sem generateModelMacroDefinitions : CuCompileEnv -> Map Name TExpr -> TModel
                                    -> [CuTop]
   sem generateModelMacroDefinitions env syntheticTables =
@@ -242,7 +243,10 @@ lang TrellisCudaModelMacros = TrellisCudaCompileBase + TrellisCudaPrettyPrint
     CTyConst {ty = CTyVar {id = probTyId}}
   | TTable {args = [_], ret = TProb _} ->
     CTyConst {ty = CTyPtr {ty = CTyVar {id = probTyId}}}
-  | ty -> error "Compilation of table type not supported"
+  | ty ->
+    let tyStr = pprintTrellisType ty in
+    let msg = join ["Encountered unsupported table type: ", tyStr] in
+    errorSingle [infoTTy ty] msg
 
   sem addTableParameter : String -> Name -> TType -> String
   sem addTableParameter acc tableId =
@@ -368,9 +372,9 @@ lang TrellisCudaProbabilityFunction =
     let stateTy = CTyVar {id = stateTyId} in
     let obsTy = CTyVar {id = obsTyId} in
     let initParams = [(stateTy, init.x)] in
-    let initFun = generateProbabilityFunction initProbFunId initParams init.cases in
+    let initFun = generateCaseProbabilityFunction initParams initProbFunId init.body in
     let outParams = [(stateTy, out.x), (obsTy, out.o)] in
-    let outFun = generateProbabilityFunction outProbFunId outParams out.cases in
+    let outFun = generateCaseProbabilityFunction outParams outProbFunId out.body in
 
     -- NOTE(larshum, 2024-04-26): We generate a separate transition probability
     -- function containing the body of each case so we can refer to them
@@ -381,14 +385,19 @@ lang TrellisCudaProbabilityFunction =
     let env = {env with transFunNames = funNames} in
     (env, concat [initFun, outFun] transFuns)
 
-  sem generateTransitionCaseProbabilityFunction : [(CType, Name)] -> Case -> (Name, CuTop)
+  sem generateTransitionCaseProbabilityFunction : [(CType, Name)] -> TCase -> (Name, CuTop)
   sem generateTransitionCaseProbabilityFunction params =
   | {cond = _, body = body} ->
-    let id = nameSym "transp_fun" in
-    let singleCase = {cond = SAll {info = cinfo}, body = body} in
-    (id, generateProbabilityFunction id params [singleCase])
+    let id = nameSym "transition_prob" in
+    (id, generateCaseProbabilityFunction params id body)
 
-  sem generateProbabilityFunction : Name -> [(CType, Name)] -> [Case] -> CuTop
+  sem generateCaseProbabilityFunction : [(CType, Name)] -> Name -> TExpr -> CuTop
+  sem generateCaseProbabilityFunction params id =
+  | body ->
+    let singleCase = {cond = SAll {info = cinfo}, body = body} in
+    generateProbabilityFunction id params [singleCase]
+
+  sem generateProbabilityFunction : Name -> [(CType, Name)] -> [TCase] -> CuTop
   sem generateProbabilityFunction id params =
   | cases ->
     let bound = setOfSeq nameCmp (map (lam p. p.1) params) in
@@ -405,7 +414,7 @@ lang TrellisCudaProbabilityFunction =
     } in
     {annotations = [CuADevice ()], top = top}
 
-  sem generateProbabilityFunctionBody : Set Name -> CStmt -> Case -> CStmt
+  sem generateProbabilityFunctionBody : Set Name -> CStmt -> TCase -> CStmt
   sem generateProbabilityFunctionBody bound acc =
   | {cond = cond, body = body} ->
     CSIf {
@@ -1159,7 +1168,7 @@ lang TrellisCudaComputePredecessors =
   sem modelWithZeroTransitionBodies : TModel -> TModel
   sem modelWithZeroTransitionBodies =
   | model & {transition = t} ->
-    let setCaseBodyToZero : Case -> Case = lam c.
+    let setCaseBodyToZero : TCase -> TCase = lam c.
       -- NOTE(larshum, 2024-05-12): Probabilities are represented in
       -- logarithmic scale. We use 1.0 here as it becomes zero in logscale.
       let i = infoTExpr c.body in

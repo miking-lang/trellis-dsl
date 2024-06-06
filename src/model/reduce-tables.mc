@@ -12,13 +12,13 @@ lang TrellisReduceTableDimensionality = TrellisModelAst + TrellisTypeCardinality
   sem reduceTableDimensionalityModel =
   | {initial = i, output = o, transition = t} & model ->
     let tables = mapMapWithKey (lam. lam ty. reduceTableDimensionalityType ty) model.tables in
-    let initial = {i with cases = map reduceTableDimensionalityCase i.cases} in
-    let output = {o with cases = map reduceTableDimensionalityCase o.cases} in
+    let initial = {i with body = reduceTableDimensionalityExpr i.body} in
+    let output = {o with body = reduceTableDimensionalityExpr o.body} in
     let transition = {t with cases = map reduceTableDimensionalityCase t.cases} in
     { model with tables = tables, initial = initial, output = output,
                  transition = transition }
 
-  sem reduceTableDimensionalityCase : Case -> Case
+  sem reduceTableDimensionalityCase : TCase -> TCase
   sem reduceTableDimensionalityCase =
   | c ->
     {c with cond = reduceTableDimensionalitySet c.cond,

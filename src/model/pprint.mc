@@ -103,14 +103,14 @@ lang TrellisModelPrettyPrint =
     let tableType = pprintTrellisType tableType in
     (env, join [pprintSpacing 2, "table ", tableId, tableType])
 
-  sem pprintCase : PprintType Case
+  sem pprintCase : PprintType TCase
   sem pprintCase env =
   | {cond = cond, body = body} ->
     match pprintTrellisSet env cond with (env, cond) in
     match pprintTrellisExpr env body with (env, body) in
     (env, join [pprintSpacing 4, "| ", cond, " => ", body])
 
-  sem pprintCases : PprintType [Case]
+  sem pprintCases : PprintType [TCase]
   sem pprintCases env =
   | [{cond = SAll _, body = body}] ->
     pprintTrellisExpr env body
@@ -121,18 +121,18 @@ lang TrellisModelPrettyPrint =
 
   sem pprintInitialProbDef : PprintType InitialProbDef
   sem pprintInitialProbDef env =
-  | {x = x, cases = cases} ->
+  | {x = x, body = body} ->
     match pprintVarName env x with (env, x) in
-    match pprintCases env cases with (env, cases) in
-    (env, join [pprintSpacing 2, "P(initial ", x, ") = ", cases])
+    match pprintTrellisExpr env body with (env, body) in
+    (env, join [pprintSpacing 2, "P(initial ", x, ") = ", body])
 
   sem pprintOutputProbDef : PprintType OutputProbDef
   sem pprintOutputProbDef env =
-  | {x = x, o = o, cases = cases} ->
+  | {x = x, o = o, body = body} ->
     match pprintVarName env x with (env, x) in
     match pprintVarName env o with (env, o) in
-    match pprintCases env cases with (env, cases) in
-    (env, join [pprintSpacing 2, "P(output ", o, " | ", x, ") = ", cases])
+    match pprintTrellisExpr env body with (env, body) in
+    (env, join [pprintSpacing 2, "P(output ", o, " | ", x, ") = ", body])
 
   sem pprintTransitionProbDef : PprintType TransitionProbDef
   sem pprintTransitionProbDef env =

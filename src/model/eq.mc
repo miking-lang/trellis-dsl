@@ -144,7 +144,7 @@ lang TrellisModelEq =
   sem eqInitialProbDef : EqOptions -> InitialProbDef -> InitialProbDef -> Bool
   sem eqInitialProbDef options lhs =
   | rhs ->
-    if nameEq lhs.x rhs.x then allEqual (eqCase options) lhs.cases rhs.cases
+    if nameEq lhs.x rhs.x then eqExpr options lhs.body rhs.body
     else false
 
   sem eqOutputProbDef : EqOptions -> OutputProbDef -> OutputProbDef -> Bool
@@ -152,7 +152,7 @@ lang TrellisModelEq =
   | rhs ->
     if nameEq lhs.x rhs.x then
       if nameEq lhs.o rhs.o then
-        allEqual (eqCase options) lhs.cases rhs.cases
+        eqExpr options lhs.body rhs.body
       else false
     else false
 
@@ -165,7 +165,7 @@ lang TrellisModelEq =
       else false
     else false
 
-  sem eqCase : EqOptions -> (Case, Case) -> Bool
+  sem eqCase : EqOptions -> (TCase, TCase) -> Bool
   sem eqCase options =
   | (lc, rc) ->
     if eqSet options lc.cond rc.cond then eqExpr options lc.body rc.body
@@ -330,8 +330,8 @@ let model = {
   stateType = ty1,
   outType = ty2,
   tables = mapFromSeq nameCmp [(x, ty7), (y, ty8)],
-  initial = {x = x, cases = [defaultCase], info = i},
-  output = {x = x, o = y, cases = [defaultCase], info = i},
+  initial = {x = x, body = e9, info = i},
+  output = {x = x, o = y, body = e9, info = i},
   transition = {x = x, y = y, cases = [defaultCase], info = i}
 } in
 utest model with model using trellisModelEq o in

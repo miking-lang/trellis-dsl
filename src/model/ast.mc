@@ -194,14 +194,14 @@ end
 lang TrellisModelAst =
   TrellisModelTypeAst + TrellisModelExprAst + TrellisModelSetAst
 
-  type Case = {
+  type TCase = {
     cond : TSet,
     body : TExpr
   }
 
-  type InitialProbDef = {x : Name, cases : [Case], info : Info}
-  type OutputProbDef = {x : Name, o : Name, cases : [Case], info : Info}
-  type TransitionProbDef = {x : Name, y : Name, cases : [Case], info : Info}
+  type InitialProbDef = {x : Name, body : TExpr, info : Info}
+  type OutputProbDef = {x : Name, o : Name, body : TExpr, info : Info}
+  type TransitionProbDef = {x : Name, y : Name, cases : [TCase], info : Info}
 
   type TModel = {
     stateType : TType,

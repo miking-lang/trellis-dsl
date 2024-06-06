@@ -109,11 +109,11 @@ end
 lang TrellisModelValidateNonEmpty =
   TrellisModelValidateBase + TrellisModelToZ3 + TrellisZ3Run
 
-  sem validateNonEmptyCases : ValidationResult -> [Int] -> [Case] -> ValidationResult
+  sem validateNonEmptyCases : ValidationResult -> [Int] -> [TCase] -> ValidationResult
   sem validateNonEmptyCases acc stateSizes =
   | cases -> foldl (validateNonEmptyCase stateSizes) acc cases
 
-  sem validateNonEmptyCase : [Int] -> ValidationResult -> Case -> ValidationResult
+  sem validateNonEmptyCase : [Int] -> ValidationResult -> TCase -> ValidationResult
   sem validateNonEmptyCase stateSizes acc =
   | {cond = cond} ->
     let p = constructSetConstraintNonEmptyProblem stateSizes cond in
@@ -142,7 +142,7 @@ end
 lang TrellisModelValidateDisjoint =
   TrellisModelValidateBase + TrellisModelToZ3 + TrellisZ3Run
 
-  sem validateDisjointCases : ValidationResult -> [Int] -> Bool -> [Case]
+  sem validateDisjointCases : ValidationResult -> [Int] -> Bool -> [TCase]
                            -> ValidationResult
   sem validateDisjointCases acc stateSizes isTransProb =
   | cases ->
@@ -165,7 +165,7 @@ lang TrellisModelValidateDisjoint =
       acc cases
 
   sem constructOverlappingConstraintsProblem
-    : [Int] -> Bool -> Case -> Case -> Z3Program
+    : [Int] -> Bool -> TCase -> TCase -> Z3Program
   sem constructOverlappingConstraintsProblem stateSizes isTransProb l =
   | r ->
     let baseConstraints =
@@ -191,12 +191,7 @@ lang TrellisModelValidate =
       match ty with TTuple {tys = tys} then map cardinalityType tys
       else [cardinalityType ty]
     in
-    let r =
-      validateNonEmptyCases (result.ok ()) stateSizes
-        (join [i.cases, o.cases, t.cases])
-    in
-    let r = validateDisjointCases r stateSizes false i.cases in
-    let r = validateDisjointCases r stateSizes false o.cases in
+    let r = validateNonEmptyCases (result.ok ()) stateSizes t.cases in
     let r = validateDisjointCases r stateSizes true t.cases in
     switch result.consume r
     case (_, Right _) then ()

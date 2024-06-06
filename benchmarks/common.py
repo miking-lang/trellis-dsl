@@ -18,7 +18,7 @@ def read_weather_signals(signals_path):
 
 def get_weather_inputs_trellis(signals_path):
     tables = {
-        'sunnyObs' : np.log([0.8, 0.2])
+        'outp' : np.log([0.8, 0.2, 0.5, 0.5])
     }
     return tables, read_weather_signals(signals_path)
 

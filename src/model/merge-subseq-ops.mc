@@ -9,13 +9,11 @@ include "pprint.mc"
 lang TrellisModelMergeSubsequentOperations = TrellisModelAst
   sem mergeSubsequentOperationsModel : TModel -> TModel
   sem mergeSubsequentOperationsModel =
-  | {initial = i, output = o, transition = t} & model ->
-    let initial = {i with cases = map mergeSubsequentOperationsCase i.cases} in
-    let output = {o with cases = map mergeSubsequentOperationsCase o.cases} in
+  | {transition = t} & model ->
     let transition = {t with cases = map mergeSubsequentOperationsCase t.cases} in
-    {model with initial = initial, output = output, transition = transition}
+    {model with transition = transition}
 
-  sem mergeSubsequentOperationsCase : Case -> Case
+  sem mergeSubsequentOperationsCase : TCase -> TCase
   sem mergeSubsequentOperationsCase =
   | c -> {c with cond = mergeSubsequentOperationsSet c.cond}
 

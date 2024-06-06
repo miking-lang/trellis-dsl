@@ -7,6 +7,7 @@ outp = [ [0.0, 1.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [0.0, 1.0] ]
 
 with np.errstate(divide='ignore'):
     tables = {
+        'initp' : np.log([0.0, 0.0, 1.0, 0.0, 0.0]),
         'outp' : np.log(np.array(outp)),
     }
 

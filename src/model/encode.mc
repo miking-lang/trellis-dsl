@@ -97,11 +97,11 @@ lang TrellisEncode = TrellisEncodeExpr
   sem encodeStateOperations options =
   | model & {initial = i, output = o, transition = t} ->
     let encCase = encodeStateOperationsCase options in
-    {model with initial = {i with cases = map encCase i.cases},
-                output = {o with cases = map encCase o.cases},
+    {model with initial = {i with body = encodeStateOperationsExpr i.body},
+                output = {o with body = encodeStateOperationsExpr o.body},
                 transition = {t with cases = map encCase t.cases}}
 
-  sem encodeStateOperationsCase : TrellisOptions -> Case -> Case
+  sem encodeStateOperationsCase : TrellisOptions -> TCase -> TCase
   sem encodeStateOperationsCase options =
   | {cond = cond, body = body} ->
     let encExpr = encodeStateOperationsExpr in

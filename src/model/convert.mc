@@ -346,15 +346,15 @@ lang TrellisModelFlatten = TrellisModelAst
   sem flattenTrellisModelSlices : TModel -> TModel
   sem flattenTrellisModelSlices =
   | {initial = i, output = o, transition = t} & model ->
-    let initial = {i with cases = map flattenSlicesCase i.cases} in
-    let output = {o with cases = map flattenSlicesCase o.cases} in
+    let initial = {i with body = flattenExpr i.body} in
+    let output = {o with body = flattenExpr o.body} in
     let transition = {t with cases = map flattenSlicesCase t.cases} in
     { model with stateType = flattenType model.stateType,
                  outType = flattenType model.outType,
                  tables = mapMapWithKey (lam. lam v. flattenType v) model.tables,
                  initial = initial, output = output, transition = transition }
 
-  sem flattenSlicesCase : Case -> Case
+  sem flattenSlicesCase : TCase -> TCase
   sem flattenSlicesCase =
   | c -> {c with body = flattenExpr c.body, cond = flattenSlicesSet c.cond}
 
@@ -435,13 +435,13 @@ lang TrellisModelEliminateSlices = TrellisModelAst
   sem eliminateModelSlices : TModel -> TModel
   sem eliminateModelSlices =
   | {initial = i, output = o, transition = t} & model ->
-    let initial = {i with cases = map eliminateSlicesCase i.cases} in
-    let output = {o with cases = map eliminateSlicesCase o.cases} in
+    let initial = {i with body = eliminateSlicesExpr i.body} in
+    let output = {o with body = eliminateSlicesExpr o.body} in
     let transition = {t with cases = map eliminateSlicesCase t.cases} in
     { model with tables = mapMapWithKey (lam. lam v. eliminateSlicesType v) model.tables,
                  initial = initial, output = output, transition = transition }
 
-  sem eliminateSlicesCase : Case -> Case
+  sem eliminateSlicesCase : TCase -> TCase
   sem eliminateSlicesCase =
   | c -> {c with cond = eliminateSlicesSet c.cond,
                  body = eliminateSlicesExpr c.body}
@@ -509,15 +509,15 @@ lang TrellisModelAdjustRanges = TrellisModelAst
   sem adjustIntRangesModel : TModel -> TModel
   sem adjustIntRangesModel =
   | {initial = i, output = o, transition = t} & model ->
-    let initial = {i with cases = map (adjustIntRangesCase model.tables) i.cases} in
-    let output = {o with cases = map (adjustIntRangesCase model.tables) o.cases} in
+    let initial = {i with body = adjustIntRangesExpr model.tables i.body} in
+    let output = {o with body = adjustIntRangesExpr model.tables o.body} in
     let transition = {t with cases = map (adjustIntRangesCase model.tables) t.cases} in
     {model with stateType = adjustIntRangesType model.stateType,
                 outType = adjustIntRangesType model.outType,
                 tables = mapMapWithKey (lam. lam ty. adjustIntRangesType ty) model.tables,
                 initial = initial, output = output, transition = transition}
 
-  sem adjustIntRangesCase : Map Name TType -> Case -> Case
+  sem adjustIntRangesCase : Map Name TType -> TCase -> TCase
   sem adjustIntRangesCase tableEnv =
   | c ->
     {c with cond = adjustIntRangesSet tableEnv c.cond,
@@ -673,14 +673,20 @@ lang TrellisModelConvert =
   sem extractInitialProbDef tables stateType =
   | ProbInModelDecl {init = Some _, fst = {v = x}, pd = pd, info = info} ->
     let args = mapFromSeq nameCmp [(x, stateType)] in
-    Some {x = x, cases = extractProbDecl tables args stateType pd, info = info}
+    match pd with OneProbDecl {e = e, info = info} then
+      let boundBody = mapUnion tables args in
+      Some {x = x, body = convertTrellisExpr boundBody e, info = info}
+    else errorSingle [info] "Initial probability cannot have multiple cases"
   | _ -> None ()
 
   sem extractOutputProbDef : Map Name TType -> TType -> TType -> InModelDecl -> Option OutputProbDef
   sem extractOutputProbDef tables stateType outputType =
   | ProbInModelDecl {out = Some _, fst = {v = o}, snd = Some {v = x}, pd = pd, info = info} ->
     let args = mapFromSeq nameCmp [(x, stateType), (o, outputType)] in
-    Some {x = x, o = o, cases = extractProbDecl tables args stateType pd, info = info}
+    match pd with OneProbDecl {e = e, info = info} then
+      let boundBody = mapUnion tables args in
+      Some {x = x, o = o, body = convertTrellisExpr boundBody e, info = info}
+    else errorSingle [info] "Output probability cannot have multiple cases"
   | _ -> None ()
 
   sem extractTransitionProbDef : Map Name TType -> TType -> InModelDecl -> Option TransitionProbDef
@@ -690,7 +696,7 @@ lang TrellisModelConvert =
     Some {x = x, y = y, cases = extractProbDecl tables args stateType pd, info = info}
   | _ -> None ()
 
-  sem extractProbDecl : Map Name TType -> Map Name TType -> TType -> ProbDecl -> [Case]
+  sem extractProbDecl : Map Name TType -> Map Name TType -> TType -> ProbDecl -> [TCase]
   sem extractProbDecl tables args stateType =
   | OneProbDecl {e = e, info = info} ->
     let allSet = SAll {info = info} in

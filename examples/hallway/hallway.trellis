@@ -7,12 +7,11 @@ model {
   state = HallwayState
   output = Obs
 
+  table initp(HallwayState)
   table outp(HallwayState, Obs)
 
   -- We always start in state 3
-  P(initial x) = {
-    | @{ 3 } => 1.0
-  }
+  P(initial x) = initp(x)
   P(output o | x) = outp(x, o)
 
   -- We stay at the current state with probability 0.5 and move left or right

@@ -24,25 +24,31 @@ lang TrellisModelReplaceNonTrivialBody = TrellisModelAst
   sem replaceNonTrivialBodiesInProbabilityFunctions =
   | model ->
     let initVars = setOfSeq nameCmp [model.initial.x] in
-    match mapAccumL (replaceNonTrivialBodyCase initVars) (mapEmpty nameCmp) model.initial.cases
-    with (env, initCases) in
+    match replaceNonTrivialBody initVars (mapEmpty nameCmp) model.initial.body
+    with (env, initBody) in
     let outVars = setOfSeq nameCmp [model.output.x, model.output.o] in
-    match mapAccumL (replaceNonTrivialBodyCase outVars) env model.output.cases
-    with (env, outCases) in
+    match replaceNonTrivialBody outVars env model.output.body
+    with (env, outBody) in
     let transVars = setOfSeq nameCmp [model.transition.x, model.transition.y] in
     match mapAccumL (replaceNonTrivialBodyCase transVars) env model.transition.cases
     with (env, transCases) in
     let model =
-      {model with initial = {model.initial with cases = initCases},
-                  output = {model.output with cases = outCases},
+      {model with initial = {model.initial with body = initBody},
+                  output = {model.output with body = outBody},
                   transition = {model.transition with cases = transCases}}
     in
     (env, model)
 
-  sem replaceNonTrivialBodyCase : Set Name -> Map Name TExpr -> Case -> (Map Name TExpr, Case)
+  sem replaceNonTrivialBodyCase : Set Name -> Map Name TExpr -> TCase -> (Map Name TExpr, TCase)
   sem replaceNonTrivialBodyCase boundVars acc =
   | c ->
-    if isEligibleForReplacement boundVars c.body then
+    match replaceNonTrivialBody boundVars acc c.body with (acc, body) in
+    (acc, {c with body = body})
+
+  sem replaceNonTrivialBody : Set Name -> Map Name TExpr -> TExpr -> (Map Name TExpr, TExpr)
+  sem replaceNonTrivialBody boundVars acc =
+  | body ->
+    if isEligibleForReplacement boundVars body then
       let syntheticTableId =
         let id = nameSym "synthetic" in
         let sym =
@@ -51,13 +57,13 @@ lang TrellisModelReplaceNonTrivialBody = TrellisModelAst
         in
         nameNoSym (join [nameGetStr id, "_", int2string sym])
       in
-      let info = infoTExpr c.body in
-      let body = ETableAccess {
+      let info = infoTExpr body in
+      let tableAccessBody = ETableAccess {
         table = syntheticTableId, args = [],
-        ty = TTable {args = [], ret = tyTExpr c.body, info = info}, info = info
+        ty = TTable {args = [], ret = tyTExpr body, info = info}, info = info
       } in
-      (mapInsert syntheticTableId c.body acc, {c with body = body})
-    else (acc, c)
+      (mapInsert syntheticTableId body acc, tableAccessBody)
+    else (acc, body)
 
   -- Determines whether a given expression is considered eligible for being
   -- replaced with a reference to a pre-computed value. We do not replace

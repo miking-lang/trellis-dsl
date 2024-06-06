@@ -188,11 +188,11 @@ lang TrellisConstantFold = TrellisConstantFoldExpr
   sem constantFoldModel : TModel -> TModel
   sem constantFoldModel =
   | model & {initial = i, output = o, transition = t} ->
-    {model with initial = {i with cases = map constantFoldCase i.cases},
-                output = {o with cases = map constantFoldCase o.cases},
+    {model with initial = {i with body = constantFold i.body},
+                output = {o with body = constantFold o.body},
                 transition = {t with cases = map constantFoldCase t.cases}}
 
-  sem constantFoldCase : Case -> Case
+  sem constantFoldCase : TCase -> TCase
   sem constantFoldCase =
   | c -> {c with cond = constantFoldSet c.cond, body = constantFold c.body}
 

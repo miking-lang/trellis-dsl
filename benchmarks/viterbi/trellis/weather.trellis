@@ -7,13 +7,10 @@ model {
   state = Weather
   output = Mood
 
-  table sunnyObs(Mood)
+  table outp(Mood, Weather)
 
   P(initial x) = 0.5
-  P(output o | x) = {
-    | @{Sunny} => sunnyObs(o)
-    | @{Rainy} => 0.5
-  }
+  P(output o | x) = outp(o, x)
   P(transition x y) = {
     | @{Sunny -> Sunny}   => 0.75
     | @{Sunny -> Rainy}   => 0.25

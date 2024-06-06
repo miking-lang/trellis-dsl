@@ -4,7 +4,7 @@ from trellis import HMM
 # The observation probabilities when the weather is sunny is 0.8 (Happy) and
 # 0.2 (Grumpy).
 tables = {
-    'sunnyObs' : np.array([0.8, 0.2])
+    'outp' : np.log(np.array([0.8, 0.2, 0.5, 0.5]))
 }
 hmm = HMM(tables)
 
