@@ -42,7 +42,6 @@ ticks = np.arange(10, max(avgs), 10)
 fmt = axs.yaxis.get_major_formatter()
 labels = [fmt(x) for x in ticks]
 axs.yaxis.set_ticks(ticks, labels=labels)
-axs.grid(which="both")
 axs.set_axisbelow(True)
 
 fig.savefig("compilation.pdf", bbox_inches="tight")

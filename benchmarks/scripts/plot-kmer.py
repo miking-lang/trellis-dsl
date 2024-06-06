@@ -77,8 +77,6 @@ x = np.arange(len(labels))
 width = 0.15
 
 fig, axs = plt.subplots(layout="constrained")
-axs.grid(which="both")
-axs.set_axisbelow(True)
 
 avgs, errs = zip(*[load_full_time_label(label, "batch-viterbi", 3) for label in labels])
 bars = axs.bar(x, avgs, width, yerr=errs, label="F (k = 3)", color=colors[0])
@@ -105,7 +103,6 @@ bars = axs.bar(x + 5*width, avgs, width, yerr=errs, label="A (k = 7)", color=col
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x + 2.5*width, [l.upper() for l in labels])
-axs.set_yscale("log")
 axs.set_ylabel("Execution time (s)")
 axs.legend(loc="upper left")
 
