@@ -1,0 +1,6 @@
+[submodule "benchmarks/forward/ziphmm/ziphmm"]
+	path = benchmarks/forward/ziphmm/ziphmm
+	url = git@github.com:mailund/ziphmm.git
+[submodule "benchmarks/viterbi/native-cuda/KTHDNA"]
+	path = benchmarks/viterbi/native-cuda/KTHDNA
+	url = git@github.com:joakimjalden/KTHDNA.git
