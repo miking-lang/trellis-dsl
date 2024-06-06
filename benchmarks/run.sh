@@ -11,8 +11,8 @@ bench_program() {
 }
 
 bench_ziphmm() {
-  CMD="python3 run.py >> $(pwd)/out/zc-$1-forward.txt"
-  OUT_PATH="$(pwd)/out/zc-$1-forward.json"
+  CMD="python3 run.py >> $(pwd)/out/z-$1-forward.txt"
+  OUT_PATH="$(pwd)/out/z-$1-forward.json"
   cd forward/ziphmm
   bench_program "$CMD" "$OUT_PATH"
   cd ../..
@@ -31,8 +31,8 @@ bench_pomegranate() {
 }
 
 bench_trellis_forward() {
-  CMD="python3 run.py >> $(pwd)/out/tg-$1-forward.txt"
-  OUT_PATH="$(pwd)/out/tg-$1-forward.json"
+  CMD="python3 run.py >> $(pwd)/out/$1-forward.txt"
+  OUT_PATH="$(pwd)/out/$1-forward.json"
   cd forward/trellis
   bench_program "$CMD" "$OUT_PATH"
   cd ../..
@@ -48,7 +48,7 @@ bench_stochhmm() {
     OUT_ID="$1"
   fi
   CMD="stochhmm -model $1.hmm -seq $SIGNALS_PATH -viterbi -gff"
-  OUT_PATH="$(pwd)/out/sc-$OUT_ID-viterbi.json"
+  OUT_PATH="$(pwd)/out/s-$OUT_ID-viterbi.json"
   cd viterbi/stoch-hmm
   bench_program "$CMD" "$OUT_PATH"
   cd ../..
@@ -62,8 +62,8 @@ bench_cuda() {
   else
     TEST_ID="$TARGET-nobatch"
   fi
-  CMD="python3 run.py $1 $2 >> $(pwd)/out/ng-$TEST_ID-viterbi.txt"
-  OUT_PATH="$(pwd)/out/ng-$TEST_ID-viterbi.json"
+  CMD="python3 run.py $1 $2 >> $(pwd)/out/n-$TEST_ID-viterbi.txt"
+  OUT_PATH="$(pwd)/out/n-$TEST_ID-viterbi.json"
   cd viterbi/native-cuda
   bench_program "$CMD" "$OUT_PATH"
   cd ../..
@@ -82,18 +82,33 @@ bench_trellis_viterbi() {
       TEST_ID="$1-nobatch"
     fi
   fi
-  CMD="python3 run.py $2 >> $(pwd)/out/tg-${TEST_ID}-viterbi.txt"
-  OUT_PATH="$(pwd)/out/tg-${TEST_ID}-viterbi.json"
+  CMD="python3 run.py $2 >> $(pwd)/out/${TEST_ID}-viterbi.txt"
+  OUT_PATH="$(pwd)/out/${TEST_ID}-viterbi.json"
   cd viterbi/trellis
   bench_program "$CMD" "$OUT_PATH"
   cd ../..
 }
 
 bench_compile_trellis() {
-  CMD="trellis $3 $1.trellis"
-  OUT_PATH="$(pwd)/out/tg-compile-$2-$1.json"
+  if [ $2 -eq 0 ]
+  then
+    TEST_PREFIX="tr"
+    ARGS="--error-predecessor-analysis"
+  else
+    TEST_PREFIX="tc"
+    ARGS="--force-precompute-predecessors"
+  fi
+  CMD="trellis ${ARGS} $1.trellis"
+  OUT_PATH="$(pwd)/out/${TEST_PREFIX}-$1-compile.json"
   cd viterbi/trellis
-  bench_program "$CMD" "$OUT_PATH"
+
+  # If the initial compilation fails, we skip running the compiler evaluation
+  # for this configuration.
+  $CMD > /dev/null 2> /dev/null
+  if [ $? -eq 0 ]
+  then
+    bench_program "$CMD" "$OUT_PATH"
+  fi
   cd ../..
 }
 
@@ -105,7 +120,7 @@ compile_trellis() {
 
 if [ ! -e "signals/weather.fasta" -o ! -e "signals/weather.hdf5" -o ! -e "signals/kmer.fasta" ]
 then
-  echo "Generating weather observation sequences and translate signals to StochHMM format"
+  echo "Generating weather observation sequences and translating signals to StochHMM format"
   python3 gen-signals.py $NSIGNALS $WEATHER_SIGNAL_LENGTH
 fi
 
@@ -135,7 +150,7 @@ bench_ziphmm "weather"
 bench_pomegranate 0 "weather"
 bench_pomegranate 1 "weather"
 compile_trellis "forward" "weather"
-bench_trellis_forward "weather"
+bench_trellis_forward "tc-weather"
 
 echo "##############"
 echo "# KMER MODEL #"
@@ -148,8 +163,10 @@ export SIGNALS_PATH="$(pwd)/signals/kmer.hdf5"
 bench_ziphmm "3mer"
 bench_pomegranate 0 "3mer"
 bench_pomegranate 1 "3mer"
+compile_trellis "forward" "3mer" "--force-precompute-predecessors"
+bench_trellis_forward "tc-3mer"
 compile_trellis "forward" "3mer"
-bench_trellis_forward "3mer"
+bench_trellis_forward "tr-3mer"
 
 echo "#####################"
 echo "# VITERBI ALGORITHM #"
@@ -163,7 +180,7 @@ export SIGNALS_PATH="$(pwd)/signals/weather.fasta"
 bench_stochhmm "weather"
 export SIGNALS_PATH="$(pwd)/signals/weather.hdf5"
 compile_trellis "viterbi" "weather"
-bench_trellis_viterbi "weather"
+bench_trellis_viterbi "tc-weather"
 
 echo "############################"
 echo "# KMER MODEL (NO BATCHING) #"
@@ -179,8 +196,10 @@ export SIGNALS_PATH="$(pwd)/signals/kmer.fasta"
 bench_stochhmm "3mer"
 export SIGNALS_PATH="$(pwd)/signals/kmer.hdf5"
 bench_cuda 3 $BATCH_SIZE
+compile_trellis "viterbi" "3mer" "$TRELLIS_BATCH --force-precompute-predecessors"
+bench_trellis_viterbi "tc-3mer" 3 $BATCH_SIZE
 compile_trellis "viterbi" "3mer" "$TRELLIS_BATCH"
-bench_trellis_viterbi "3mer" 3 $BATCH_SIZE
+bench_trellis_viterbi "tr-3mer" 3 $BATCH_SIZE
 
 echo "#########################"
 echo "# KMER MODEL (BATCHING) #"
@@ -195,8 +214,10 @@ do
   export MODEL_PATH=${KMER_MODELS[i]}
   K=${KMER_LENGTH[i]}
   bench_cuda $K $BATCH_SIZE
+  compile_trellis "viterbi" "${K}mer" "$TRELLIS_BATCH --force-precompute-predecessors"
+  bench_trellis_viterbi "tc-${K}mer" $K $BATCH_SIZE
   compile_trellis "viterbi" "${K}mer" "$TRELLIS_BATCH"
-  bench_trellis_viterbi "${K}mer" $K $BATCH_SIZE
+  bench_trellis_viterbi "tr-${K}mer" $K $BATCH_SIZE
 done
 
 echo "##########################"
@@ -206,22 +227,14 @@ echo "##########################"
 # the compiler normally and with a flag that forces it to precompute all
 # predecessors at compile-time.
 
-TRELLIS_COMPILE_ARGS=("" "--force-precompute-predecessors")
 # Measure with and without predecessor computations and using either CPU or GPU
 # as the target.
 for i in 0 1
 do
-  ARGS=${TRELLIS_COMPILE_ARGS[i]}
-  if [ $i -eq 0 ]
-  then
-    TEST_ID="preds"
-  else
-    TEST_ID="nopreds"
-  fi
-  bench_compile_trellis "weather" "$TEST_ID" "${ARGS}"
-  bench_compile_trellis "3mer" "$TEST_ID" "${ARGS}"
-  bench_compile_trellis "5mer" "$TEST_ID" "${ARGS}"
-  bench_compile_trellis "7mer" "$TEST_ID" "${ARGS}"
+  bench_compile_trellis "weather" "$i"
+  bench_compile_trellis "3mer" "$i"
+  bench_compile_trellis "5mer" "$i"
+  bench_compile_trellis "7mer" "$i"
 done
 
 echo "####################"
@@ -240,7 +253,7 @@ python3 scripts/plot-kmer.py
 echo "###########"
 echo "# CLEANUP #"
 echo "###########"
-TRELLIS_CLEAN="hmm.cu predecessors.npy trellis.py __pycache__"
+TRELLIS_CLEAN="hmm.cu pred*.npy trellis.py __pycache__"
 
 rm -f signals/weather.hdf5 signals/weather.fasta signals/kmer.fasta
 
