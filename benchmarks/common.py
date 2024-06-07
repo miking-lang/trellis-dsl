@@ -17,8 +17,9 @@ def read_weather_signals(signals_path):
     return signals
 
 def get_weather_inputs_trellis(signals_path):
+    _, outp, _ = get_weather_model()
     tables = {
-        'outp' : np.log([0.8, 0.2, 0.5, 0.5])
+        'outp' : np.log(np.array(outp).transpose())
     }
     return tables, read_weather_signals(signals_path)
 
