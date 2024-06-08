@@ -3,6 +3,7 @@ from trellis import HMM
 import os
 import sys
 import time
+import numpy as np
 
 model_path = os.getenv("MODEL_PATH")
 signals_path = os.getenv("SIGNALS_PATH")
@@ -17,4 +18,5 @@ t0 = time.time()
 p = hmm.forward(signals)
 t1 = time.time()
 print(t1-t0)
-sys.stderr.write(str(p))
+
+#np.savetxt("out.txt", p)

@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import time
+import numpy as np
 
 model_path = os.getenv("MODEL_PATH")
 signals_path = os.getenv("SIGNALS_PATH")
@@ -39,7 +40,8 @@ for i, s in enumerate(signals):
         t1 = time.time()
         t += t1-t0
 print(t)
-sys.stderr.write(str(p))
+
+#np.savetxt("out.txt", p)
 
 # Explicitly delete zipHMM objects here to avoid error on exit
 del fwd

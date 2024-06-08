@@ -3,6 +3,7 @@ from trellis import HMM
 import os
 import sys
 import time
+import numpy as np
 
 model_path = os.getenv("MODEL_PATH")
 signals_path = os.getenv("SIGNALS_PATH")
@@ -29,11 +30,14 @@ output = hmm.viterbi(signals, bsz)
 t1 = time.time()
 print(t1-t0)
 
-outc = "ACGT"
-for i, signal in enumerate(output):
-    sys.stderr.write(f"Signal #{i+1}\n")
-    for s in signal:
-        if s // (4**k) == 0:
-            sys.stderr.write(outc[s % 4])
-    sys.stderr.write("\n")
-print(t1-t0)
+# WEATHER:
+#for o in output:
+#    sys.stderr.write(' '.join([str(x) for x in o]) + "\n")
+
+# KMER:
+#outc = "ACGT"
+#for o in output:
+#    for x in o:
+#        if x // 4**k == 0:
+#            sys.stderr.write(outc[x % 4])
+#    sys.stderr.write("\n")

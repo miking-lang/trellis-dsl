@@ -11,7 +11,7 @@ bench_program() {
 }
 
 bench_ziphmm() {
-  CMD="python3 run.py >> $(pwd)/out/z-$1-forward.txt 2>> $(pwd)/out/ziphmm-$1-log.txt"
+  CMD="python3 run.py >> $(pwd)/out/z-$1-forward.txt"
   OUT_PATH="$(pwd)/out/z-$1-forward.json"
   cd forward/ziphmm
   bench_program "$CMD" "$OUT_PATH"
@@ -25,13 +25,13 @@ bench_pomegranate() {
   else
     TARGET_ID="pg"
   fi
-  CMD="python3 forward/pomegranate/run.py $1 $3 >> $(pwd)/out/${TARGET_ID}-$2-forward.txt 2>> $(pwd)/out/pomegranate-$3-log.txt"
+  CMD="python3 forward/pomegranate/run.py $1 $3 >> $(pwd)/out/${TARGET_ID}-$2-forward.txt"
   OUT_PATH="$(pwd)/out/${TARGET_ID}-$2-forward.json"
   bench_program "$CMD" "$OUT_PATH"
 }
 
 bench_trellis_forward() {
-  CMD="python3 run.py >> $(pwd)/out/$1-forward.txt 2>> $(pwd)/out/trellis-forw-$1-log.txt"
+  CMD="python3 run.py >> $(pwd)/out/$1-forward.txt"
   OUT_PATH="$(pwd)/out/$1-forward.json"
   cd forward/trellis
   bench_program "$CMD" "$OUT_PATH"
@@ -47,7 +47,7 @@ bench_stochhmm() {
   else
     OUT_ID="$1"
   fi
-  CMD="stochhmm -model $1.hmm -seq $SIGNALS_PATH -viterbi -gff >> $(pwd)/out/stochhmm-$1-log.txt"
+  CMD="stochhmm -model $1.hmm -seq $SIGNALS_PATH -viterbi -gff"
   OUT_PATH="$(pwd)/out/s-$OUT_ID-viterbi.json"
   cd viterbi/stoch-hmm
   bench_program "$CMD" "$OUT_PATH"
@@ -62,7 +62,7 @@ bench_cuda() {
   else
     TEST_ID="$TARGET-nobatch"
   fi
-  CMD="python3 run.py $1 $2 >> $(pwd)/out/n-$TEST_ID-viterbi.txt 2>> $(pwd)/out/native-$1mer-log.txt"
+  CMD="python3 run.py $1 $2 >> $(pwd)/out/n-$TEST_ID-viterbi.txt"
   OUT_PATH="$(pwd)/out/n-$TEST_ID-viterbi.json"
   cd viterbi/native-cuda
   bench_program "$CMD" "$OUT_PATH"
@@ -82,7 +82,7 @@ bench_trellis_viterbi() {
       TEST_ID="$1-nobatch"
     fi
   fi
-  CMD="python3 run.py $2 >> $(pwd)/out/${TEST_ID}-viterbi.txt 2>> $(pwd)/out/trellis-vit-$2-log.txt"
+  CMD="python3 run.py $2 >> $(pwd)/out/${TEST_ID}-viterbi.txt"
   OUT_PATH="$(pwd)/out/${TEST_ID}-viterbi.json"
   cd viterbi/trellis
   bench_program "$CMD" "$OUT_PATH"

@@ -57,4 +57,5 @@ t0 = time.time()
 p = forward(model, signals)
 t1 = time.time()
 print(t1-t0)
-sys.stderr.write(str(p))
+
+#np.savetxt("out.txt", p)

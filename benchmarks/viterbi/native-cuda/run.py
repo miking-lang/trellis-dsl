@@ -13,7 +13,7 @@ if k == 3:
 elif k == 5:
     p = 64
 elif k == 7:
-    p = 6
+    p = 15
 else:
     print(f"Unsupported value of k = {k}")
     exit(1)
@@ -25,5 +25,6 @@ if s.returncode == 0:
 else:
     print(f"Viterbicall failed: {s.stderr.decode()}")
 
-sys.stderr.write(s.stdout.decode())
+#sys.stderr.write(s.stdout.decode())
+
 exit(s.returncode)
