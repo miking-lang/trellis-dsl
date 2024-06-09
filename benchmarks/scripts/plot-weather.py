@@ -19,7 +19,8 @@ def load_full_time_label(label, alg):
 def load_alg_exec_time_label(label, alg):
     try:
         with open(f"out/{label}-weather-{alg}.txt", "r") as f:
-            data = [float(x.strip()) for x in f.readlines()]
+            # Skip output from the warmup round
+            data = [float(x.strip()) for x in f.readlines()][1:]
             return np.average(data), np.std(data)
     except:
         return 0.0, 0.0

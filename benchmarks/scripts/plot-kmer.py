@@ -19,7 +19,8 @@ def load_full_time_label(label, conf, k):
 def load_alg_exec_time_label(label, conf, k):
     try:
         with open(f"out/{label}-{k}mer-{conf}.txt", "r") as f:
-            data = [float(x.strip()) for x in f.readlines()]
+            # Skip output from the warmup round
+            data = [float(x.strip()) for x in f.readlines()][1:]
             return np.average(data), np.std(data)
     except:
         return 0.0, 0.0
