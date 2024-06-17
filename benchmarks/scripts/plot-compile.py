@@ -19,6 +19,12 @@ def load_data(label, target):
         res = {"mean" : 0.0, "stddev" : 0.0}
     return res["mean"], res["stddev"]
 
+plt.rc("axes", labelsize=14)
+plt.rc("axes", titlesize=16)
+plt.rc("xtick", labelsize=14)
+plt.rc("ytick", labelsize=14)
+plt.rc("legend", fontsize=14)
+
 labels = [ "weather", "3mer", "5mer", "7mer" ]
 x = np.arange(len(labels))
 
@@ -26,11 +32,11 @@ fig, axs = plt.subplots(layout="constrained")
 width = 0.4
 
 avgs1, errs = zip(*[load_data(label, "tc") for label in labels])
-bars = axs.bar(x, avgs1, width, yerr=errs, label="TC", color=colors[1])
+bars = axs.bar(x, avgs1, width, yerr=errs, label="Trellis CT", color=colors[2])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs2, errs = zip(*[load_data(label, "tr") for label in labels])
-bars = axs.bar(x + width, avgs2, width, yerr=errs, label="TR", color=colors[2])
+bars = axs.bar(x + width, avgs2, width, yerr=errs, label="Trellis RT", color=colors[3])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x + 0.5*width, labels)

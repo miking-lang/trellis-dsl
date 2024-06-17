@@ -6,6 +6,7 @@ import numpy as np
 import json
 
 from colors import colors
+from names import display_name
 
 def load_full_time_label(label, alg):
     try:
@@ -25,6 +26,12 @@ def load_alg_exec_time_label(label, alg):
     except:
         return 0.0, 0.0
 
+plt.rc("axes", labelsize=14)
+plt.rc("axes", titlesize=16)
+plt.rc("xtick", labelsize=14)
+plt.rc("ytick", labelsize=14)
+plt.rc("legend", fontsize=14)
+
 # Plot Forward algorithm results
 labels = [ "z", "pc", "pg", "tc" ]
 x = np.arange(len(labels))
@@ -33,14 +40,14 @@ fig, axs = plt.subplots(layout="constrained")
 width = 0.4
 
 avgs, errs = zip(*[load_full_time_label(label, "forward") for label in labels])
-bars = axs.bar(x, avgs, width, yerr=errs, label="F", color=colors[0])
+bars = axs.bar(x, avgs, width, yerr=errs, label="Full", color=colors[0])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_alg_exec_time_label(label, "forward") for label in labels])
-bars = axs.bar(x + width, avgs, width, yerr=errs, label="A", color=colors[1])
+bars = axs.bar(x + width, avgs, width, yerr=errs, label="All", color=colors[1])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
-axs.set_xticks(x+0.5*width, [l.upper() for l in labels])
+axs.set_xticks(x+0.5*width, [display_name(l) for l in labels])
 axs.set_ylabel("Execution time (s)")
 axs.legend(loc="upper left")
 
@@ -53,14 +60,14 @@ x = np.arange(len(labels))
 fig, axs = plt.subplots(layout="constrained")
 
 avgs, errs = zip(*[load_full_time_label(label, "viterbi") for label in labels])
-bars = axs.bar(x, avgs, width, yerr=errs, label="F", color=colors[0])
+bars = axs.bar(x, avgs, width, yerr=errs, label="Full", color=colors[0])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_alg_exec_time_label(label, "viterbi") for label in labels])
-bars = axs.bar(x + width, avgs, width, yerr=errs, label="A", color=colors[1])
+bars = axs.bar(x + width, avgs, width, yerr=errs, label="All", color=colors[1])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
-axs.set_xticks(x + 0.5*width, [l.upper() for l in labels])
+axs.set_xticks(x + 0.5*width, [display_name(l) for l in labels])
 axs.set_ylabel("Execution time (s)")
 axs.legend(loc="upper left")
 
