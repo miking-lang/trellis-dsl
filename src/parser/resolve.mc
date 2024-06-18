@@ -11,6 +11,7 @@ include "pprint.mc"
 -- 2. Inlining the expressions bound in let-bindings.
 -- 3. Transforming user-defined types to integer range types, with each
 --    constructor being replaced by an integer value.
+-- 4. Simplifying constant expressions to values.
 lang TrellisResolveDeclarations = TrellisAst
   type ResolveEnv = {
     -- Maps identifiers of aliases to the type they represent.
@@ -52,7 +53,7 @@ lang TrellisResolveDeclarations = TrellisAst
     let c = foldli (lam acc. lam i. lam c. mapInsert c i acc) env.constrs constr in
     {env with types = mapInsert id ty env.types, constrs = c}
   | LetDecl {id = {v = id}, e = e} ->
-    let e = resolveTrellisExpr env e in
+    let e = constantFoldTrellisExpr (resolveTrellisExpr env e) in
     {env with constants = mapInsert id e env.constants}
   | AliasDecl {id = {v = id}, ty = ty} ->
     let ty = resolveTrellisType env ty in
@@ -109,6 +110,63 @@ lang TrellisResolveDeclarations = TrellisAst
       IntTrellisExpr {i = {i = i, v = constrIdx}, info = info}
     else errorSingle [info] "Error when replacing constructor with integer"
   | e -> smap_TrellisExpr_TrellisExpr (resolveTrellisExpr env) e
+
+  sem constantFoldTrellisExpr : TrellisExpr -> TrellisExpr
+  sem constantFoldTrellisExpr =
+  | AddTrellisExpr (t & {left = l, right = r, info = info}) ->
+    let default = lam l. lam r. AddTrellisExpr {t with left = l, right = r} in
+    constantFoldBinaryArithOp default addi info l r
+  | SubTrellisExpr (t & {left = l, right = r, info = info}) ->
+    let default = lam l. lam r. SubTrellisExpr {t with left = l, right = r} in
+    constantFoldBinaryArithOp default subi info l r
+  | MulTrellisExpr (t & {left = l, right = r, info = info}) ->
+    let default = lam l. lam r. MulTrellisExpr {t with left = l, right = r} in
+    constantFoldBinaryArithOp default muli info l r
+  | DivTrellisExpr (t & {left = l, right = r, info = info}) ->
+    let default = lam l. lam r. DivTrellisExpr {t with left = l, right = r} in
+    constantFoldBinaryArithOp default divi info l r
+  | EqTrellisExpr (t & {left = l, right = r, info = info}) ->
+    let default = lam l. lam r. EqTrellisExpr {t with left = l, right = r} in
+    constantFoldBinaryCompareOp default eqi info l r
+  | NeqTrellisExpr (t & {left = l, right = r, info = info}) ->
+    let default = lam l. lam r. NeqTrellisExpr {t with left = l, right = r} in
+    constantFoldBinaryCompareOp default neqi info l r
+  | LtTrellisExpr (t & {left = l, right = r, info = info}) ->
+    let default = lam l. lam r. LtTrellisExpr {t with left = l, right = r} in
+    constantFoldBinaryCompareOp default lti info l r
+  | GtTrellisExpr (t & {left = l, right = r, info = info}) ->
+    let default = lam l. lam r. GtTrellisExpr {t with left = l, right = r} in
+    constantFoldBinaryCompareOp default gti info l r
+  | LeqTrellisExpr (t & {left = l, right = r, info = info}) ->
+    let default = lam l. lam r. LeqTrellisExpr {t with left = l, right = r} in
+    constantFoldBinaryCompareOp default leqi info l r
+  | GeqTrellisExpr (t & {left = l, right = r, info = info}) ->
+    let default = lam l. lam r. GeqTrellisExpr {t with left = l, right = r} in
+    constantFoldBinaryCompareOp default geqi info l r
+  | e -> smap_TrellisExpr_TrellisExpr constantFoldTrellisExpr e
+
+  sem constantFoldBinaryArithOp
+    : (TrellisExpr -> TrellisExpr -> TrellisExpr) -> (Int -> Int -> Int)
+   -> Info -> TrellisExpr -> TrellisExpr -> TrellisExpr
+  sem constantFoldBinaryArithOp default op info l =
+  | r ->
+    let left = constantFoldTrellisExpr l in
+    let right = constantFoldTrellisExpr r in
+    match (left, right) with (IntTrellisExpr l, IntTrellisExpr r) then
+      IntTrellisExpr {i = {i = mergeInfo l.i.i r.i.i, v = op l.i.v r.i.v}, info = info}
+    else default left right
+
+  sem constantFoldBinaryCompareOp
+    : (TrellisExpr -> TrellisExpr -> TrellisExpr) -> (Int -> Int -> Bool)
+   -> Info -> TrellisExpr -> TrellisExpr -> TrellisExpr
+  sem constantFoldBinaryCompareOp default op info l =
+  | r ->
+    let left = constantFoldTrellisExpr l in
+    let right = constantFoldTrellisExpr r in
+    match (left, right) with (IntTrellisExpr l, IntTrellisExpr r) then
+      if op l.i.v r.i.v then TrueTrellisExpr {info = info}
+      else FalseTrellisExpr {info = info}
+    else default left right
 end
 
 mexpr
