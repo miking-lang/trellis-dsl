@@ -43,11 +43,11 @@ axs.set_xticks(x + 0.5*width, labels)
 axs.set_ylabel("Compilation time (s)")
 axs.legend(loc="upper left")
 
-avgs = avgs1 + avgs2
-ticks = np.arange(10, max(avgs), 10)
-fmt = axs.yaxis.get_major_formatter()
-labels = [fmt(x) for x in ticks]
-axs.yaxis.set_ticks(ticks, labels=labels)
+#avgs = avgs1 + avgs2
+#ticks = np.arange(10, max(avgs), 10)
+#fmt = axs.yaxis.get_major_formatter()
+#labels = [fmt(x) for x in ticks]
+#axs.yaxis.set_ticks(ticks, labels=labels)
 axs.set_axisbelow(True)
 
-fig.savefig("compilation.pdf", bbox_inches="tight")
+fig.savefig("compilation.pdf", bbox_inches="tight", pad_inches=0.05)

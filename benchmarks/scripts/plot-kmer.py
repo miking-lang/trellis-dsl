@@ -46,7 +46,7 @@ bars = axs.bar(x, avgs, width, yerr=errs, label="Full", color=colors[0])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_alg_exec_time_label(label, "forward", 3) for label in labels])
-bars = axs.bar(x + width, avgs, width, yerr=errs, label="All", color=colors[1])
+bars = axs.bar(x + width, avgs, width, yerr=errs, label="Alg", color=colors[1])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x+0.5*width, [display_name(l) for l in labels])
@@ -54,7 +54,7 @@ axs.set_yscale("log")
 axs.set_ylabel("Execution time (s)")
 axs.legend(loc="upper right", ncols=2)
 
-fig.savefig("3mer-forward.pdf", bbox_inches="tight")
+fig.savefig("3mer-forward.pdf", bbox_inches="tight", pad_inches=0.05)
 
 # Plot Viterbi algorithm results for kmer model (with and without batching)
 labels = [ "s", "n", "tc", "tr" ]
@@ -69,7 +69,7 @@ bars = axs.bar(x, avgs, width, yerr=errs, label="Full", color=colors[0])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_alg_exec_time_label(label, "nobatch-viterbi", 3) for label in labels])
-bars = axs.bar(x + width, avgs, width, yerr=errs, label="All", color=colors[1])
+bars = axs.bar(x + width, avgs, width, yerr=errs, label="Alg", color=colors[1])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x + 0.5*width, [display_name(l) for l in labels])
@@ -77,7 +77,7 @@ axs.set_yscale("log")
 axs.set_ylabel("Execution time (s)")
 axs.legend(loc="upper right", ncols=2)
 
-fig.savefig("3mer-nobatch-viterbi.pdf", bbox_inches="tight")
+fig.savefig("3mer-nobatch-viterbi.pdf", bbox_inches="tight", pad_inches=0.05)
 
 # Plot Viterbi algorithm results for kmer models (with batching)
 labels = [ "n", "tc", "tr" ]
@@ -91,7 +91,7 @@ bars = axs.bar(x, avgs, width, yerr=errs, label="Full (k = 3)", color=colors[0])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_alg_exec_time_label(label, "batch-viterbi", 3) for label in labels])
-bars = axs.bar(x + width, avgs, width, yerr=errs, label="All (k = 3)", color=colors[1])
+bars = axs.bar(x + width, avgs, width, yerr=errs, label="Alg (k = 3)", color=colors[1])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_full_time_label(label, "batch-viterbi", 5) for label in labels])
@@ -99,7 +99,7 @@ bars = axs.bar(x + 2*width, avgs, width, yerr=errs, label="Full (k = 5)", color=
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_alg_exec_time_label(label, "batch-viterbi", 5) for label in labels])
-bars = axs.bar(x + 3*width, avgs, width, yerr=errs, label="All (k = 5)", color=colors[3])
+bars = axs.bar(x + 3*width, avgs, width, yerr=errs, label="Alg (k = 5)", color=colors[3])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_full_time_label(label, "batch-viterbi", 7) for label in labels])
@@ -107,11 +107,11 @@ bars = axs.bar(x + 4*width, avgs, width, yerr=errs, label="Full (k = 7)", color=
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs, errs = zip(*[load_alg_exec_time_label(label, "batch-viterbi", 7) for label in labels])
-bars = axs.bar(x + 5*width, avgs, width, yerr=errs, label="All (k = 7)", color=colors[5])
+bars = axs.bar(x + 5*width, avgs, width, yerr=errs, label="Alg (k = 7)", color=colors[5])
 axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x + 2.5*width, [display_name(l) for l in labels])
 axs.set_ylabel("Execution time (s)")
 axs.legend(loc="upper left")
 
-fig.savefig("kmer-batch-viterbi.pdf", bbox_inches="tight")
+fig.savefig("kmer-batch-viterbi.pdf", bbox_inches="tight", pad_inches=0.05)
