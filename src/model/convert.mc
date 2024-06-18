@@ -176,45 +176,23 @@ lang TrellisModelConvertSet = TrellisModelConvertExpr
     let x = nameNoSym "x" in
     let xExpr = EVar {id = x, ty = stateType, info = get_TrellisPat_info p} in
     match collectPatternConstraints tyEnv xExpr p with (b1, c1) in
-    match to with Some to then
-      let y = nameNoSym "y" in
-      let yExpr = EVar {id = y, ty = stateType, info = get_TrellisPat_info p} in
-      match collectPatternConstraintsH tyEnv yExpr b1 c1 to with (b2, c2) in
-      let tyEnv = mapUnion tyEnv (mapMapWithKey (lam. lam e. tyTExpr e) b2) in
-      let conds = map (processCondExpr tyEnv b2) e in
-      STransitionBuilder {x = x, y = y, conds = concat conds c2, info = info}
-    else
-      let tyEnv = mapUnion tyEnv (mapMapWithKey (lam. lam e. tyTExpr e) b1) in
-      let conds = map (processCondExpr tyEnv b1) e in
-      SValueBuilder {x = x, conds = concat conds c1, info = info}
+    let y = nameNoSym "y" in
+    let yExpr = EVar {id = y, ty = stateType, info = get_TrellisPat_info p} in
+    match collectPatternConstraintsH tyEnv yExpr b1 c1 to with (b2, c2) in
+    let tyEnv = mapUnion tyEnv (mapMapWithKey (lam. lam e. tyTExpr e) b2) in
+    let conds = map (processCondExpr tyEnv b2) e in
+    STransitionBuilder {x = x, y = y, conds = concat conds c2, info = info}
   | LiteralTrellisSet {v = v, info = info} ->
-    let isTransitionValue = lam v. match v.to with Some _ then true else false in
     let x = nameNoSym "x" in
     let y = nameNoSym "y" in
-    if isTransitionValue (head v) then
-      let convertTransition = lam t.
-        let to =
-          match t.to with Some to then
-            convertTrellisExpr tyEnv to
-          else
-            errorSingle [info] "Literal values must either all be values or transitions"
-        in
-        let from = convertTrellisExpr tyEnv t.e in
-        trellisExprBoolAnd (eqVar info stateType x from) (eqVar info stateType y to)
-      in
-      let eqExprs = map convertTransition v in
-      let conds = foldl1 trellisExprBoolOr eqExprs in
-      STransitionBuilder {x = x, y = y, conds = [conds], info = info}
-    else
-      let convertValue = lam v.
-        match v.to with Some _ then
-          errorSingle [info] "Literal values must either all be values or transitions"
-        else
-          eqVar info stateType x (convertTrellisExpr tyEnv v.e)
-      in
-      let eqExprs = map convertValue v in
-      let conds = foldl1 trellisExprBoolOr eqExprs in
-      SValueBuilder {x = x, conds = [conds], info = info}
+    let convertTransition = lam t.
+      let from = convertTrellisExpr tyEnv t.e in
+      let to = convertTrellisExpr tyEnv t.to in
+      trellisExprBoolAnd (eqVar info stateType x from) (eqVar info stateType y to)
+    in
+    let eqExprs = map convertTransition v in
+    let conds = foldl1 trellisExprBoolOr eqExprs in
+    STransitionBuilder {x = x, y = y, conds = [conds], info = info}
 
   sem eqVar : Info -> TType -> Name -> TExpr -> TExpr
   sem eqVar info ty x =
@@ -449,8 +427,6 @@ lang TrellisModelEliminateSlices = TrellisModelAst
   sem eliminateSlicesSet : TSet -> TSet
   sem eliminateSlicesSet =
   | SAll t -> SAll t
-  | SValueBuilder t ->
-    SValueBuilder {t with conds = foldl extractComponentsExpr [] t.conds}
   | STransitionBuilder t ->
     STransitionBuilder {t with conds = foldl extractComponentsExpr [] t.conds}
 
@@ -582,17 +558,52 @@ end
 
 -- This language fragment defines a function for rewriting the state of the
 -- model such that if it has a literal (non-tuple) type, it is rewritten as a
--- singleton tuple.
+-- singleton tuple and the probability functions are updated accordingly.
 lang TrellisModelTupleTypes = TrellisModelAst
   sem rewriteModelStateTypeAsTuple : TModel -> TModel
   sem rewriteModelStateTypeAsTuple =
-  | model -> rewriteModelStateTypeAsTupleH model model.stateType
+  | model & {initial = i, output = o, transition = t} ->
+    match updateModelStateTypeToTuple model model.stateType
+    with Some newStateType then
+      let initIds = setOfSeq nameCmp [i.x] in
+      let initial = {i with body = updateModelStateReferencesExpr initIds i.body} in
+      let outIds = setOfSeq nameCmp [o.x] in
+      let output = {o with body = updateModelStateReferencesExpr outIds o.body} in
+      let transIds = setOfSeq nameCmp [t.x, t.y] in
+      let transition = {t with cases = map (updateModelStateReferencesCase transIds) t.cases} in
+      { model with stateType = newStateType, initial = initial,
+                   output = output, transition = transition }
+    else model
 
-  sem rewriteModelStateTypeAsTupleH : TModel -> TType -> TModel
-  sem rewriteModelStateTypeAsTupleH model =
-  | TTuple _ -> model
+  sem updateModelStateTypeToTuple : TModel -> TType -> Option TType
+  sem updateModelStateTypeToTuple model =
+  | TTuple _ -> None ()
   | ty & (TBool _ | TInt _ | TProb _) ->
-    {model with stateType = TTuple {tys = [ty], info = infoTTy ty}}
+    Some (TTuple {tys = [ty], info = infoTTy ty})
+  | ty -> errorSingle [infoTTy ty] "Unsupported type"
+
+  sem updateModelStateReferencesCase : Set Name -> TCase -> TCase
+  sem updateModelStateReferencesCase stateIds =
+  | {cond = cond, body = body} ->
+    { cond = updateModelStateReferencesSet cond
+    , body = updateModelStateReferencesExpr stateIds body }
+
+  sem updateModelStateReferencesSet : TSet -> TSet
+  sem updateModelStateReferencesSet =
+  | STransitionBuilder t ->
+    let ids = setOfSeq nameCmp [t.x, t.y] in
+    STransitionBuilder {t with conds = map (updateModelStateReferencesExpr ids) t.conds}
+  | s -> s
+
+  sem updateModelStateReferencesExpr : Set Name -> TExpr -> TExpr
+  sem updateModelStateReferencesExpr stateIds =
+  | EVar t ->
+    if setMem t.id stateIds then
+      let ty = TTuple {tys = [t.ty], info = t.info} in
+      let target = EVar {t with ty = ty} in
+      ESlice {target = target, lo = 0, hi = 0, ty = t.ty, info = t.info}
+    else EVar t
+  | e -> smapTExprTExpr (updateModelStateReferencesExpr stateIds) e
 end
 
 lang TrellisModelConvert =
@@ -607,10 +618,10 @@ lang TrellisModelConvert =
     let inModelDecls = resolveDeclarations p in
     let info = get_TrellisProgram_info p in
     let m = convertToModelRepresentation info inModelDecls in
+    let m = rewriteModelStateTypeAsTuple m in
     let m = flattenTrellisModelSlices m in
     let m = eliminateModelSlices m in
-    let m = adjustIntRangesModel m in
-    rewriteModelStateTypeAsTuple m
+    adjustIntRangesModel m
 
   sem convertToModelRepresentation : Info -> [InModelDecl] -> TModel
   sem convertToModelRepresentation info =

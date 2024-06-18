@@ -60,8 +60,6 @@ lang TrellisModelCompileSetConstraint =
     -- contains no constraints on either state, which corresponds to a set
     -- containing transitions between all pairs of states.
     result.ok (defaultConstraintRepr t.info stateType)
-  | SValueBuilder t ->
-    result.err (UnsupportedSet t.info)
   | STransitionBuilder t ->
     let acc = result.ok (defaultConstraintRepr t.info stateType) in
     foldl
@@ -283,10 +281,6 @@ utest extTest e11 with result.ok expected using eqc else ppc in
 -- Conversion of sets
 let s1 = SAll {info = NoInfo ()} in
 utest setConstraintToRepr stateTy s1 with result.ok empty using eqc else ppc in
-
-let s2 = SValueBuilder {x = x, info = NoInfo (), conds = [], info = NoInfo ()} in
-let unsuppSet = result.err (UnsupportedSet (NoInfo ())) in
-utest setConstraintToRepr stateTy s2 with unsuppSet using eqc else ppc in
 
 let tbset = lam conds.
   STransitionBuilder {x = x, y = y, info = NoInfo (), conds = conds}

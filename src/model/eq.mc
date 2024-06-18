@@ -102,10 +102,6 @@ lang TrellisModelSetEq = TrellisModelSetAst + TrellisModelExprEq
   sem eqSetH : EqOptions -> (TSet, TSet) -> Bool
   sem eqSetH options =
   | (SAll _, SAll _) -> true
-  | (SValueBuilder l, SValueBuilder r) ->
-    if nameEq l.x r.x then
-      allEqual (lam t. eqExpr options t.0 t.1) l.conds r.conds
-    else false
   | (STransitionBuilder l, STransitionBuilder r) ->
     if nameEq l.x r.x then
       if nameEq l.y r.y then
@@ -312,17 +308,12 @@ utest e20 with e22 using eqExpr o2 else ppExprs in
 let x = nameNoSym "x" in
 let y = nameNoSym "y" in
 let s1 = SAll {info = i} in
-let s2 = SValueBuilder {x = x, conds = [e1], info = i} in
-let s3 = SValueBuilder {x = x, conds = [e2], info = i} in
-let s4 = STransitionBuilder {x = x, y = y, conds = [e1], info = i} in
-let s5 = STransitionBuilder {x = x, y = y, conds = [e2], info = i} in
+let s2 = STransitionBuilder {x = x, y = y, conds = [e1], info = i} in
+let s3 = STransitionBuilder {x = x, y = y, conds = [e2], info = i} in
 utest s1 with s1 using eqSet o else ppSets in
 utest s2 with s2 using eqSet o else ppSets in
 utest s3 with s3 using eqSet o else ppSets in
-utest s4 with s4 using eqSet o else ppSets in
-utest s5 with s5 using eqSet o else ppSets in
 utest eqSet o s2 s3 with false in
-utest eqSet o s4 s5 with false in
 
 -- Model
 let defaultCase = { cond = s1, body = e9 } in

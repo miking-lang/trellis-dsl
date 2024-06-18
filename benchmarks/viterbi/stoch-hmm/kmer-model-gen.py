@@ -48,7 +48,8 @@ model_path = os.getenv("MODEL_PATH")
 if model_path:
     initp, outp, transp, _ = c.read_kmer_inputs(model_path, None)
 else:
-    initp, outp, transp = c.get_weather_model()
+    print("Unknown model")
+    exit(1)
 
 obs_vals = ','.join([str(x) for x in range(len(outp[0]))])
 state_sep = "#############################################"

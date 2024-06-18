@@ -345,13 +345,6 @@ lang TrellisCudaCompileSet = TrellisCudaCompileExpr
   sem cudaCompileTrellisSet : TSet -> CExpr
   sem cudaCompileTrellisSet =
   | SAll _ -> CEInt {i = 1}
-  | SValueBuilder {x = x, conds = conds} ->
-    let joinOr = lam l. lam r. CEBinOp { op = COOr (), lhs = l, rhs = r } in
-    let bound = setOfSeq nameCmp [x] in
-    let c = map (cudaCompileTrellisExpr bound) conds in
-    match c with [h] ++ t then
-      foldl joinOr h t
-    else CEInt {i = 0}
   | STransitionBuilder {x = x, y = y, conds = conds} ->
     let joinAnd = lam l. lam r. CEBinOp { op = COAnd (), lhs = l, rhs = r} in
     let bound = setOfSeq nameCmp [x, y] in

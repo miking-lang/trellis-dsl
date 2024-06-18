@@ -175,19 +175,16 @@ end
 lang TrellisModelSetAst = TrellisModelTypeAst + TrellisModelExprAst
   syn TSet =
   | SAll {info : Info}
-  | SValueBuilder {x : Name, conds : [TExpr], info : Info}
   | STransitionBuilder {x : Name, y : Name, conds : [TExpr], info : Info}
 
   sem infoTSet : TSet -> Info
   sem infoTSet =
   | SAll t -> t.info
-  | SValueBuilder t -> t.info
   | STransitionBuilder t -> t.info
 
   sem smapTSetTExpr : (TExpr -> TExpr) -> TSet -> TSet
   sem smapTSetTExpr f =
   | SAll t -> SAll t
-  | SValueBuilder t -> SValueBuilder {t with conds = map f t.conds}
   | STransitionBuilder t -> STransitionBuilder {t with conds = map f t.conds}
 end
 
