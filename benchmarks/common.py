@@ -6,7 +6,7 @@ import h5py
 
 def get_weather_model():
     initp = [0.5, 0.5]
-    outp = [[0.8, 0.2], [0.5, 0.5]]
+    outp = [[0.8, 0.2], [0.4, 0.6]]
     transp = [[0.75, 0.25], [0.5, 0.5]]
     return initp, outp, transp
 
