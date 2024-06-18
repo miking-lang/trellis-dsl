@@ -176,45 +176,23 @@ lang TrellisModelConvertSet = TrellisModelConvertExpr
     let x = nameNoSym "x" in
     let xExpr = EVar {id = x, ty = stateType, info = get_TrellisPat_info p} in
     match collectPatternConstraints tyEnv xExpr p with (b1, c1) in
-    match to with Some to then
-      let y = nameNoSym "y" in
-      let yExpr = EVar {id = y, ty = stateType, info = get_TrellisPat_info p} in
-      match collectPatternConstraintsH tyEnv yExpr b1 c1 to with (b2, c2) in
-      let tyEnv = mapUnion tyEnv (mapMapWithKey (lam. lam e. tyTExpr e) b2) in
-      let conds = map (processCondExpr tyEnv b2) e in
-      STransitionBuilder {x = x, y = y, conds = concat conds c2, info = info}
-    else
-      let tyEnv = mapUnion tyEnv (mapMapWithKey (lam. lam e. tyTExpr e) b1) in
-      let conds = map (processCondExpr tyEnv b1) e in
-      SValueBuilder {x = x, conds = concat conds c1, info = info}
+    let y = nameNoSym "y" in
+    let yExpr = EVar {id = y, ty = stateType, info = get_TrellisPat_info p} in
+    match collectPatternConstraintsH tyEnv yExpr b1 c1 to with (b2, c2) in
+    let tyEnv = mapUnion tyEnv (mapMapWithKey (lam. lam e. tyTExpr e) b2) in
+    let conds = map (processCondExpr tyEnv b2) e in
+    STransitionBuilder {x = x, y = y, conds = concat conds c2, info = info}
   | LiteralTrellisSet {v = v, info = info} ->
-    let isTransitionValue = lam v. match v.to with Some _ then true else false in
     let x = nameNoSym "x" in
     let y = nameNoSym "y" in
-    if isTransitionValue (head v) then
-      let convertTransition = lam t.
-        let to =
-          match t.to with Some to then
-            convertTrellisExpr tyEnv to
-          else
-            errorSingle [info] "Literal values must either all be values or transitions"
-        in
-        let from = convertTrellisExpr tyEnv t.e in
-        trellisExprBoolAnd (eqVar info stateType x from) (eqVar info stateType y to)
-      in
-      let eqExprs = map convertTransition v in
-      let conds = foldl1 trellisExprBoolOr eqExprs in
-      STransitionBuilder {x = x, y = y, conds = [conds], info = info}
-    else
-      let convertValue = lam v.
-        match v.to with Some _ then
-          errorSingle [info] "Literal values must either all be values or transitions"
-        else
-          eqVar info stateType x (convertTrellisExpr tyEnv v.e)
-      in
-      let eqExprs = map convertValue v in
-      let conds = foldl1 trellisExprBoolOr eqExprs in
-      SValueBuilder {x = x, conds = [conds], info = info}
+    let convertTransition = lam t.
+      let from = convertTrellisExpr tyEnv t.e in
+      let to = convertTrellisExpr tyEnv t.to in
+      trellisExprBoolAnd (eqVar info stateType x from) (eqVar info stateType y to)
+    in
+    let eqExprs = map convertTransition v in
+    let conds = foldl1 trellisExprBoolOr eqExprs in
+    STransitionBuilder {x = x, y = y, conds = [conds], info = info}
 
   sem eqVar : Info -> TType -> Name -> TExpr -> TExpr
   sem eqVar info ty x =
@@ -449,8 +427,6 @@ lang TrellisModelEliminateSlices = TrellisModelAst
   sem eliminateSlicesSet : TSet -> TSet
   sem eliminateSlicesSet =
   | SAll t -> SAll t
-  | SValueBuilder t ->
-    SValueBuilder {t with conds = foldl extractComponentsExpr [] t.conds}
   | STransitionBuilder t ->
     STransitionBuilder {t with conds = foldl extractComponentsExpr [] t.conds}
 

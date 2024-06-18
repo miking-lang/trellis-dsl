@@ -20,8 +20,6 @@ lang TrellisModelMergeSubsequentOperations = TrellisModelAst
   sem mergeSubsequentOperationsSet : TSet -> TSet
   sem mergeSubsequentOperationsSet =
   | SAll t -> SAll t
-  | SValueBuilder t ->
-    SValueBuilder {t with conds = foldl mergeSubsequentOperations [] t.conds}
   | STransitionBuilder t ->
     STransitionBuilder {t with conds = foldl mergeSubsequentOperations [] t.conds}
 

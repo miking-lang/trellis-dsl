@@ -113,24 +113,14 @@ lang TrellisSetPrettyPrint =
   sem pprintTrellisSet env =
   | BuilderTrellisSet {p = p, to = to, e = e, info = info} ->
     match pprintTrellisPat env p with (env, p) in
-    match
-      match to with Some to then
-        match pprintTrellisPat env to with (env, to) in
-        (env, concat " -> " to)
-      else (env, "")
-    with (env, to) in
+    match pprintTrellisPat env to with (env, to) in
     match mapAccumL pprintTrellisExpr env e with (env, e) in
-    (env, join ["{", p, to, " | ", strJoin ", " e, "}"])
+    (env, join ["{", p, " -> ", to, " | ", strJoin ", " e, "}"])
   | LiteralTrellisSet {v = v, info = info} ->
     let pprintSetElement = lam env. lam elem.
       match pprintTrellisExpr env elem.e with (env, e) in
-      match
-        match elem.to with Some to then
-          match pprintTrellisExpr env to with (env, to) in
-          (env, concat " -> " to)
-        else (env, "")
-      with (env, to) in
-      (env, join [e, to])
+      match pprintTrellisExpr env elem.to with (env, to) in
+      (env, join [e, " -> ", to])
     in
     match mapAccumL pprintSetElement env v with (env, v) in
     (env, join ["@{", strJoin ", " v, "}"])
@@ -429,24 +419,19 @@ let pprintSet = lam s.
   s
 in
 
-let builderSetValue = BuilderTrellisSet {
-  p = varPat, to = None (), e = [trueExpr], info = i
-} in
-utest pprintSet builderSetValue with "{x | true}" using eqString else ppStrings in
-
 let builderSetTransition = BuilderTrellisSet {
-  p = varPat, to = Some varPat, e = [trueExpr], info = i
+  p = varPat, to = varPat, e = [trueExpr], info = i
 } in
 utest pprintSet builderSetTransition with "{x -> x | true}" using eqString else ppStrings in
 
 let multiCondBuilderSet = BuilderTrellisSet {
-  p = varPat, to = Some varPat, e = [andExpr, gtExpr], info = i
+  p = varPat, to = varPat, e = [andExpr, gtExpr], info = i
 } in
 utest pprintSet multiCondBuilderSet with "{x -> x | ((x > 0.5) && x), (x > 0.5)}"
 using eqString else ppStrings in
 
 let patBuilderSet = BuilderTrellisSet {
-  p = dotsArrayPat, to = Some tupPat, e = [trueExpr], info = i
+  p = dotsArrayPat, to = tupPat, e = [trueExpr], info = i
 } in
 utest pprintSet patBuilderSet with "{[x, y..., 7] -> (A, true, [x, y..., 7]) | true}"
 using eqString else ppStrings in

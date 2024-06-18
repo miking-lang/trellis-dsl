@@ -62,9 +62,6 @@ lang TrellisModelToZ3 = TrellisModelAst + TrellisZ3Ast + TrellisConstraintToZ3
   sem trellisSetToZ3 : TSet -> Z3Expr
   sem trellisSetToZ3 =
   | SAll _ -> ZETrue ()
-  | SValueBuilder {x = x, conds = conds} ->
-    let nameMap = mapFromSeq nameCmp [(x, "x")] in
-    foldl1 z3And (map (trellisExprToZ3 nameMap) conds)
   | STransitionBuilder {x = x, y = y, conds = conds} ->
     let nameMap = mapFromSeq nameCmp [(x, "x"), (y, "y")] in
     foldl1 z3And (map (trellisExprToZ3 nameMap) conds)
@@ -128,9 +125,6 @@ lang TrellisModelValidateNonEmpty =
   sem constructSetConstraintNonEmptyProblem : [Int] -> TSet -> Z3Program
   sem constructSetConstraintNonEmptyProblem stateSizes =
   | s & (SAll _) -> [ZDAssert {e = ZETrue ()}, ZDCheckSat ()]
-  | s & (SValueBuilder {x = x}) ->
-    let baseConstraints = z3ImplicitConstraints stateSizes "x" in
-    join [baseConstraints, [ZDAssert {e = trellisSetToZ3 s}, ZDCheckSat ()]]
   | s & (STransitionBuilder {x = x, y = y}) ->
     let baseSrcConstraints = z3ImplicitConstraints stateSizes "x" in
     let baseDstConstraints = z3ImplicitConstraints stateSizes "y" in

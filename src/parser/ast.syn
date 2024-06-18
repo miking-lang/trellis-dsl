@@ -89,10 +89,10 @@ prod Cases : ProbDecl = "{" (cases:{("|" s:TrellisSet "=>" e:TrellisExpr)})+ "}"
 type TrellisSet
 
 prod Builder : TrellisSet =
-  "{" p:TrellisPat ("->" to:TrellisPat)? "|" (e:TrellisExpr ("," e:TrellisExpr)*) "}"
+  "{" p:TrellisPat "->" to:TrellisPat "|" (e:TrellisExpr ("," e:TrellisExpr)*) "}"
 
 prod Literal : TrellisSet =
-  "@" "{" (v:{e:TrellisExpr ("->" to:TrellisExpr)?} ("," v:{e:TrellisExpr ("->" to:TrellisExpr)?})*)? "}"
+  "@" "{" (v:{e:TrellisExpr "->" to:TrellisExpr} ("," v:{e:TrellisExpr "->" to:TrellisExpr})*)? "}"
 
 --------------
 -- Patterns --

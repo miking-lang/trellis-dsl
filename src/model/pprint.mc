@@ -81,10 +81,6 @@ lang TrellisModelSetPrettyPrint =
   sem pprintTrellisSet : PprintType TSet
   sem pprintTrellisSet env =
   | SAll _ -> (env, "{_ | true}")
-  | SValueBuilder {x = x, conds = conds} ->
-    match pprintVarName env x with (env, x) in
-    match mapAccumL pprintTrellisExpr env conds with (env, conds) in
-    (env, join ["{", x, " | ", strJoin ", " conds, "}"])
   | STransitionBuilder {x = x, y = y, conds = conds} ->
     match pprintVarName env x with (env, x) in
     match pprintVarName env y with (env, y) in
