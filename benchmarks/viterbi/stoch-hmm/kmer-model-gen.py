@@ -44,11 +44,12 @@ TRANSITION: STANDARD: P(X)
 {newline.join(["  " + state_id(x) + ": "+ str(initp[x]) for x in range(nstates) if initp[x] > 0])}
 """
 
-model_path = os.getenv("MODEL_PATH")
-if model_path:
+if len(sys.argv) == 3:
+    model_path = sys.argv[1]
     initp, outp, transp, _ = c.read_kmer_inputs(model_path, None)
+    dst = sys.argv[2]
 else:
-    print("Unknown model")
+    print("Expected model path as first argument and output path as second path")
     exit(1)
 
 obs_vals = ','.join([str(x) for x in range(len(outp[0]))])
@@ -68,6 +69,5 @@ OBS: {obs_vals}
 STATE DEFINITIONS
 {state_sep}{init_state(initp)}{state_sep}{states_str}{state_sep}"""
 
-dst = sys.argv[1]
 with open(dst, "w+") as f:
     f.write(model_data)

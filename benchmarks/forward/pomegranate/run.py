@@ -41,11 +41,24 @@ def build_model(model, initp, outp, transp):
 model_path = os.getenv("MODEL_PATH")
 signals_path = os.getenv("SIGNALS_PATH")
 
-if model_path:
-    initp, outp, transp, signals = c.read_kmer_inputs(model_path, signals_path)
-else:
+if len(sys.argv) != 3:
+    print("Expected GPU flag and test identifier")
+    exit(1)
+
+use_gpu = int(sys.argv[1])
+test_id = sys.argv[2]
+if test_id == "weather":
     initp, outp, transp = c.get_weather_model()
     signals = c.read_weather_signals(signals_path)
+elif test_id.startswith("synthetic"):
+    _, k = test_id.split("-")
+    initp, outp, transp = c.get_synthetic_model(int(k))
+    signals = c.read_synthetic_model_signals(signals_path)
+elif test_id == "3mer" or test_id == "5mer" or test_id == "7mer":
+    initp, outp, transp, signals = c.read_kmer_inputs(model_path, signals_path)
+else:
+    print("Unknown test identifier")
+    exit(1)
 
 use_gpu = int(sys.argv[1])
 model = hmm.DenseHMM()

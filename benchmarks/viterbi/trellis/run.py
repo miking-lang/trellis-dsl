@@ -8,15 +8,21 @@ import numpy as np
 model_path = os.getenv("MODEL_PATH")
 signals_path = os.getenv("SIGNALS_PATH")
 
-if model_path:
+test_id = sys.argv[1]
+if test_id == "weather":
+    tables, signals = c.get_weather_inputs_trellis(signals_path)
+elif test_id.startswith("synthetic"):
+    _, k = test_id.split("-")
+    tables, signals = c.get_synthetic_model_trellis(signals_path, k)
+elif test_id == "3mer" or test_id == "5mer" or test_id == "7mer":
     tables, signals = c.read_kmer_inputs_trellis(model_path, signals_path)
 else:
-    tables, signals = c.get_weather_inputs_trellis(signals_path)
-
+    print(f"Unknown test identifier: {test_id}")
+    exit(1)
 hmm = HMM(tables)
 
-if len(sys.argv) == 2:
-    k = int(sys.argv[1])
+if len(sys.argv) == 3:
+    k = int(sys.argv[2])
 else:
     k = 0
 
@@ -30,7 +36,7 @@ output = hmm.viterbi(signals, bsz)
 t1 = time.time()
 print(t1-t0)
 
-# WEATHER:
+# WEATHER & SYNTHETIC:
 #for o in output:
 #    sys.stderr.write(' '.join([str(x) for x in o]) + "\n")
 

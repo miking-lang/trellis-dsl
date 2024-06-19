@@ -23,12 +23,48 @@ def get_weather_inputs_trellis(signals_path):
     }
     return tables, read_weather_signals(signals_path)
 
+def get_synthetic_model(k):
+    nstates = 100
+    def pred_prob(i, j):
+        if abs(i-j) <= k:
+            return 1
+        else:
+            return 0
+
+    initp = [1.0 / float(nstates) for i in range(nstates)]
+    outp = [[1.0 - float(i) / float(nstates), float(i) / float(nstates)] for i in range(nstates)]
+    transp = [[pred_prob(i, j) for j in range(nstates)] for i in range(nstates)]
+
+    # Normalize the transition probabilities
+    for i in range(nstates):
+        s = sum(transp[i])
+        transp[i] = [transp[i][j] / s for j in range(nstates)]
+
+    return initp, outp, transp
+
+def read_synthetic_model_signals(signals_path):
+    with h5py.File(signals_path, "r") as f:
+        keys = list(f.keys())
+        signals = [f[k]['Raw']['Signal'][:].tolist() for k in keys]
+    return signals
+
+def get_synthetic_model_trellis(signals_path, k):
+    initp, outp, transp = get_synthetic_model(k)
+    nstates = len(initp)
+    with np.errstate(divide='ignore'):
+        tables = {
+            'initialProb' : np.log(np.array(initp)),
+            'outputProb' : np.log(np.array(outp).transpose()),
+            'transProb' : np.log(np.array([transp[i][i] for i in range(nstates)]))
+        }
+    return tables, read_synthetic_model_signals(signals_path)
+
 # Generates uniformly distributed initial positions among the states at layer
 # zero. All other states have probability zero initially.
 def generate_init_probs(k):
     init_probs = np.zeros((16, 4**k), dtype=np.float32)
     for kmer in range(0, 4**k):
-        init_probs[0][kmer] = log(1.0 / float(4**k))
+        init_probs[0][kmer] = np.log(1.0 / float(4**k))
     for layer in range(1, 16):
         for kmer in range(0, 4**k):
             init_probs[layer][kmer] = -inf
