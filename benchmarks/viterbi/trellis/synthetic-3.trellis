@@ -1,0 +1,25 @@
+let nstates = 1000
+
+alias State = 1 .. nstates
+alias Obs = 0 .. 1
+
+model {
+  state = State
+  output = Obs
+
+  table initialProb(State)
+  table outputProb(Obs, State)
+  table transProb(State)
+
+  P(initial x) = initialProb(x)
+  P(output o | x) = outputProb(o, x)
+  P(transition x y) = {
+    | {x -> y | x == y} => transProb(y)
+    | {x -> y | x == y - 1} => transProb(y)
+    | {x -> y | x == y - 2} => transProb(y)
+    | {x -> y | x == y - 3} => transProb(y)
+    | {x -> y | x == y + 1} => transProb(y)
+    | {x -> y | x == y + 2} => transProb(y)
+    | {x -> y | x == y + 3} => transProb(y)
+  }
+}
