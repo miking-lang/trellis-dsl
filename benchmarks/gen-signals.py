@@ -18,7 +18,7 @@ def write_stochhmm_data(target, signals):
             f.write(f">signal{i}\n{''.join(s)}\n")
 
 if len(sys.argv) == 2:
-    target = sys.argv[3]
+    target = sys.argv[1]
 elif len(sys.argv) != 4:
     print("Wrong number of command-line arguments")
     exit(1)
@@ -27,14 +27,14 @@ else:
     signal_len = int(sys.argv[2])
     target = sys.argv[3]
 
-# Use a seed to get a fixed result
-random.seed(1234)
+    # Use a seed to get a fixed result
+    random.seed(1234)
 
-obs = [0, 1]
-signals = [list(random.choices(obs, k=signal_len)) for i in range(nsignals)]
+    obs = [0, 1]
+    signals = [list(random.choices(obs, k=signal_len)) for i in range(nsignals)]
 
-# Write data using the HDF5 format
-write_hdf5_data(f"signals/{target}.hdf5", signals)
+    # Write data using the HDF5 format
+    write_hdf5_data(f"signals/{target}.hdf5", signals)
 
 if target == "weather":
     mood = "HG"

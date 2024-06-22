@@ -33,7 +33,7 @@ plt.rc("ytick", labelsize=14)
 plt.rc("legend", fontsize=14)
 
 # Plot Forward algorithm results
-labels = [ "z", "pc", "pg", "tc" ]
+labels = [ "z", "pc-dense", "pg-dense", "tc" ]
 x = np.arange(len(labels))
 
 fig, axs = plt.subplots(layout="constrained")

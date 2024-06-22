@@ -40,7 +40,7 @@ TRANSITION: STANDARD: P(X)
 {newline.join(["  " + state_id(x) + ": "+ str(initp[x]) for x in range(nstates) if initp[x] > 0])}
 """
 
-if len(sys.argv) != 3:
+if len(sys.argv) == 3:
     k = int(sys.argv[1])
     initp, outp, transp = c.get_synthetic_model(k)
     dst = sys.argv[2]

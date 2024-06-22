@@ -19,7 +19,7 @@ if test_id == "weather":
     signals = c.read_weather_signals(signals_path)
 elif test_id.startswith("synthetic"):
     _, k = test_id.split("-")
-    initp, outp, transp = c.get_synthetic_model(k)
+    initp, outp, transp = c.get_synthetic_model(int(k))
     signals = c.read_synthetic_model_signals(signals_path)
 elif test_id == "3mer" or test_id == "5mer" or test_id == "7mer":
     initp, outp, transp, signals = c.read_kmer_inputs(model_path, signals_path)

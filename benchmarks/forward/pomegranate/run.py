@@ -41,12 +41,11 @@ def build_model(model, initp, outp, transp):
 model_path = os.getenv("MODEL_PATH")
 signals_path = os.getenv("SIGNALS_PATH")
 
-if len(sys.argv) != 3:
-    print("Expected GPU flag and test identifier")
+if len(sys.argv) != 4:
+    print("Expected GPU and dense flags, and test identifier")
     exit(1)
 
-use_gpu = int(sys.argv[1])
-test_id = sys.argv[2]
+test_id = sys.argv[3]
 if test_id == "weather":
     initp, outp, transp = c.get_weather_model()
     signals = c.read_weather_signals(signals_path)
@@ -61,7 +60,11 @@ else:
     exit(1)
 
 use_gpu = int(sys.argv[1])
-model = hmm.DenseHMM()
+use_dense = int(sys.argv[2])
+if use_dense:
+    model = hmm.DenseHMM()
+else:
+    model = hmm.SparseHMM()
 if use_gpu:
     model = model.cuda()
 model = build_model(model, initp, outp, transp)

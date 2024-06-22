@@ -25,7 +25,7 @@ plt.rc("xtick", labelsize=14)
 plt.rc("ytick", labelsize=14)
 plt.rc("legend", fontsize=14)
 
-labels = [ "weather", "3mer", "5mer", "7mer" ]
+labels = [ "weather", "3mer", "5mer", "7mer", "synthetic-0", "synthetic-1", "synthetic-2", "synthetic-3", "synthetic-4" ]
 x = np.arange(len(labels))
 
 fig, axs = plt.subplots(layout="constrained")
@@ -33,21 +33,15 @@ width = 0.4
 
 avgs1, errs = zip(*[load_data(label, "tc") for label in labels])
 bars = axs.bar(x, avgs1, width, yerr=errs, label="Trellis CT", color=colors[2])
-axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
+#axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 avgs2, errs = zip(*[load_data(label, "tr") for label in labels])
 bars = axs.bar(x + width, avgs2, width, yerr=errs, label="Trellis RT", color=colors[3])
-axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
+#axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
 axs.set_xticks(x + 0.5*width, labels)
 axs.set_ylabel("Compilation time (s)")
 axs.legend(loc="upper left")
-
-#avgs = avgs1 + avgs2
-#ticks = np.arange(10, max(avgs), 10)
-#fmt = axs.yaxis.get_major_formatter()
-#labels = [fmt(x) for x in ticks]
-#axs.yaxis.set_ticks(ticks, labels=labels)
 axs.set_axisbelow(True)
 
 fig.savefig("compilation.pdf", bbox_inches="tight", pad_inches=0.05)

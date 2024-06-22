@@ -1,7 +1,7 @@
 display_names = {
     "z" : "ZipHMM",
-    "pc" : "Pom CPU",
-    "pg" : "Pom GPU",
+    "pc-dense" : "Pom CPU",
+    "pg-dense" : "Pom GPU",
     "tc" : "Trellis CT",
     "tr" : "Trellis RT",
     "s" : "StochHMM",

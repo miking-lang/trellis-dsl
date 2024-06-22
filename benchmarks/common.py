@@ -24,13 +24,13 @@ def get_weather_inputs_trellis(signals_path):
     return tables, read_weather_signals(signals_path)
 
 def get_synthetic_model(k):
-    nstates = 100
     def pred_prob(i, j):
         if abs(i-j) <= k:
-            return 1
+            return 1.0
         else:
-            return 0
+            return 0.0
 
+    nstates = 1000
     initp = [1.0 / float(nstates) for i in range(nstates)]
     outp = [[1.0 - float(i) / float(nstates), float(i) / float(nstates)] for i in range(nstates)]
     transp = [[pred_prob(i, j) for j in range(nstates)] for i in range(nstates)]
