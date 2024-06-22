@@ -15,7 +15,6 @@ lang TrellisCudaPrettyPrint = TrellisCudaAst + CPrettyPrint
   | CTyConst {ty = ty} ->
     match printCType decl env ty with (env, s) in
     (env, _joinSpace "const" s)
-  | CTyEmpty _ -> (env, decl)
 
   sem printCExpr env =
   | CETernary {cond = cond, thn = thn, els = els} ->
@@ -35,6 +34,8 @@ lang TrellisCudaPrettyPrint = TrellisCudaAst + CPrettyPrint
   | CuAHost () -> "__host__"
   | CuADevice () -> "__device__"
   | CuAGlobal () -> "__global__"
+  | CuAConstant () -> "__constant__"
+  | CuAExternC () -> "extern \"C\""
 
   sem printCudaTop : PprintEnv -> CuTop -> (PprintEnv, String)
   sem printCudaTop env =
@@ -43,11 +44,16 @@ lang TrellisCudaPrettyPrint = TrellisCudaAst + CPrettyPrint
     match printCTop 0 env ctop with (env, topstr) in
     (env, join [if null annots then annots else concat annots "\n", topstr])
 
+  sem pprintInclude : String -> String
+  sem pprintInclude =
+  | header -> join ["#include ", header, ""]
+
   sem printCudaProgram : CuProgram -> String
   sem printCudaProgram =
-  | {tops = tops} ->
+  | {includes = includes, tops = tops} ->
     match mapAccumL printCudaTop pprintEnvEmpty tops with (_, tops) in
-    strJoin "\n" tops
+    let includes = map pprintInclude includes in
+    strJoin "\n" (join [includes, tops])
 end
 
 mexpr
@@ -77,9 +83,6 @@ utest ppType "x" ty1 with "const int x" using eqString else ppstrs in
 let ty2 = CTyConst {ty = CTyPtr {ty = CTyVoid ()}} in
 utest ppType "x" ty2 with "const void (*x)" using eqString else ppstrs in
 
-let ty3 = CTyEmpty () in
-utest ppType "MACRO" ty3 with "MACRO" using eqString else ppstrs in
-
 let ternary = CETernary {
   cond = CEBinOp {op = COEq (), lhs = CEVar {id = nameNoSym "a"}, rhs = CEInt {i = 2}},
   thn = CEInt {i = 1}, els = CEInt {i = 2}
@@ -91,9 +94,7 @@ let cutop = {
   top = CTFun {
     ret = CTyVar {id = nameNoSym "prob_t"},
     id = nameNoSym "init_prob",
-    params = [
-      (CTyVar {id = nameNoSym "state_t"}, nameNoSym "x"),
-      (CTyEmpty (), nameNoSym "HMM_DECL_PARAMS")],
+    params = [(CTyVar {id = nameNoSym "state_t"}, nameNoSym "x")],
     body = [
       CSRet {val = Some (CEBinOp {
         op = COSubScript (),
@@ -104,9 +105,22 @@ let cutop = {
 } in
 utest ppTop cutop with
 "__host__ __device__
-prob_t init_prob(state_t x, HMM_DECL_PARAMS) {
+prob_t init_prob(state_t x) {
   return (initp[1]);
 }"
+using eqString else ppstrs in
+
+let cdecl = {
+  annotations = [CuAConstant (), CuAExternC ()],
+  top = CTDef {
+    ty = CTyArray {ty = CTyFloat (), size = Some (CEInt {i = 10})},
+    id = Some (nameNoSym "x"),
+    init = None ()
+  }
+} in
+utest ppTop cdecl with
+"__constant__ extern \"C\"
+float x[10];"
 using eqString else ppstrs in
 
 ()

@@ -14,14 +14,24 @@ lang TrellisGeneratePython =
   sem indent =
   | n -> create (muli n 4) (lam. ' ')
 
-  sem numpyTypeSize : TType -> String
-  sem numpyTypeSize =
+  sem numpyType : TType -> String
+  sem numpyType =
   | ty ->
     let n = bitwidthType ty in
     if lti n 8 then "np.uint8"
     else if lti n 16 then "np.uint16"
     else if lti n 32 then "np.uint32"
     else if lti n 64 then "np.uint64"
+    else errorSingle [infoTTy ty] "Type bitwidth too large for a 64-bit value"
+
+  sem ctypesType : TType -> String
+  sem ctypesType =
+  | ty ->
+    let n = bitwidthType ty in
+    if lti n 8 then "ctypes.c_uint8"
+    else if lti n 16 then "ctypes.c_uint16"
+    else if lti n 32 then "ctypes.c_uint32"
+    else if lti n 64 then "ctypes.c_uint64"
     else errorSingle [infoTTy ty] "Type bitwidth too large for a 64-bit value"
 
   sem pythonBool : Bool -> String
@@ -34,11 +44,17 @@ lang TrellisGeneratePython =
   sem generatePythonWrapper options syntheticTables model =
   | env ->
     let numStates = cardinalityType model.stateType in
-    let pyStateType = numpyTypeSize model.stateType in
-    let pyObsType = numpyTypeSize model.outType in
+    let pyStateType = numpyType model.stateType in
+    let pyCtypesStateType = ctypesType model.stateType in
+    let pyObsType = numpyType model.outType in
+    let pyCtypesObsType = ctypesType model.outType in
     let pyProbType =
       if options.useDoublePrecisionFloats then "np.float64"
       else "np.float32"
+    in
+    let pyCtypesProbType =
+      if options.useDoublePrecisionFloats then "ctypes.c_double"
+      else "ctypes.c_float"
     in
     let precompPred = pythonBool env.precomputedPredecessors in
     strJoin "\n" [
@@ -48,170 +64,76 @@ lang TrellisGeneratePython =
       join [indent 2, "self.num_preds = ", int2string (foldl addi 0 env.numPreds)],
       join [indent 2, "self.batch_size = ", int2string options.batchSize],
       join [indent 2, "self.batch_overlap = ", int2string options.batchOverlap],
-      join [indent 2, "self.use_fast_math = ", pythonBool options.useFastMath],
       join [indent 2, "self.state_type = ", pyStateType],
+      join [indent 2, "self.state_ctype = ", pyCtypesStateType],
       join [indent 2, "self.prob_type = ", pyProbType],
+      join [indent 2, "self.prob_ctype = ", pyCtypesProbType],
       join [indent 2, "self.obs_type = ", pyObsType],
-      join [indent 2, "self.neginf = np.array(-np.inf, dtype=self.prob_type)"],
-      join [indent 2, "self.compile_cuda('hmm.cu')"],
+      join [indent 2, "self.obs_ctype = ", pyCtypesObsType],
+      join [indent 2, "self.setup_library()"],
       join [indent 2, "self.copy_args(args)"],
       "",
-      join [indent 1, "def __del__(self):"],
-      generateFreeTables env model,
-      join [indent 2, "if hasattr(self, 'module'):"],
-      join [indent 3, "err, = cuda.cuModuleUnload(self.module)"],
-      join [indent 3, "cuda_check(err)"],
-      join [indent 2, "if hasattr(self, 'ctx'):"],
-      join [indent 3, "err, = cuda.cuCtxDestroy(self.ctx)"],
-      join [indent 3, "cuda_check(err)"],
-      "",
       join [indent 1, "def copy_args(self, args):"],
-      generateCopyToGpuTables syntheticTables env model
+      generateInitCall syntheticTables env model
     ]
 
-  sem getTableField : Name -> String
-  sem getTableField =
-  | tableId -> concat "tables_" (nameGetStr tableId)
-
-  -- Generates code for deallocating a table field in the Python wrapper.
-  sem deallocTable : String -> String
-  sem deallocTable =
-  | tid ->
-    strJoin "\n" [
-      join [indent 2, "if hasattr(self, '", tid, "'):"],
-      join [indent 3, "err, = cuda.cuMemFree(self.", tid, ")"],
-      join [indent 3, "cuda_check(err)"]
-    ]
-
-  -- Generate code to deallocate the GPU data of all tables of the given model.
-  sem generateFreeTables : CuCompileEnv -> TModel -> String
-  sem generateFreeTables env =
+  sem generateInitCall : Map Name TExpr -> CuCompileEnv -> TModel -> String
+  sem generateInitCall syntheticTables env =
   | {tables = tables} ->
-    let frees =
-      mapFoldWithKey
-        (lam acc. lam id. lam ty.
-          match ty with TTable {args = !([]) & args} then
-            let tid = getTableField id in
-            snoc acc (deallocTable tid)
-          else acc)
-        [] tables
-    in
-    let frees =
-      if env.precomputedPredecessors then
-        let predTableIds =
-          mapi (lam i. lam. concat "pred" (int2string i)) env.numPreds
-        in
-        concat frees (map deallocTable predTableIds)
-      else frees
-    in
-    strJoin "\n" frees
-
-  sem flattenTable : Name -> String
-  sem flattenTable =
-  | tableId ->
-    let str = nameGetStr tableId in
-    join [indent 2, "args['", str, "'] = args['", str, "'].flatten()"]
-
-  sem copyTableToGpu : Name -> String
-  sem copyTableToGpu =
-  | tableId ->
-    let tid = getTableField tableId in
-    let str = nameGetStr tableId in
-    join [
-      indent 2, "self.", tid, " = self.copy_to_gpu(np.array(args['", str,
-      "'], dtype=self.prob_type), 0)" ]
-
-  -- Generate code to copy the data of all tables of the given model to the
-  -- GPU.
-  sem generateCopyToGpuTables : Map Name TExpr -> CuCompileEnv -> TModel -> String
-  sem generateCopyToGpuTables syntheticTables env =
-  | {tables = tables} ->
-    -- Code for flattening tables and copying them to the GPU. Single element
-    -- tables are converted to NumPy arrays instead.
-    -- NOTE(larshum, 2024-05-08): For simplicity, we assume all tables contain
-    -- probabilities.
-    let copies =
-      let copiesStrs =
-        mapFoldWithKey
-          (lam acc. lam id. lam ty.
-            let tid = getTableField id in
-            match ty with TTable {args = !([]) & args} then
-              snoc acc (strJoin "\n" [flattenTable id, copyTableToGpu id])
-            else
-              snoc acc (join [
-                indent 2, "self.", tid, " = np.array(args['", nameGetStr id,
-                "'], dtype=self.prob_type)" ]) )
-          [] tables
+    let addDeclaredTableData = lam acc. lam tableId. lam tableTy.
+      let tablePyType =
+        match tableTy with TTable {args = !([]) & args} then
+          "np.ctypeslib.ndpointer(dtype=self.prob_type, ndim=1, flags='C_CONTIGUOUS')"
+        else
+          "self.prob_ctype"
       in
-      strJoin "\n" copiesStrs
+      let tableValue =
+        let id = nameGetStr tableId in
+        -- Represent the table value differently depending on whether it is a
+        -- scalar value or not.
+        match tableTy with TTable {args = !([]) & args} then
+          join ["np.array(args['", id, "'].flatten(), dtype=self.prob_type)"]
+        else
+          join ["float(args['", id, "'])"]
+      in
+      snoc acc (tablePyType, tableValue)
     in
-    -- Construct the synthetic tables based on the tables provided as
-    -- arguments.
-    let syntheticTablesStr =
-      strJoin "\n"
+    let addSyntheticTableData = lam acc. lam. lam expr.
+      let tableValue = join ["float(", exprToPythonString expr, ")"] in
+      snoc acc ("self.prob_ctype", tableValue)
+    in
+    let addPredecessorTableData = lam acc. lam i. lam.
+      let id = concat "pred" (int2string i) in
+      let tablePyType =
+        "np.ctypeslib.ndpointer(dtype=self.state_type, ndim=1, flags='C_CONTIGUOUS')"
+      in
+      let tableValue = join [
+        "np.array(np.load('./", id, ".npy').flatten(), dtype=self.state_type)"
+      ] in
+      snoc acc (tablePyType, tableValue)
+    in
+    let preds =
+      if env.precomputedPredecessors then env.numPreds
+      else []
+    in
+    let allTables : [(String, String)] =
+      foldli
+        addPredecessorTableData
         (mapFoldWithKey
-          (lam acc. lam id. lam expr.
-            let tid = getTableField id in
-            snoc acc (join [
-              indent 2, "self.", tid, " = np.array(", exprToPythonString expr,
-              ", dtype=self.prob_type)" ]))
-          [] syntheticTables)
+          addSyntheticTableData
+          (mapFoldWithKey addDeclaredTableData [] tables)
+          syntheticTables)
+        preds
     in
-    let predecessorsStr =
-      if env.precomputedPredecessors then
-        strJoin "\n"
-          (mapi
-            (lam i. lam.
-              let id = concat "pred" (int2string i) in
-              join [
-                indent 2, "self.", id, " = ",
-                  "np.load(f'./", id, ".npy').flatten()\n",
-                indent 2, "self.", id, " = ",
-                  "self.copy_to_gpu(np.array(self.", id, ", dtype=self.state_type), 0)"])
-            env.numPreds)
-      else ""
-    in
-    -- Construct the list of table pointers which are passed to CUDA kernels
-    -- when launching them.
-    let tablePtrs =
-      let tablePtrsStr =
-        mapFoldWithKey
-          (lam acc. lam id. lam ty.
-            let tid = getTableField id in
-            match ty with TTable {args = !([]) & args} then
-              snoc acc
-                (join [indent 3, "np.array([int(self.", tid, ")], dtype=np.uint64),"])
-            else
-              snoc acc (join [indent 3, "self.", tid, ","]))
-          [] tables
-      in
-      -- We add the synthetic tables to the back of the list
-      let tablePtrsStr =
-        mapFoldWithKey
-          (lam acc. lam id. lam.
-            let tid = getTableField id in
-            snoc acc (join [indent 3, "self.", tid, ","]))
-          tablePtrsStr syntheticTables
-      in
-      let tablePtrsStr =
-        if env.precomputedPredecessors then
-          let predTables =
-            mapi
-              (lam i. lam.
-                let id = concat "pred" (int2string i) in
-                join [indent 3, "np.array([int(self.", id, ")], dtype=np.uint64),"])
-              env.numPreds
-          in
-          concat tablePtrsStr predTables
-        else tablePtrsStr
-      in
-      strJoin "\n" [
-        join [indent 2, "self.table_ptrs = ["],
-        strJoin "\n" tablePtrsStr,
-        join [indent 2, "]"]
-      ]
-    in
-    join [copies, "\n", syntheticTablesStr, "\n", predecessorsStr, "\n", tablePtrs]
+    let initArgTypesDecl = join [
+      indent 2, "self.lib.init.argtypes = [\n",
+      strJoin ",\n" (map (lam x. concat (indent 3) x.0) allTables),
+      "\n", indent 2, "]"
+    ] in
+    let initArgCall = join [
+      indent 2, "self.lib.init(", strJoin ", " (map (lam x. x.1) allTables), ")"
+    ] in
+    join [initArgTypesDecl, "\n", initArgCall]
 
   sem exprToPythonString : TExpr -> String
   sem exprToPythonString =
@@ -269,7 +191,6 @@ lang TrellisBuild = TrellisCudaPrettyPrint + TrellisGeneratePython
                         -> CuProgram -> CuCompileEnv -> ()
   sem buildPythonLibrary options syntheticTables model cuProg =
   | env ->
-    let absPath = lam file. join [options.outputDir, "/", file] in
 
     -- 1. Read the pre-defined CUDA skeleton containing efficient
     -- implementations of the algorithms we seek to use.
@@ -278,15 +199,46 @@ lang TrellisBuild = TrellisCudaPrettyPrint + TrellisGeneratePython
     -- 2. Combine the model-specific generated CUDA program with the
     -- pre-defined skeleton and write the result to a file 'hmm.cu' in the
     -- output directory.
-    let filePath = absPath "hmm.cu" in
+    let filePath = absPath options "hmm.cu" in
     writeFile filePath (concat (printCudaProgram cuProg) skeletonCode);
 
-    -- 3. Read the pre-defined Python wrapper code.
+    -- 3. Compile the CUDA file to produce a shared library.
+    compileCudaFile options filePath;
+
+    -- 4. Read the pre-defined Python wrapper code.
     let wrapStr = readFile (concat trellisSrcLoc "skeleton/nvrtc-wrap.py") in
 
-    -- 4. Generate the model-specific Python wrapper code and combine it with
+    -- 5. Generate the model-specific Python wrapper code and combine it with
     -- the skeleton code to produce a simple Python library in 'trellis.py'
     -- usable from other files.
     let trailStr = generatePythonWrapper options syntheticTables model env in
-    writeFile (absPath "trellis.py") (concat wrapStr trailStr)
+    writeFile (absPath options "trellis.py") (concat wrapStr trailStr)
+
+
+  sem absPath : TrellisOptions -> String -> String
+  sem absPath options =
+  | file -> join [options.outputDir, "/", file]
+
+  -- We compile the generated CUDA code to produce a shared library, which the
+  -- Python wrapper code loads and uses at runtime.
+  sem compileCudaFile : TrellisOptions -> String -> ()
+  sem compileCudaFile options =
+  | filePath ->
+    let compileFlags = [
+      "-O3", "--shared", "-Xcompiler", "-fPIC", "-o",
+      absPath options "libhmm.so", filePath
+    ] in
+    let compileFlags =
+      if options.useFastMath then cons "--use_fast_math" compileFlags
+      else compileFlags
+    in
+    let r = sysRunCommand (cons "nvcc" compileFlags) "" "." in
+    if eqi r.returncode 0 then ()
+    else
+      let msg = join [
+        "Compilation of generated CUDA code failed\n",
+        "stdout: ", r.stdout, "\n",
+        "stderr: ", r.stderr, "\n"
+      ] in
+      printError msg
 end

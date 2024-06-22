@@ -25,15 +25,7 @@ lang TrellisCudaConstType = CExprTypeAst
     (acc, CTyConst {t with ty = ty})
 end
 
-lang TrellisCudaMacro = CExprTypeAst + CTopAst
-  -- We include the empty type so that we can use a macro in the argument list
-  -- of a function definition.
-  syn CType =
-  | CTyEmpty {}
-
-  sem smapAccumLCTypeCType f acc =
-  | CTyEmpty _ & t -> (acc, t)
-
+lang TrellisCudaMacro = CTopAst
   -- The top-level macro definition takes an arbitrary string contaning the
   -- code to replace it with.
   syn CTop =
@@ -71,6 +63,8 @@ lang TrellisCudaAst =
   | CuAHost ()
   | CuADevice ()
   | CuAGlobal ()
+  | CuAConstant ()
+  | CuAExternC ()
 
   type CuTop = {
     annotations : [CuAnnotation],
@@ -78,6 +72,7 @@ lang TrellisCudaAst =
   }
 
   type CuProgram = {
+    includes : [String],
     tops : [CuTop]
   }
 end

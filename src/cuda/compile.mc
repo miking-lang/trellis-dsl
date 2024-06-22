@@ -28,8 +28,6 @@ let batchOverlapId = nameSym "BATCH_OVERLAP"
 let numStatesId = nameSym "NUM_STATES"
 let numObsId = nameSym "NUM_OBS"
 let numPredsId = nameSym "NUM_PREDS"
-let hmmDeclParamsId = nameSym "HMM_DECL_PARAMS"
-let hmmCallArgsId = nameSym "HMM_CALL_ARGS"
 
 -- Identifiers of functions used by the pre-defined parts of the code.
 let initProbFunId = nameSym "init_prob"
@@ -109,35 +107,15 @@ lang TrellisCudaCompileBase =
     CEUnOp {
       op = CONeg (),
       arg = CEBinOp { op = CODiv (), lhs = CEFloat {f = 1.0}, rhs = CEFloat {f = 0.0} } }
+
+  sem escapedTableName : Name -> Name
+  sem escapedTableName =
+  | id -> nameNoSym (concat "t_" (nameGetStr id))
 end
 
 lang TrellisCudaCompileTypeDefs = TrellisCudaCompileBase + TrellisTypeBitwidth
   sem generateTypeDefines : CuCompileEnv -> TModel -> [CuTop]
   sem generateTypeDefines env =
-  | model ->
-    concat
-      (generateIntTypeDefines ())
-      (generateModelTypeDefines env model)
-
-  -- NOTE(larshum, 2024-04-26): This generation assumes the hard-coded mapping
-  -- from unsigned integer types to sized types is valid, which it should be.
-  -- This part is required to avoid having to include headers in the CUDA file
-  -- (which is complicated when using nvrtc).
-  sem generateIntTypeDefines : () -> [CuTop]
-  sem generateIntTypeDefines =
-  | _ ->
-    let f = lam m.
-      match m with (fromType, toTypeId) in
-      {annotations = [], top = CTTyDef {ty = fromType, id = toTypeId}}
-    in
-    map f
-    [ (CTyUChar (), uint8),
-      (CTyUShort (), uint16),
-      (CTyUInt (), uint32),
-      (CTyULongLong (), uint64) ]
-
-  sem generateModelTypeDefines : CuCompileEnv -> TModel -> [CuTop]
-  sem generateModelTypeDefines env =
   | model ->
     let stateType = chooseMinimalIntegerType model.stateType in
     let obsType = chooseMinimalIntegerType model.outType in
@@ -199,62 +177,145 @@ lang TrellisCudaConstantDefs = TrellisCudaCompileBase + TrellisTypeCardinality
     foldl addi 0 (map countMaxPredecessorsInGroup constraintGroups)
 end
 
-lang TrellisCudaModelMacros =
-  TrellisCudaCompileBase + TrellisCudaPrettyPrint + TrellisModelTypePrettyPrint
+-- Generate the declaration of the tables as constant arrays and code for
+-- copying given data for each of these tables to the GPU.
+lang TrellisCudaTableDefinitions =
+  TrellisCudaCompileBase + TrellisTypeCardinality
 
-  sem generateModelMacroDefinitions : CuCompileEnv -> Map Name TExpr -> TModel
-                                   -> [CuTop]
-  sem generateModelMacroDefinitions env syntheticTables =
-  | model ->
-    let predTableId = lam i. lam .
-      concat "pt" (int2string i)
-    in
-    let paramsStr =
-      let s = mapFoldWithKey addTableParameter "" model.tables in
-      let synTableTypes =
-        mapMapWithKey
-          (lam id. lam e.
-            TTable {args = [], ret = tyTExpr e, info = infoTExpr e})
-          syntheticTables
-      in
-      let s = mapFoldWithKey addTableParameter s synTableTypes in
-      if env.precomputedPredecessors then
-        let predTableIds = mapi predTableId env.numPreds in
-        join [s, ", ", strJoin ", " (map (concat "const state_t *") predTableIds)]
-      else s
-    in
-    let argsStr =
-      let args = join [mapKeys model.tables, mapKeys syntheticTables] in
-      let s = strJoin ", " (map nameGetStr args) in
-      if env.precomputedPredecessors then
-        let predTableIds = mapi predTableId env.numPreds in
-        join [s, ", ", strJoin ", " predTableIds]
-      else s
-    in
-    [ cudaMacroDef hmmDeclParamsId paramsStr
-    , cudaMacroDef hmmCallArgsId argsStr ]
+  type TableData = {
+    -- The name of the table
+    id : Name,
 
-  -- NOTE(larshum, 2024-04-26): We assume the table takes zero arguments
-  -- (scalar) or a single argument (non-scalar) because transformations reduce
-  -- multi-argument tables to one-dimensional tables.
-  sem compileTrellisTableTypeToCuda : TType -> CType
-  sem compileTrellisTableTypeToCuda =
-  | TTable {args = [], ret = TProb _} ->
-    CTyConst {ty = CTyVar {id = probTyId}}
-  | TTable {args = [_], ret = TProb _} ->
-    CTyConst {ty = CTyPtr {ty = CTyVar {id = probTyId}}}
+    -- The C type of the data contained in the table.
+    ty : CType,
+
+    -- The number of elements to be stored in the table.
+    sz : Int,
+
+    -- Determines whether this table should be treated as a scalar value.
+    scalar : Bool
+  }
+
+  sem getModelTableData : Name -> TType -> TableData
+  sem getModelTableData id =
   | ty ->
-    let tyStr = pprintTrellisType ty in
-    let msg = join ["Encountered unsupported table type: ", tyStr] in
-    errorSingle [infoTTy ty] msg
+    let cty = CTyVar {id = probTyId} in
+    match ty with TTable {args = !([]) & args} then
+      let sz = foldl muli 1 (map cardinalityType args) in
+      {id = id, ty = cty, sz = sz, scalar = false}
+    else
+      {id = id, ty = cty, sz = 1, scalar = true}
 
-  sem addTableParameter : String -> Name -> TType -> String
-  sem addTableParameter acc tableId =
-  | tableType ->
-    let ty = compileTrellisTableTypeToCuda tableType in
-    match printCType (nameGetStr tableId) pprintEnvEmpty ty with (_, str) in
-    if null acc then str
-    else join [acc, ", ", str]
+  sem getSyntheticTableData : Name -> TExpr -> TableData
+  sem getSyntheticTableData id =
+  | _ ->
+    let cty = CTyVar {id = probTyId} in
+    {id = id, ty = cty, sz = 1, scalar = true}
+
+  sem getPredecessorTableData : Int -> Int -> Int -> TableData
+  sem getPredecessorTableData numStates idx =
+  | npreds ->
+    let id = nameNoSym (concat "pred" (int2string idx)) in
+    let cty = CTyVar {id = stateTyId} in
+    let sz = muli npreds numStates in
+    {id = id, ty = cty, sz = sz, scalar = false}
+
+  sem generateModelTableCode : CuCompileEnv -> Map Name TExpr -> TModel -> [CuTop]
+  sem generateModelTableCode env syntheticTables =
+  | model ->
+    -- 0. Combine the declared tables, the synthetically defined tables to
+    --    simplify computations, and the predecessor tables (when used) to a
+    --    uniform format, so that we can use the same code for all three
+    --    categories of tables.
+    let numStates = cardinalityType model.stateType in
+    let numPreds =
+      if env.precomputedPredecessors then env.numPreds
+      else []
+    in
+    let tables = join [
+      mapValues (mapMapWithKey getModelTableData model.tables),
+      mapValues (mapMapWithKey getSyntheticTableData syntheticTables),
+      mapi (getPredecessorTableData numStates) numPreds
+    ] in
+
+    -- 1. Define the size of each non-scalar table.
+    match generateTableSizeDefinitions tables with (tableSizeDecls, tableSizeIdMap) in
+
+    -- 2. Declare constant arrays, representing tables on the GPU
+    let tableDecls = map (generateConstantArray tableSizeIdMap) tables in
+
+    -- 3. Generate init function copying each value to the GPU
+    let initDef = generateInitFunction tableSizeIdMap tables in
+
+    join [tableSizeDecls, tableDecls, [initDef]]
+
+  sem generateTableSizeDefinitions : [TableData] -> ([CuTop], Map Name Name)
+  sem generateTableSizeDefinitions =
+  | tables ->
+    let generateTableSizeDefinition = lam acc. lam t.
+      if t.scalar then acc
+      else
+        match acc with (tops, sizeIds) in
+        let szId = nameSym (concat (nameGetStr t.id) "_SIZE") in
+        let sizeIds = mapInsert t.id szId sizeIds in
+        let def = CTMacroDefine {id = szId, value = int2string t.sz} in
+        (snoc tops {annotations = [], top = def}, sizeIds)
+    in
+    foldl generateTableSizeDefinition ([], mapEmpty nameCmp) tables
+
+  sem generateConstantArray : Map Name Name -> TableData -> CuTop
+  sem generateConstantArray tableSizeIdMap =
+  | table ->
+    let ty =
+      match mapLookup table.id tableSizeIdMap with Some sizeId then
+        CTyArray {ty = table.ty, size = Some (CEInt {i = table.sz})}
+      else table.ty
+    in
+    { annotations = [CuAConstant ()]
+    , top = CTDef {
+        ty = ty,
+        id = Some (escapedTableName table.id),
+        init = None () }}
+
+  sem generateInitFunction : Map Name Name -> [TableData] -> CuTop
+  sem generateInitFunction tableSizeIdMap =
+  | tables ->
+    let copyTable = lam t.
+      let tableArgId = nameNoSym (concat (nameGetStr t.id) "_arg") in
+      let elemSize = CESizeOfType {ty = t.ty} in
+      let szExpr =
+        match mapLookup t.id tableSizeIdMap with Some szId then
+          CEBinOp {op = COMul (), lhs = CEVar {id = szId}, rhs = elemSize}
+        else elemSize
+      in
+      let rarg =
+        if t.scalar then
+          CEUnOp {op = COAddrOf (), arg = CEVar {id = tableArgId}}
+        else CEVar {id = tableArgId}
+      in
+      let copyToSymExpr = CEApp {fun = nameNoSym "cudaMemcpyToSymbol", args = [
+        CEVar {id = escapedTableName t.id}, rarg, szExpr
+      ]} in
+      (tableArgId, copyToSymExpr)
+    in
+    match unzip (map copyTable tables) with (tableArgIds, copyExprs) in
+    let tableParams =
+      map
+        (lam t.
+          match t with (argId, table) in
+          let ty =
+            if table.scalar then table.ty else CTyPtr {ty = table.ty}
+          in
+          (ty, argId))
+        (zip tableArgIds tables)
+    in
+    { annotations = [CuAExternC ()]
+    , top = CTFun {
+        ret = CTyVoid (),
+        id = nameNoSym "init",
+        params = tableParams,
+        body = map (lam e. CSExpr {expr = e}) copyExprs
+    }}
 end
 
 lang TrellisCudaCompileExpr = TrellisCudaCompileBase + TrellisModelTypePrettyPrint
@@ -269,10 +330,10 @@ lang TrellisCudaCompileExpr = TrellisCudaCompileBase + TrellisModelTypePrettyPri
   | ESlice {info = info} ->
     errorSingle [info] "Internal error: Found slice in CUDA code generation"
   | ETableAccess {table = tableId, args = []} ->
-    CEVar {id = tableId}
+    CEVar {id = escapedTableName tableId}
   | ETableAccess {table = tableId, args = [arg]} ->
     CEBinOp {
-      op = COSubScript (), lhs = CEVar {id = tableId},
+      op = COSubScript (), lhs = CEVar {id = escapedTableName tableId},
       rhs = cudaCompileTrellisExpr bound arg }
   | ETableAccess {args = [_, _] ++ _, info = info} ->
     errorSingle [info] "Internal error: Expected table access to have zero or one arguments after transformations"
@@ -394,7 +455,6 @@ lang TrellisCudaProbabilityFunction =
   sem generateProbabilityFunction id params =
   | cases ->
     let bound = setOfSeq nameCmp (map (lam p. p.1) params) in
-    let hmmParams = snoc params (CTyEmpty (), hmmDeclParamsId) in
     let body =
       match cases with [{cond = SAll _, body = body}] then
         CSRet {val = Some (cudaCompileTrellisExpr bound body)}
@@ -403,7 +463,7 @@ lang TrellisCudaProbabilityFunction =
         foldl (generateProbabilityFunctionBody bound) baseStmt cases
     in
     let top = CTFun {
-      ret = CTyVar {id = probTyId}, id = id, params = hmmParams, body = [body]
+      ret = CTyVar {id = probTyId}, id = id, params = params, body = [body]
     } in
     {annotations = [CuADevice ()], top = top}
 
@@ -728,9 +788,7 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
       -- state_t state;
       (CTyVar {id = stateTyId}, stateId),
       -- prob_t probs;
-      (CTyPtr {ty = CTyVar {id = probTyId}}, probsId),
-      -- HMM_DECL_PARAMS
-      (CTyEmpty (), hmmDeclParamsId)
+      (CTyPtr {ty = CTyVar {id = probTyId}}, probsId)
     ] in
     let pidx = nameSym "pidx" in
     let forwardCode = CSComp {
@@ -794,9 +852,7 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
       -- state_t *maxs;
       (CTyPtr {ty = CTyVar {id = stateTyId}}, maxStateId),
       -- prob_t *maxp;
-      (CTyPtr {ty = CTyVar {id = probTyId}}, maxProbId),
-      -- HMM_DECL_PARAMS
-      (CTyEmpty (), hmmDeclParamsId)
+      (CTyPtr {ty = CTyVar {id = probTyId}}, maxProbId)
     ] in
     let viterbiCode = CSComp {
       stmts = [
@@ -847,7 +903,7 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
   sem lookupPredecessorsCase env tailStmt idx =
   | [{probFunName = probFunId}] ->
     let stateTy = CTyVar {id = stateTyId} in
-    let tablePtrId = nameNoSym (concat "pt" (int2string idx)) in
+    let tablePtrId = escapedTableName (nameNoSym (concat "pred" (int2string idx))) in
     let id = nameSym "i" in
     -- NOTE(larshum, 2024-05-29): We represent a non-existent predecessor
     -- with a state value beyond the upper bound (NUM_STATES or greater) in
@@ -864,12 +920,12 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
       CSIf {
         cond = bop (COLt ()) (var predId) (var numStatesId),
         thn = [
-          -- p = <transp_fun>(pred, state, HMM_CALL_ARGS);
+          -- p = <transp_fun>(pred, state);
           CSExpr {expr =
             bop (COAssign ()) (var probId)
               (CEApp {
                 fun = probFunId,
-                args = [var predId, var stateId, var hmmCallArgsId]})},
+                args = [var predId, var stateId]})},
           tailStmt
         ],
         els = [] }
@@ -924,12 +980,12 @@ lang TrellisCudaHMM = TrellisCudaCompileExpr + TrellisCudaCompileTransitionCase
       CSExpr { expr =
         bop (COAssign ()) (var predId)
           (cudaCompileTrellisExpr bound predecessorExpr)},
-      -- p = transp(pred, state, HMM_CALL_ARGS);
+      -- p = transp(pred, state);
       CSExpr { expr =
         bop (COAssign ()) (var probId)
           (CEApp {
             fun = probFunId,
-            args = [var predId, var stateId, var hmmCallArgsId]})},
+            args = [var predId, var stateId]})},
       tailStmt
     ]} in
     let stmt = foldl (generatePredecessorComponent env) innerStmts comps in
@@ -1132,7 +1188,7 @@ lang TrellisCudaComputePredecessors =
     (if geqi (cardinalityType model.stateType) (slli 1 32) then
       error (join [
         "Trellis does not yet support precomputing predecessors of models ",
-        "with 2^32 states or more."
+        "with 2^64 states or more."
       ])
     else ());
 
@@ -1141,10 +1197,6 @@ lang TrellisCudaComputePredecessors =
     let numStatesDef =
       let v = int2string (cardinalityType model.stateType) in
       {annotations = [], top = CTMacroDefine {id = numStatesId, value = v}}
-    in
-    let hmmDeclParams =
-      let v = "int ignored" in
-      {annotations = [], top = CTMacroDefine {id = hmmDeclParamsId, value = v}}
     in
     let tyDefs = generateTypeDefines env model in
 
@@ -1156,7 +1208,8 @@ lang TrellisCudaComputePredecessors =
     match generateTransProbFunCases zModel with (funNames, transFuns) in
     let isPredecessorFun = generateIsPredecessorFun funNames in
 
-    {tops = join [tyDefs, [numStatesDef, hmmDeclParams], transFuns, [isPredecessorFun]]}
+    { includes = ["<cstdint>", "<cstdio>"]
+    , tops = join [tyDefs, [numStatesDef], transFuns, [isPredecessorFun]] }
 
   sem modelWithZeroTransitionBodies : TModel -> TModel
   sem modelWithZeroTransitionBodies =
@@ -1251,7 +1304,8 @@ lang TrellisCudaComputePredecessors =
 end
 
 lang TrellisCudaCompile =
-  TrellisCudaCompileTypeDefs + TrellisCudaConstantDefs + TrellisCudaModelMacros +
+  TrellisCudaCompileTypeDefs + TrellisCudaConstantDefs +
+  TrellisCudaConstantDefs + TrellisCudaTableDefinitions +
   TrellisCudaProbabilityFunction + TrellisCudaHMM + TrellisEncode +
   TrellisModelMergeSubsequentOperations + TrellisGroupConstraints +
   TrellisCudaComputePredecessors
@@ -1313,10 +1367,9 @@ lang TrellisCudaCompile =
     -- properties of the current model.
     let constDefs = generateModelConstantDefines env model in
 
-    -- Generates macros used to declare and call functions while passing all
-    -- tables declared in the model as arguments, to simplify code generation
-    -- as all tables are always available where they are needed.
-    let modelMacroDefs = generateModelMacroDefinitions env syntheticTables model in
+    -- Generates code declaring the tables of the model and code for copying
+    -- them to constant memory on the GPU.
+    let modelTableDefs = generateModelTableCode env syntheticTables model in
 
     -- Generates the probability functions based on the model.
     match generateProbabilityFunctions env model.initial model.output model.transition
@@ -1327,5 +1380,9 @@ lang TrellisCudaCompile =
     -- performing lookups in arrays if precomputing the predecessors.
     let predFunDefs = generatePredecessorFunctions env in
 
-    (env, {tops = join [tyDefs, constDefs, modelMacroDefs, probFunDefs, predFunDefs]})
+    let prog = {
+      includes = ["<algorithm>", "<cstdint>", "<cstdio>"],
+      tops = join [tyDefs, constDefs, modelTableDefs, probFunDefs, predFunDefs]
+    } in
+    (env, prog)
 end
