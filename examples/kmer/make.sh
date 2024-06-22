@@ -11,7 +11,7 @@ case $1 in
     python3 runner.py $MODEL_PATH $SIGNAL_PATH
     ;;
   clean)
-    rm -rf hmm.cu trellis.py __pycache__ __init__.py
+    rm -rf hmm.cu libhmm.so trellis.py __pycache__ __init__.py
     ;;
   *)
     >&2 echo "Expected argument 'build', 'run' or 'clean'"
