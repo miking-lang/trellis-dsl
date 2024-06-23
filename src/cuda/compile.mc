@@ -271,7 +271,7 @@ lang TrellisCudaTableDefinitions =
         CTyArray {ty = table.ty, size = Some (CEInt {i = table.sz})}
       else table.ty
     in
-    { annotations = [CuAConstant ()]
+    { annotations = [CuADevice ()]
     , top = CTDef {
         ty = ty,
         id = Some (escapedTableName table.id),
