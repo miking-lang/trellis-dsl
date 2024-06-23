@@ -68,11 +68,6 @@ let config = [
       "Compiles the CUDA code with the '--use_fast_math' flag, to improve performance at the cost of losing accuracy.",
     lam p.
       let o = p.options in {o with useFastMath = true}),
-  ([("--cuda-arch", " ", "sm_XX")],
-    defaultStr trellisDefaultOptions.cudaArch
-      "If set, passes the '-arch=sm_XX' flag to the CUDA compiler to specialize the generated code to a particular GPU architecture.",
-    lam p.
-      let o = p.options in {o with cudaArch = argToString p}),
   ([("--warn-predecessor-analysis", "", "")],
     defaultStr (bool2string trellisDefaultOptions.warnPredecessorAnalysis)
       "If enabled, the compiler warns if the predecessor analysis fails and prints the reason(s) why.",
