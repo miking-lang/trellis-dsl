@@ -232,6 +232,10 @@ lang TrellisBuild = TrellisCudaPrettyPrint + TrellisGeneratePython
       if options.useFastMath then cons "--use_fast_math" compileFlags
       else compileFlags
     in
+    let compileFlags =
+      match options.cudaArch with [] then compileFlags
+      else cons (concat "-arch=" options.cudaArch) compileFlags
+    in
     let r = sysRunCommand (cons "nvcc" compileFlags) "" "." in
     if eqi r.returncode 0 then ()
     else

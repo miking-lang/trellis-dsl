@@ -12,9 +12,10 @@ type TrellisOptions = {
   batchSize : Int,
   batchOverlap : Int,
 
-  -- Options for trade-offs between performance and accuracy.
+  -- Options for adjusting performance or accuracy of resulting CUDA code.
   useDoublePrecisionFloats : Bool,
   useFastMath : Bool,
+  cudaArch : String,
 
   -- Controlling the predecessor analysis and whether to precompute the
   -- predecessors instead.
@@ -35,6 +36,7 @@ let trellisDefaultOptions = {
   batchOverlap = 128,
   useDoublePrecisionFloats = false,
   useFastMath = false,
+  cudaArch = "",
   warnPredecessorAnalysis = false,
   errorPredecessorAnalysis = false,
   forcePrecomputePredecessors = false,
@@ -42,18 +44,6 @@ let trellisDefaultOptions = {
   printModel = false,
   outputDir = "."
 }
-
-let _supportedFutharkTargets = setOfSeq cmpString [
-  "c", "multicore", "cuda", "opencl"
-]
-let validateFutharkTarget = lam target.
-  if setMem target _supportedFutharkTargets then target
-  else
-    let msg = join [
-      "Futhark target '", target, "' is not supported\n",
-      "Supported Futhark targets: ", strJoin " " (setToSeq _supportedFutharkTargets)
-    ] in
-    error msg
 
 let config = [
   ([("--help", "", "")],
@@ -78,6 +68,11 @@ let config = [
       "Compiles the CUDA code with the '--use_fast_math' flag, to improve performance at the cost of losing accuracy.",
     lam p.
       let o = p.options in {o with useFastMath = true}),
+  ([("--cuda-arch", " ", "sm_XX")],
+    defaultStr trellisDefaultOptions.cudaArch
+      "If set, passes the '-arch=sm_XX' flag to the CUDA compiler to specialize the generated code to a particular GPU architecture.",
+    lam p.
+      let o = p.options in {o with cudaArch = argToString p}),
   ([("--warn-predecessor-analysis", "", "")],
     defaultStr (bool2string trellisDefaultOptions.warnPredecessorAnalysis)
       "If enabled, the compiler warns if the predecessor analysis fails and prints the reason(s) why.",
