@@ -6,6 +6,7 @@ import numpy as np
 import json
 
 from colors import colors
+from names import display_name
 
 def label_file(label, target):
     return f"out/{target}-{label}-compile.json"
@@ -19,9 +20,14 @@ def load_data(label, target):
         res = {"mean" : 0.0, "stddev" : 0.0}
     return res["mean"], res["stddev"]
 
+def trim_name(n):
+    if n.startswith("synthetic"):
+        return display_name(n)
+    return n
+
 plt.rc("axes", labelsize=14)
 plt.rc("axes", titlesize=16)
-plt.rc("xtick", labelsize=14)
+plt.rc("xtick", labelsize=12)
 plt.rc("ytick", labelsize=14)
 plt.rc("legend", fontsize=14)
 
@@ -39,7 +45,7 @@ avgs2, errs = zip(*[load_data(label, "tr") for label in labels])
 bars = axs.bar(x + width, avgs2, width, yerr=errs, label="Trellis RT", color=colors[3])
 #axs.bar_label(bars, fmt=lambda x: f"{x:.2f}" if x > 0 else "")
 
-axs.set_xticks(x + 0.5*width, labels)
+axs.set_xticks(x + 0.5*width, [trim_name(l) for l in labels])
 axs.set_ylabel("Compilation time (s)")
 axs.legend(loc="upper left")
 axs.set_axisbelow(True)

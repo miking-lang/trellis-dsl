@@ -5,7 +5,12 @@ display_names = {
     "tc" : "Trellis CT",
     "tr" : "Trellis RT",
     "s" : "StochHMM",
-    "n" : "Native CUDA"
+    "n" : "Native CUDA",
+    "synthetic-0": "S-0",
+    "synthetic-1": "S-1",
+    "synthetic-2": "S-2",
+    "synthetic-3": "S-3",
+    "synthetic-4": "S-4",
 }
 
 def display_name(label):

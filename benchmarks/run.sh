@@ -177,7 +177,7 @@ echo "###################"
 echo "# SYNTHETIC MODEL #"
 echo "###################"
 
-for k in $(seq 0 100)
+for k in $(seq 0 4)
 do
   echo "Benchmarking synthetic model with k = $k"
   export SIGNALS_PATH="$(pwd)/signals/synthetic.hdf5"
@@ -230,9 +230,9 @@ echo "###################"
 echo "# SYNTHETIC MODEL #"
 echo "###################"
 
-BATCH_SIZE=$SYNTH_SIGNAL_LENGTH
+BATCH_SIZE=1024
 TRELLIS_BATCH_ARGS="--batch-size $BATCH_SIZE --batch-overlap 0"
-for k in $(seq 0 100)
+for k in $(seq 0 4)
 do
   echo "Benchmarking synthetic model with k = $k"
   export SIGNALS_PATH="$(pwd)/signals/synthetic.fasta"
@@ -314,10 +314,13 @@ python3 scripts/plot-weather.py
 # Plot results for the kmer model (with and without batching)
 python3 scripts/plot-kmer.py
 
+# Plot results for the synthetic model configurations
+python3 scripts/plot-synthetic.py
+
 echo "###########"
 echo "# CLEANUP #"
 echo "###########"
-TRELLIS_CLEAN="hmm.cu pred*.npy trellis.py __pycache__"
+TRELLIS_CLEAN="hmm.cu libhmm.so pred*.npy trellis.py __pycache__"
 
 rm -f signals/weather.* signals/synthetic.* signals/kmer.fasta
 
