@@ -1,21 +1,28 @@
 import numpy as np
 import math
 import ctypes
+import time
 
 class HMM:
-    def _forward(self, obs, obs_lens):
+    def _forward(self, obs, obs_lens, print_times):
         maxlen = int(max(obs_lens))
         num_instances = len(obs_lens)
 
+        if print_times:
+            t0 = time.time()
         ptr = self.lib.forward(
             obs, obs_lens, maxlen, num_instances
         )
         ctypes_ptr = ctypes.cast(ptr, ctypes.POINTER(self.prob_ctype))
         result = np.ctypeslib.as_array(ctypes_ptr, shape=(num_instances,)).copy()
         self.clib.free(ptr)
+        if print_times:
+            t1 = time.time()
+            print(t1-t0)
+
         return result
 
-    def _viterbi(self, obs, obs_lens, padded_lens, num_parallel):
+    def _viterbi(self, obs, obs_lens, padded_lens, num_parallel, print_times):
         maxlen = int(max(padded_lens))
         num_instances = len(obs_lens)
 
@@ -36,12 +43,17 @@ class HMM:
         # length.
         obs = np.array(obs).flatten()
 
+        if print_times:
+            t0 = time.time()
         ptr = self.lib.viterbi(
             obs, obs_lens, maxlen, num_parallel, num_instances
         )
         ctypes_ptr = ctypes.cast(ptr, ctypes.POINTER(self.state_ctype))
         result = np.ctypeslib.as_array(ctypes_ptr, shape=(num_instances, maxlen)).copy()
         self.clib.free(ptr)
+        if print_times:
+            t1 = time.time()
+            print(t1-t0)
 
         # Remove padding of result
         result = [r[:obs_lens[i]] for i, r in enumerate(result)]
@@ -63,17 +75,20 @@ class HMM:
             ps[i][:len(s)] = s
         return ps
 
-    def viterbi(self, signals, num_parallel=1):
+    def viterbi(self, signals, num_parallel=1, print_times=False):
         bos = self.batch_size - self.batch_overlap
         lens = np.array([len(x) for x in signals], dtype=np.int32)
         plens = np.array([(n + bos - 1) // bos * bos + self.batch_overlap for n in lens], dtype=np.int32)
         padded_obs = self.pad_signals(signals, plens)
-        return self._viterbi(padded_obs, lens, plens, num_parallel)
+        return self._viterbi(padded_obs, lens, plens, num_parallel, print_times)
 
-    def forward(self, signals):
+    def forward(self, signals, print_times=False):
         lens = np.array([len(x) for x in signals], dtype=np.int32)
-        padded_signals = self.pad_signals(signals, lens)
-        return self._forward(padded_signals.flatten(), lens)
+        if all([n == lens[0] for n in lens]):
+            padded_signals = np.array(signals, dtype=self.obs_type)
+        else:
+            padded_signals = self.pad_signals(signals, lens)
+        return self._forward(padded_signals.flatten(), lens, print_times)
 
     def setup_library(self):
         self.lib = ctypes.cdll.LoadLibrary("./libhmm.so")

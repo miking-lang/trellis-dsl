@@ -25,9 +25,6 @@ else:
     exit(1)
 hmm = HMM(tables)
 
-t0 = time.time()
-p = hmm.forward(signals)
-t1 = time.time()
-print(t1-t0)
+p = hmm.forward(signals, True)
 
 #np.savetxt("out.txt", p)

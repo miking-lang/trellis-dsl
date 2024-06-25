@@ -235,7 +235,7 @@ TRELLIS_BATCH_ARGS="--batch-size $BATCH_SIZE --batch-overlap 0"
 for k in $(seq 0 4)
 do
   echo "Benchmarking synthetic model with k = $k"
-  export SIGNALS_PATH="$(pwd)/signals/synthetic.fasta"
+  #export SIGNALS_PATH="$(pwd)/signals/synthetic.fasta"
   #bench_stochhmm "synthetic-$k"
   export SIGNALS_PATH="$(pwd)/signals/synthetic.hdf5"
   compile_trellis "viterbi" "synthetic-$k" "$TRELLIS_BATCH_ARGS --force-precompute-predecessors"

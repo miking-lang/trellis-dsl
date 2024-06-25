@@ -31,10 +31,7 @@ if k == 7:
 else:
     bsz = 100
 
-t0 = time.time()
-output = hmm.viterbi(signals, bsz)
-t1 = time.time()
-print(t1-t0)
+output = hmm.viterbi(signals, bsz, True)
 
 # WEATHER & SYNTHETIC:
 #for o in output:
