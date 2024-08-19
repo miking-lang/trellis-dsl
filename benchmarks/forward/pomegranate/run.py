@@ -41,10 +41,6 @@ def build_model(model, initp, outp, transp):
 model_path = os.getenv("MODEL_PATH")
 signals_path = os.getenv("SIGNALS_PATH")
 
-if len(sys.argv) != 4:
-    print("Expected GPU and dense flags, and test identifier")
-    exit(1)
-
 test_id = sys.argv[3]
 if test_id == "weather":
     initp, outp, transp = c.get_weather_model()
@@ -74,4 +70,5 @@ p = forward(model, signals)
 t1 = time.time()
 print(t1-t0)
 
-#np.savetxt("out.txt", p)
+if len(sys.argv) == 5:
+    np.savetxt(sys.argv[4], p)

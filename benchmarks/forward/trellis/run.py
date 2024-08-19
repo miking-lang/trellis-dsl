@@ -8,10 +8,6 @@ import numpy as np
 model_path = os.getenv("MODEL_PATH")
 signals_path = os.getenv("SIGNALS_PATH")
 
-if len(sys.argv) != 2:
-    print("Expected test identifier as only argument")
-    exit(1)
-
 test_id = sys.argv[1]
 if test_id == "weather":
     tables, signals = c.get_weather_inputs_trellis(signals_path)
@@ -27,4 +23,5 @@ hmm = HMM(tables)
 
 p = hmm.forward(signals, True)
 
-#np.savetxt("out.txt", p)
+if len(sys.argv) == 3:
+    np.savetxt(sys.argv[2], p)

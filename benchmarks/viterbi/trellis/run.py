@@ -21,7 +21,7 @@ else:
     exit(1)
 hmm = HMM(tables)
 
-if len(sys.argv) == 3:
+if len(sys.argv) >= 3:
     k = int(sys.argv[2])
 else:
     k = 0
@@ -33,14 +33,15 @@ else:
 
 output = hmm.viterbi(signals, bsz, True)
 
-# WEATHER & SYNTHETIC:
-#for o in output:
-#    sys.stderr.write(' '.join([str(x) for x in o]) + "\n")
-
-# KMER:
-#outc = "ACGT"
-#for o in output:
-#    for x in o:
-#        if x // 4**k == 0:
-#            sys.stderr.write(outc[x % 4])
-#    sys.stderr.write("\n")
+if len(sys.argv) == 4:
+    with open(sys.argv[3], "w+") as f:
+        if test_id == "weather" or test_id == "synthetic":
+            for o in output:
+                f.write(' '.join([str(x) for x in o]) + "\n")
+        else:
+            outc = "ACGT"
+            for o in output:
+                for x in o:
+                    if x // 4**k == 0:
+                        f.write(outc[x % 4])
+                f.write("\n")

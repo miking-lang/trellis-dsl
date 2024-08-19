@@ -25,6 +25,8 @@ if s.returncode == 0:
 else:
     print(f"Viterbicall failed: {s.stderr.decode()}")
 
-#sys.stderr.write(s.stdout.decode())
+if len(sys.argv) == 4:
+    with open(sys.argv[3], "w+") as f:
+        f.write(s.stdout.decode())
 
 exit(s.returncode)

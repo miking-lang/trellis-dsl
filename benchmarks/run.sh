@@ -6,16 +6,23 @@ SYNTH_SIGNAL_LENGTH=1000000
 NITERS=10
 KMER_MODELS=("$(pwd)/models/3mer.hdf5" "$(pwd)/models/5mer.hdf5" "$(pwd)/models/7mer.hdf5")
 KMER_LENGTH=(3 5 7)
+OUT_PATH="$(pwd)/out"
 
 bench_program() {
-  hyperfine -i --warmup 1 --runs $NITERS -u second --export-json $2 "$1"
+  # Before benchmarking, we run the program to collect output data to a file.
+  "$1 $2-data.txt"
+
+  # Run hyperfine to benchmark the target. We both collect the full program
+  # execution time (in the JSON file) and the internal execution time
+  # (excluding overheads such as I/O).
+  hyperfine -i --warmup 1 --runs $NITERS -u second --export-json "${OUT_PATH}/$2.json" "$1 >> ${OUT_PATH}/$2.txt"
 }
 
 bench_ziphmm() {
-  CMD="python3 run.py $1 >> $(pwd)/out/z-$1-forward.txt"
-  OUT_PATH="$(pwd)/out/z-$1-forward.json"
+  RUN_CMD="python3 run.py $1"
+  TEST_NAME="z-$1-forward"
   cd forward/ziphmm
-  bench_program "$CMD" "$OUT_PATH"
+  bench_program $RUN_CMD $TEST_NAME
   cd ../..
 }
 
@@ -32,17 +39,18 @@ bench_pomegranate() {
   else
     TEST_ID="pg-$DENSITY-$3"
   fi
-  CMD="python3 forward/pomegranate/run.py $1 $2 $3 >> $(pwd)/out/${TEST_ID}-forward.txt"
-  OUT_PATH="$(pwd)/out/${TEST_ID}-forward.json"
-  bench_program "$CMD" "$OUT_PATH"
+  RUN_CMD="python3 run.py $1 $2 $3"
+  TEST_NAME="${TEST_ID}-forward"
+  cd forward/pomegranate
+  bench_program $RUN_CMD $TEST_NAME
+  cd ../..
 }
 
 bench_trellis_forward() {
-  TEST_ID="$1-$2"
-  CMD="python3 run.py $2 >> $(pwd)/out/${TEST_ID}-forward.txt"
-  OUT_PATH="$(pwd)/out/${TEST_ID}-forward.json"
+  RUN_CMD="python3 run.py $2"
+  TEST_NAME="$1-$2-forward"
   cd forward/trellis
-  bench_program "$CMD" "$OUT_PATH"
+  bench_program $RUN_CMD $TEST_NAME
   cd ../..
 }
 
@@ -55,10 +63,10 @@ bench_stochhmm() {
   else
     OUT_ID="$1"
   fi
-  CMD="stochhmm -model $1.hmm -seq $SIGNALS_PATH -viterbi -gff"
-  OUT_PATH="$(pwd)/out/s-$OUT_ID-viterbi.json"
-  cd viterbi/stoch-hmm
-  bench_program "$CMD" "$OUT_PATH"
+  RUN_CMD="python3 run.py $1"
+  TEST_NAME="s-$OUT_ID-viterbi"
+  cd viterbi/stochhmm
+  bench_program $RUN_CMD $TEST_NAME
   cd ../..
 }
 
@@ -70,10 +78,10 @@ bench_cuda() {
   else
     TEST_ID="$TARGET-nobatch"
   fi
-  CMD="python3 run.py $1 $2 >> $(pwd)/out/n-$TEST_ID-viterbi.txt"
-  OUT_PATH="$(pwd)/out/n-$TEST_ID-viterbi.json"
+  RUN_CMD="python3 run.py $1 $2"
+  TEST_NAME="n-$TEST_ID-viterbi"
   cd viterbi/native-cuda
-  bench_program "$CMD" "$OUT_PATH"
+  bench_program $RUN_CMD $TEST_NAME
   cd ../..
 }
 
@@ -90,10 +98,10 @@ bench_trellis_viterbi() {
       TEST_ID="$1-$2-nobatch"
     fi
   fi
-  CMD="python3 run.py $2 $3 >> $(pwd)/out/${TEST_ID}-viterbi.txt"
-  OUT_PATH="$(pwd)/out/${TEST_ID}-viterbi.json"
+  RUN_CMD="python3 run.py $2 $3"
+  TEST_NAME="${TEST_ID}-viterbi"
   cd viterbi/trellis
-  bench_program "$CMD" "$OUT_PATH"
+  bench_program $RUN_CMD $TEST_NAME
   cd ../..
 }
 
@@ -106,16 +114,16 @@ bench_compile_trellis() {
     TEST_PREFIX="tc"
     ARGS="--force-precompute-predecessors"
   fi
-  CMD="trellis ${ARGS} $1.trellis"
-  OUT_PATH="$(pwd)/out/${TEST_PREFIX}-$1-compile.json"
-  cd viterbi/trellis
+  RUN_CMD="trellis ${ARGS} $1.trellis"
+  TEST_NAME="${TEST_PREFIX}-$1-compile"
 
   # If the initial compilation fails, we skip running the compiler evaluation
   # for this configuration.
+  cd viterbi/trellis
   $CMD > /dev/null 2> /dev/null
   if [ $? -eq 0 ]
   then
-    bench_program "$CMD" "$OUT_PATH"
+    bench_program $RUN_CMD $TEST_NAME
   fi
   cd ../..
 }
@@ -152,8 +160,8 @@ then
 fi
 
 # Recreate the output directory, removing previous data
-rm -rf out
-mkdir -p out
+#rm -rf out
+#mkdir -p out
 
 echo "#####################"
 echo "# FORWARD ALGORITHM #"
@@ -165,7 +173,7 @@ echo "#################"
 
 unset MODEL_PATH
 export SIGNALS_PATH="$(pwd)/signals/weather.hdf5"
-bench_ziphmm "weather"
+#bench_ziphmm "weather"
 bench_pomegranate 0 0 "weather"
 bench_pomegranate 0 1 "weather"
 bench_pomegranate 1 0 "weather"

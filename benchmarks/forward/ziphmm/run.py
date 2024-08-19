@@ -9,10 +9,6 @@ import numpy as np
 model_path = os.getenv("MODEL_PATH")
 signals_path = os.getenv("SIGNALS_PATH")
 
-if len(sys.argv) != 2:
-    print("Expected test identifier")
-    exit(1)
-
 test_id = sys.argv[1]
 if test_id == "weather":
     initp, outp, transp = c.get_weather_model()
@@ -53,7 +49,8 @@ for i, s in enumerate(signals):
         t += t1-t0
 print(t)
 
-#np.savetxt("out.txt", p)
+if len(sys.argv) == 3:
+    np.savetxt(sys.argv[2], p)
 
 # Explicitly delete zipHMM objects here to avoid error on exit
 del fwd
