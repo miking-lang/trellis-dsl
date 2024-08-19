@@ -1,1 +1,1 @@
-../../common.py
+../../scripts/common.py

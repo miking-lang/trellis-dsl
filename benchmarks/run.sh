@@ -137,19 +137,19 @@ compile_trellis() {
 if [ ! -e "signals/weather.fasta" -o ! -e "signals/weather.hdf5" ]
 then
   echo "Generating weather observation sequences"
-  python3 gen-signals.py $NSIGNALS $WEATHER_SIGNAL_LENGTH "weather"
+  python3 scripts/gen-signals.py $NSIGNALS $WEATHER_SIGNAL_LENGTH "weather"
 fi
 
 if [ ! -e "signals/synthetic.fasta" -o ! -e "signals/synthetic.hdf5" ]
 then
   echo "Generating synthetic model observation sequences"
-  python3 gen-signals.py $NSIGNALS $SYNTH_SIGNAL_LENGTH "synthetic"
+  python3 scripts/gen-signals.py $NSIGNALS $SYNTH_SIGNAL_LENGTH "synthetic"
 fi
 
 if [ ! -e "signals/kmer.fasta" ]
 then
   echo "Translating kmer signals to StochHMM format"
-  python3 gen-signals.py "kmer"
+  python3 scripts/gen-signals.py "kmer"
 fi
 
 STOCH_3MER_MODEL="viterbi/stoch-hmm/3mer.hmm"

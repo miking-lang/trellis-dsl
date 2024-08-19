@@ -1,1 +1,1 @@
-../../benchmarks/common.py
+../../benchmarks/scripts/common.py
