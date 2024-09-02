@@ -1039,6 +1039,10 @@ lang TrellisGroupConstraints = TrellisModelPredecessorAnalysis
   | env ->
     let n = length env.constraints in
 
+    if env.opts.skipDependencyAnalysis then
+      {env with constraintGroups = mapi (lam i. lam. setInsert i (setEmpty subi)) env.constraints}
+    else
+
     -- Construct an undirected graph where each vertex represents a constraint
     -- representation (a case in the transition probability function). We add
     -- an edge between a pair of cases if they have independent to-states

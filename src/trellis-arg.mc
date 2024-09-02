@@ -23,6 +23,9 @@ type TrellisOptions = {
   errorPredecessorAnalysis : Bool,
   forcePrecomputePredecessors : Bool,
 
+  -- Controlling the dependency analysis of the transition constraints.
+  skipDependencyAnalysis : Bool,
+
   -- Debug parameters.
   printParse : Bool,
   printModel : Bool,
@@ -40,6 +43,7 @@ let trellisDefaultOptions = {
   warnPredecessorAnalysis = false,
   errorPredecessorAnalysis = false,
   forcePrecomputePredecessors = false,
+  skipDependencyAnalysis = false,
   printParse = false,
   printModel = false,
   outputDir = "."
@@ -83,6 +87,11 @@ let config = [
       "If enabled, the compiler will always skip the predecessor analysis and precompute the predecessors at compile-time.",
     lam p.
       let o = p.options in {o with forcePrecomputePredecessors = true}),
+  ([("--skip-dependency-analysis", "", "")],
+    defaultStr (bool2string trellisDefaultOptions.skipDependencyAnalysis)
+      "Set to skip the dependency analysis for grouping mutually exclusive transition constraints.",
+    lam p.
+      let o = p.options in {o with skipDependencyAnalysis = true}),
   ([("--print-parse", "", "")],
     "Pretty-prints the initial AST after parsing.",
     lam p.
