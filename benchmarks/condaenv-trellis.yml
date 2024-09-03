@@ -11,7 +11,7 @@ dependencies:
   - h5py
   - cuda-toolkit
   - cuda-version=11.7
-  - torch>=2.0.0
+  - pytorch>=2.0.0
   - numpy<2.0
   - hyperfine
   - pip:
