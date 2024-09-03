@@ -122,7 +122,7 @@ bench_compile_trellis() {
   # If the initial compilation fails, we skip running the compiler evaluation
   # for this configuration.
   cd viterbi/trellis
-  $CMD > /dev/null 2> /dev/null
+  $RUN_CMD > /dev/null 2> /dev/null
   if [ $? -eq 0 ]
   then
     bench_program "$RUN_CMD" "$TEST_NAME"
