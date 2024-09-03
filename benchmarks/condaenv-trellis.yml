@@ -1,0 +1,19 @@
+name: trellis-bench
+channels:
+  - nvidia/label/cuda-11.7.0
+  - pytorch
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - six
+  - matplotlib
+  - h5py
+  - cuda-toolkit
+  - cuda-version=11.7
+  - torch>=2.0.0
+  - numpy<2.0
+  - hyperfine
+  - pip:
+    - pomegranate==1.0.4
+    - levenshtein
