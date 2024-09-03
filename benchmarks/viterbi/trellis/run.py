@@ -35,7 +35,12 @@ output = hmm.viterbi(signals, bsz, True)
 
 if len(sys.argv) == 4:
     with open(sys.argv[3], "w+") as f:
-        if test_id == "weather" or test_id == "synthetic":
+        if test_id == "weather":
+            outc = "SR"
+            for o in output:
+                f.write(''.join([outc[x] for x in o]))
+                f.write("\n")
+        elif test_id == "synthetic":
             for o in output:
                 f.write(' '.join([str(x) for x in o]) + "\n")
         else:

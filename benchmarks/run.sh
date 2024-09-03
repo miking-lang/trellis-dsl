@@ -9,8 +9,9 @@ KMER_LENGTH=(3 5 7)
 OUT_PATH="$(pwd)/out"
 
 bench_program() {
-  # Before benchmarking, we run the program to collect output data to a file.
-  "$1 $2-data.txt"
+  # Before benchmarking for performance, we run the program to collect its
+  # output data to a file.
+  $1 ${OUT_PATH}/$2-data.txt
 
   # Run hyperfine to benchmark the target. We both collect the full program
   # execution time (in the JSON file) and the internal execution time
@@ -22,7 +23,7 @@ bench_ziphmm() {
   RUN_CMD="python3 run.py $1"
   TEST_NAME="z-$1-forward"
   cd forward/ziphmm
-  bench_program $RUN_CMD $TEST_NAME
+  bench_program "$RUN_CMD" "$TEST_NAME"
   cd ../..
 }
 
@@ -42,7 +43,7 @@ bench_pomegranate() {
   RUN_CMD="python3 run.py $1 $2 $3"
   TEST_NAME="${TEST_ID}-forward"
   cd forward/pomegranate
-  bench_program $RUN_CMD $TEST_NAME
+  bench_program "$RUN_CMD" "$TEST_NAME"
   cd ../..
 }
 
@@ -50,7 +51,7 @@ bench_trellis_forward() {
   RUN_CMD="python3 run.py $2"
   TEST_NAME="$1-$2-forward"
   cd forward/trellis
-  bench_program $RUN_CMD $TEST_NAME
+  bench_program "$RUN_CMD" "$TEST_NAME"
   cd ../..
 }
 
@@ -65,8 +66,8 @@ bench_stochhmm() {
   fi
   RUN_CMD="python3 run.py $1"
   TEST_NAME="s-$OUT_ID-viterbi"
-  cd viterbi/stochhmm
-  bench_program $RUN_CMD $TEST_NAME
+  cd viterbi/stoch-hmm
+  bench_program "$RUN_CMD" "$TEST_NAME"
   cd ../..
 }
 
@@ -81,7 +82,7 @@ bench_cuda() {
   RUN_CMD="python3 run.py $1 $2"
   TEST_NAME="n-$TEST_ID-viterbi"
   cd viterbi/native-cuda
-  bench_program $RUN_CMD $TEST_NAME
+  bench_program "$RUN_CMD" "$TEST_NAME"
   cd ../..
 }
 
@@ -89,6 +90,7 @@ bench_trellis_viterbi() {
   if [ -z ${3+x} ]
   then
     TEST_ID="$1-$2"
+    RUN_CMD="python3 run.py $2 0"
   else
     if [ $4 -eq 1024 ]
     then
@@ -97,11 +99,11 @@ bench_trellis_viterbi() {
     then
       TEST_ID="$1-$2-nobatch"
     fi
+    RUN_CMD="python3 run.py $2 $3"
   fi
-  RUN_CMD="python3 run.py $2 $3"
   TEST_NAME="${TEST_ID}-viterbi"
   cd viterbi/trellis
-  bench_program $RUN_CMD $TEST_NAME
+  bench_program "$RUN_CMD" "$TEST_NAME"
   cd ../..
 }
 
@@ -123,7 +125,7 @@ bench_compile_trellis() {
   $CMD > /dev/null 2> /dev/null
   if [ $? -eq 0 ]
   then
-    bench_program $RUN_CMD $TEST_NAME
+    bench_program "$RUN_CMD" "$TEST_NAME"
   fi
   cd ../..
 }
@@ -133,6 +135,14 @@ compile_trellis() {
   trellis $3 "$2.trellis"
   cd ../..
 }
+
+# Create the output directory unless it already exists.
+# Note that, f the directory already exists, the benchmark will overwrite the
+# previous results.
+if [ ! -d $OUT_PATH ]
+then
+  mkdir $OUT_PATH
+fi
 
 if [ ! -e "signals/weather.fasta" -o ! -e "signals/weather.hdf5" ]
 then
@@ -159,10 +169,6 @@ then
   python3 viterbi/stoch-hmm/kmer-model-gen.py ${KMER_MODELS[0]} $STOCH_3MER_MODEL
 fi
 
-# Recreate the output directory, removing previous data
-#rm -rf out
-#mkdir -p out
-
 echo "#####################"
 echo "# FORWARD ALGORITHM #"
 echo "#####################"
@@ -173,7 +179,7 @@ echo "#################"
 
 unset MODEL_PATH
 export SIGNALS_PATH="$(pwd)/signals/weather.hdf5"
-#bench_ziphmm "weather"
+bench_ziphmm "weather"
 bench_pomegranate 0 0 "weather"
 bench_pomegranate 0 1 "weather"
 bench_pomegranate 1 0 "weather"
