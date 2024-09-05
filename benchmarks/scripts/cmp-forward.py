@@ -50,11 +50,17 @@ if len(sys.argv) == 1:
     weather_files = default_files("weather")
     kmer_files = default_files("3mer")
 
+    # For the weather model, we find that all tools produce similar results.
+    # Trellis' result is close to pomegranate's sparse outputs, while the
+    # results of zipHMM differ the most from the others.
     print("Weather model:")
     weather_data = [read_output_file(o) for o in weather_files]
     run_comparison(weather_data, labels)
+
+    # For the 3mer model, we find that all tools produce very similar results,
+    # because the provided observation sequences are much shorter.
     print("="*20)
-    print("Kmer model:")
+    print("3mer model:")
     kmer_data = [read_output_file(o) for o in kmer_files]
     run_comparison(kmer_data, labels)
 else:
