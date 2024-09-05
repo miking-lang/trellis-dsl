@@ -4,16 +4,13 @@
 # are very similar.
 
 import sys
-from Bio.Align import PairwiseAligner
 from Levenshtein import distance
 
 
 def read_state_seq(arg):
     try:
         with open(arg) as f:
-            # Only compare the first 10k characters per instance to prevent
-            # excessive slowdowns when ran on very long sequences.
-            return [str(line.strip())[:10000] for line in f.readlines()]
+            return [str(line.strip()) for line in f.readlines()]
     except:
         # Produce an empty sequence, so that the comparison function knows to
         # skip this version and its corresponding label.
