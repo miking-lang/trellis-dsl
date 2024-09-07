@@ -336,7 +336,7 @@ echo "# CLEANUP #"
 echo "###########"
 TRELLIS_CLEAN="hmm.cu libhmm.so pred*.npy trellis.py __pycache__"
 
-rm -f signals/weather.* signals/synthetic.* signals/kmer.fasta
+rm -f signals/weather.fasta signals/synthetic.* signals/kmer.fasta
 
 cd forward/pomegranate
 rm -rf __pycache__
