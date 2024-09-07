@@ -80,47 +80,39 @@ def bench_output_files(model):
         f"out/tr-{model}-viterbi-data.txt",
     ]
 
-# If no arguments are provided, we compare the (interpreted) results produced
-# by running the Viterbi algorithm of different tools on the weather and 3mer
-# model.
-if len(sys.argv) == 1:
-    labels = [
-        "StochHMM",
-        "Native CUDA",
-        "Trellis (compile-time)",
-        "Trellis (runtime)",
-    ]
-    weather_state_files = bench_output_files("weather")
-    weather_model = common.get_weather_model()
-    weather_obs = common.read_weather_signals("signals/weather.hdf5")
-    kmer_files1 = bench_output_files("3mer-nobatch")
-    kmer_files2 = bench_output_files("3mer-batch")
+# The script compares the (interpreted) results produced by running the Viterbi
+# algorithm of different tools on the weather and 3mer model.
+labels = [
+    "StochHMM",
+    "Native CUDA",
+    "Trellis (compile-time)",
+    "Trellis (runtime)",
+]
+weather_state_files = bench_output_files("weather")
+weather_model = common.get_weather_model()
+weather_obs = common.read_weather_signals("signals/weather.hdf5")
+kmer_files1 = bench_output_files("3mer-nobatch")
+kmer_files2 = bench_output_files("3mer-batch")
 
-    # We compare the state sequences of the weather model by evaluating the
-    # probability of the state sequence given the observed values. While the
-    # edit distance between the sequences is rather long (as we would find by
-    # computing the Levenshtein distance), the probabilities are rather close.
-    # This shows that the rather small difference in probability (considering
-    # each observation sequence consists of one million entries) can lead to
-    # large differences in the most likely state sequence.
-    print("Weather model:")
-    weather_data = [read_state_seq(f) for f in weather_state_files]
-    compare_weather_state_diff(weather_data, labels, weather_model, weather_obs)
-    # Commented out because it is slow
-    #run_comparison(weather_data, labels)
+# We compare the state sequences of the weather model by evaluating the
+# probability of the state sequence given the observed values. While the
+# edit distance between the sequences is rather long (as we would find by
+# computing the Levenshtein distance), the probabilities are rather close.
+# This shows that the rather small difference in probability (considering
+# each observation sequence consists of one million entries) can lead to
+# large differences in the most likely state sequence.
+print("Weather model:")
+weather_data = [read_state_seq(f) for f in weather_state_files]
+compare_weather_state_diff(weather_data, labels, weather_model, weather_obs)
 
-    # For the 3mer model results, we compare the sequence of nucleotides
-    # encoded by the resulting state sequences. In this case, we find that the
-    # edit distance between the results are quite small.
-    print("="*20)
-    print("Kmer model (no batching):")
-    kmer_data = [read_state_seq(o) for o in kmer_files1]
-    run_comparison(kmer_data, labels)
-    print("="*20)
-    print("Kmer model (batching):")
-    kmer_data = [read_state_seq(o) for o in kmer_files2]
-    run_comparison(kmer_data, labels)
-else:
-    labels = sys.argv[1:]
-    data = [read_state_seq(l) for l in labels]
-    run_comparison(data, labels)
+# For the 3mer model results, we compare the sequence of nucleotides
+# encoded by the resulting state sequences. In this case, we find that the
+# edit distance between the results are quite small.
+print("="*20)
+print("Kmer model (no batching):")
+kmer_data = [read_state_seq(o) for o in kmer_files1]
+run_comparison(kmer_data, labels)
+print("="*20)
+print("Kmer model (batching):")
+kmer_data = [read_state_seq(o) for o in kmer_files2]
+run_comparison(kmer_data, labels)
