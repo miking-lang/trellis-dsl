@@ -56,9 +56,10 @@ def compare_weather_state_diff(seqs, labels, weather_model, weather_obs):
             print(f"Comparing weather state probabilities of {l1} and {l2}")
             assert len(s1) == len(s2)
             p2 = compute_weather_state_seq_prob(s2, weather_model, weather_obs)
-            diffs = [abs(a - b) for a, b in zip(p1, p2)]
-            s, avg, stddev = sum(diffs), statistics.mean(diffs), statistics.stdev(diffs)
-            print(f"{avg} ± {stddev} (total: {s})")
+            diffs = [a - b for a, b in zip(p1, p2)]
+            absd = [abs(x) for x in diffs]
+            s, avg, stddev = sum(absd), statistics.mean(absd), statistics.stdev(absd)
+            print(f"{avg} ± {stddev} ({diffs})")
 
 def run_comparison(seqs, labels):
     comp = [(label, seq) for label, seq in zip(labels, seqs) if len(seq) > 0]
@@ -95,12 +96,7 @@ kmer_files1 = bench_output_files("3mer-nobatch")
 kmer_files2 = bench_output_files("3mer-batch")
 
 # We compare the state sequences of the weather model by evaluating the
-# probability of the state sequence given the observed values. While the
-# edit distance between the sequences is rather long (as we would find by
-# computing the Levenshtein distance), the probabilities are rather close.
-# This shows that the rather small difference in probability (considering
-# each observation sequence consists of one million entries) can lead to
-# large differences in the most likely state sequence.
+# probability of the state sequence given the observed values.
 print("Weather model:")
 weather_data = [read_state_seq(f) for f in weather_state_files]
 compare_weather_state_diff(weather_data, labels, weather_model, weather_obs)

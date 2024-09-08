@@ -6,14 +6,14 @@ This directory contains the necessary tools to run the Trellis benchmark suite.
 
 Running the benchmarks requires an Nvidia GPU with drivers for CUDA 11.7. We provide an Anaconda file `condaenv-trellis.yml` for installing the required versions of Python, CUDA, and pomegranate (version 1.0.4), as well as packages used to produce plots.
 
-The benchmarks compares Trellis against existing tools, which require a manual installation. This includes the configuration of zipHMM, StochHMM, and the native CUDA implementation (KTHDNA), which are included as submodules. These can be initialized as follows:
+The benchmarks compares Trellis against existing tools, which require a manual installation. This includes the configuration of zipHMM, StochHMM, and the native CUDA implementation (KTHDNA), the first of which is included as a submodule that can be initialized as follows:
 
 ```
 git submodule init
 git submodule update
 ```
 
-For zipHMM (`forward/ziphmm/ziphmm`), the project needs to be built by following the instructions of their README, so that the provided symlinks in `forward/ziphmm` refer to existing files. Specifically, this includes running `cp zipHMM/libpyZipHMM.so zipHMM/pyZipHMM/` from the root of that repository to match the symlink used by the benchmark runner.
+For zipHMM (`forward/ziphmm/ziphmm`), the project needs to be built by following the instructions of their README, so that the provided symlinks in `forward/ziphmm` refer to existing files. Specifically, this includes running `cp zipHMM/libpyZipHMM.so zipHMM/pyZipHMM/` from the root of that repository to match the symlink used in the benchmark runner.
 
 To build KTHDNA (`viterbi/native-cuda/KTHDNA`) you can run `make`. It requires `nvcc` to be installed and in the PATH and the `libhdf5-dev` package. Note that it does not work to install in a conda environment if the `hdf5` package is installed.
 
