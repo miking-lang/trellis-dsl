@@ -1,7 +1,6 @@
-# Script for comparing the probabilities computed by the Forward algorithm for
-# different tools. It computes the arithmetic mean and the standard deviation
-# of the absolute difference in the probabilities reported by each pair of
-# results.
+# Script for performing a comparison of the probabilities computed by the
+# Forward algorithm using different tools. The script print the probabilities
+# for each case produced by each tool in a table.
 
 import statistics
 import sys
@@ -12,18 +11,11 @@ def read_output_file(o):
         return [float(line) for line in f.readlines()]
 
 
-def compare_probs(l1, l2):
-    diffs = [abs(p1-p2) for p1, p2 in zip(l1, l2)]
-    return sum(diffs), statistics.mean(diffs), statistics.stdev(diffs)
-
-
-def run_comparison(probs, labels):
-    for i in range(len(probs)):
-        for j in range(i+1, len(probs)):
-            print(f"Comparing {labels[i]} and {labels[j]}")
-            assert len(probs[i]) == len(probs[j])
-            sum, avg, stddev = compare_probs(probs[i], probs[j])
-            print(f"{avg} ± {stddev} (total: {sum})")
+def print_probs(probs, labels):
+    padwidth = max([len(l) for l in labels])
+    print("\t".join([""] + [f"{l:>{padwidth}}" for l in labels]))
+    for i in range(len(probs[0])):
+        print("\t".join([str(i)] + [f"{probs[j][i]:>{padwidth}}" for j in range(len(probs))]))
 
 
 def default_files(model):
@@ -49,16 +41,13 @@ labels = [
 weather_files = default_files("weather")
 kmer_files = default_files("3mer")
 
-# For the weather model, we find that all tools produce similar results.
-# Trellis' result is close to pomegranate's sparse outputs, while the
-# results of zipHMM differ the most from the others.
+
+# Print the probabilities computed by the Forward algorithm for each case.
 print("Weather model:")
 weather_data = [read_output_file(o) for o in weather_files]
-run_comparison(weather_data, labels)
+print_probs(weather_data, labels)
 
-# For the 3mer model, we find that all tools produce very similar results,
-# because the provided observation sequences are much shorter.
-print("="*20)
+print()
 print("3mer model:")
 kmer_data = [read_output_file(o) for o in kmer_files]
-run_comparison(kmer_data, labels)
+print_probs(kmer_data, labels)
