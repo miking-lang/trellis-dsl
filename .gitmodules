@@ -1,0 +1,3 @@
+[submodule "benchmarks/forward/ziphmm/ziphmm"]
+	path = benchmarks/forward/ziphmm/ziphmm
+  url = https://github.com/mailund/ziphmm.git

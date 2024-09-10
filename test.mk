@@ -2,12 +2,13 @@
 
 test-files=
 test-files+=${wildcard src/*.mc}
+test-files+=${wildcard src/model/*.mc}
+test-files+=${wildcard src/parser/*.mc}
+test-files+=${wildcard src/constraints/*.mc}
+test-files+=${wildcard src/cuda/*.mc}
 
-# NOTE(Linnea,2022-05-25): Cannot yet be compiled
-test-files := $(filter-out src/forward-backward.mc,$(test-files))
-test-files := $(filter-out src/viterbi.mc,$(test-files))
-test-files := $(filter-out src/parse_data.mc,$(test-files))
-
+# NOTE(larshum, 2024-02-15): Main file is tested when compiling
+test-files := $(filter-out src/trellis.mc,$(test-files))
 
 all: ${test-files}
 

@@ -1,0 +1,38 @@
+MODEL_NAME: WEATHER
+
+TRACK SYMBOL DEFINITIONS
+==========================
+MOOD: H, G
+
+STATE DEFINITIONS
+##########################
+STATE:
+  NAME: INIT
+TRANSITION: STANDARD: P(X)
+  SUNNY: 0.5
+  RAINY: 0.5
+##########################
+STATE:
+  NAME: SUNNY
+  PATH_LABEL: S
+TRANSITION: STANDARD: P(X)
+  SUNNY: 0.75
+  RAINY: 0.25
+  END: 1
+EMISSION: MOOD: P(X)
+  ORDER: 0
+@H G
+0.8 0.2
+##########################
+STATE:
+  NAME: RAINY
+  PATH_LABEL: R
+TRANSITION: STANDARD: P(X)
+  SUNNY: 0.5
+  RAINY: 0.5
+  END: 1
+EMISSION: MOOD: P(X)
+  ORDER: 0
+@H G
+0.4 0.6
+##########################

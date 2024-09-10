@@ -1,0 +1,19 @@
+-- Example used in the Trellis paper
+
+type Weather = { Sunny, Rainy }
+type Mood = { Happy, Grumpy }
+
+model {
+  state = Weather
+  output = Mood
+
+  table outp(Mood, Weather)
+
+  P(initial x) = 0.5
+  P(output o | x) = outp(o, x)
+  P(transition x y) = {
+    | {Sunny -> Sunny | true} => 0.75
+    | {Sunny -> Rainy | true} => 0.25
+    | {x -> y | x == Rainy}   => 0.5
+  }
+}
