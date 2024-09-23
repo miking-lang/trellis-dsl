@@ -8,6 +8,9 @@ import json
 from colors import colors
 from names import display_name
 
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
+
 def load_alg_exec_time_label(label, alg, k):
     try:
         with open(f"out/{label}-synthetic-{k}-{alg}.txt", "r") as f:

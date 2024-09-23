@@ -8,6 +8,9 @@ import json
 from colors import colors
 from names import display_name
 
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
+
 def load_full_time_label(label, conf, k):
     try:
         with open(f"out/{label}-{k}mer-{conf}.json", "r") as f:

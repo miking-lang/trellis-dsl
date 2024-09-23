@@ -8,6 +8,9 @@ import json
 from colors import colors
 from names import display_name
 
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
+
 def label_file(label, target):
     return f"out/{target}-{label}-compile.json"
 
